@@ -87,7 +87,7 @@
 (defmacro defyarn*
   [nm k doc spec bmap expr]
   `(do
-     (s/def ~k ~spec)
+     ~@(when spec `((s/def ~k ~spec)))
      (register-yarn
       (->Yarn
        ~k
@@ -129,7 +129,7 @@
     (when (s/invalid? cf)
       (throw (Exception. (s/explain-str ::defyarn bd))))
     (let [{:keys [doc spec bmap expr]
-           :or {doc "", spec `any?, bmap [:map {}]}} cf
+           :or {doc "", bmap [:map {}]}} cf
           expr (or expr `(throw (IllegalStateException. ~(str "missing yarn " nm))))
           k (keyword (-> *ns* ns-name name) (name nm))]
       `(defyarn* ~nm ~k ~doc ~spec ~(parse-bmap bmap) ~expr))))
