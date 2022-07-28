@@ -17,16 +17,6 @@
   (alter-var-root #'yarn-registry assoc k sd))
 
 
-(defmacro assert-spec
-  [k x]
-  (if s/*compile-asserts*
-    `(let [k# ~k, x# ~x]
-       (if (namespace k#)
-         (s/assert k# x#)
-         x#))
-    x))
-
-
 (defn- yank* [ss k]
   (if (contains? ss k)
     ss
@@ -38,9 +28,8 @@
           vals (map ss' deps)
           v (if (some md/deferrable? vals)
               (chain (apply md/zip vals)
-                     #(func (zipmap deps %))
-                     #(assert-spec k %))
-              (assert-spec k (func ss')))
+                     #(func (zipmap deps %)))
+              (func ss'))
           d? (md/deferrable? v)]
       (cond-> ss'
         d? (assoc! ::deferreds (cons k (ss' ::deferreds)))
@@ -87,6 +76,12 @@
       (filter (comp keyword? key))
       (filter #(= s (namespace (key %)))))
      m)))
+
+
+(s/def ::pile-of-yarn (s/keys))
+
+(defn assert-spec-keys [m]
+  (s/assert ::pile-of-yarn m))
 
 
 (defmacro defyarn*
