@@ -66,8 +66,8 @@
      (reduce yank* (transient ss) ks)))))
 
 
-(defn pick-ns-keys [n m]
-  (let [s (name n)]
+(defn select-ns-keys [m ns]
+  (let [s (name ns)]
     (into
      (empty m)
      (comp
