@@ -6,13 +6,25 @@
 
 
 (defrecord Yarn
-  [key func deps])
+  [key func deps spec])
 
 (defonce yarn-registry {})
 
-(defn register-yarn [{k :key, :as sd}]
-  (debugf "tie yarn %s" k)
+(defn register-yarn [{k :key, s :spec, :as sd}]
+  (if (= s `any?)
+    (debugf "tie yarn %s" k)
+    (debugf "tie yarn %s as '%s" k s))
   (alter-var-root #'yarn-registry assoc k sd))
+
+
+(defmacro assert-spec
+  [k x]
+  (if s/*compile-asserts*
+    `(let [k# ~k, x# ~x]
+       (if (namespace k#)
+         (s/assert k# x#)
+         x#))
+    x))
 
 
 (defn- yank* [ss k]
@@ -26,8 +38,9 @@
           vals (map ss' deps)
           v (if (some md/deferrable? vals)
               (chain (apply md/zip vals)
-                        #(func (zipmap deps %)))
-              (func ss'))
+                     #(func (zipmap deps %))
+                     #(assert-spec k %))
+              (assert-spec k (func ss')))
           d? (md/deferrable? v)]
       (cond-> ss'
         d? (assoc! ::deferreds (cons k (ss' ::deferreds)))
@@ -84,7 +97,9 @@
       (->Yarn
        ~k
        (fn ~nm [~bmap] ~expr)
-       ~(vec (vals bmap))))
+       ~(vec (vals bmap))
+       '~spec
+       ))
      (def ~(vary-meta nm assoc :doc doc) ~k)))
 
 
@@ -100,7 +115,7 @@
   (s/cat
    :name symbol?
    :doc (s/? string?)
-   :spec (s/? s/spec?)
+   :spec (s/? any?)
    :bmap ::bmap
    :expr (s/? any?)))
 
@@ -120,7 +135,7 @@
       (throw (Exception. (s/explain-str ::defyarn bd))))
     (let [{:keys [doc spec bmap expr]
            :or {doc "", spec `any?, bmap [:map {}]}} cf
-          expr (or expr `(throw (IllegalStateException. (str "Missing defyarn for " '~nm))))
+          expr (or expr `(throw (IllegalStateException. ~(str "missing yarn " nm))))
           k (keyword (-> *ns* ns-name name) (name nm))]
       `(defyarn* ~nm ~k ~doc ~spec ~(parse-bmap bmap) ~expr))))
 
