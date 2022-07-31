@@ -7,11 +7,7 @@
    [java.util HashMap Map]))
 
 
-;; TODO(anjensan): Document.
-
-
 (set! *warn-on-reflection* true)
-
 
 (defprotocol YarnDescripitor
   (yarn-snatch* [_ mdm] "get-or-create value from `poy and `mdm, optionally use tracer `tcr")
@@ -30,6 +26,7 @@
   )
 
 
+;; mapping {keyword => Yarn}
 (defonce yarn-registry {})
 
 
@@ -37,16 +34,15 @@
   (if s
     (debugf "tie yarn %s as '%s" k s)
     (debugf "tie yarn %s" k))
+  (when-not (and (keyword? k) (namespace k))
+    (throw (ex-info "yarn key must be a namespaced keyword" {::key k})))
   (alter-var-root #'yarn-registry assoc k sd)
   sd)
 
 
-(deftype LockedMapMDM [poy
-                       lock
-                       frozen
-                       ^Map hm]
+(deftype LockedMapMDM
+         [poy lock frozen ^Map hm]
   MutableDeferredMap
-
   (mdm-fetch!
     [_ k]
     (if-let [kv (find poy k)]
@@ -64,14 +60,14 @@
           (let [d (md/deferred)]
             (.put hm k d)
             [true d])))))
-
   (mdm-freeze!
     [_]
     (locking lock
       (when @frozen
         (throw (ex-info "attemt to freeze already frozen MDM" {})))
       (vreset! frozen true))
-    (when (> (.size hm) 0)
+    (if (.isEmpty hm)
+      (md/success-deferred poy)
       (let [d? #(-> % val md/deferred?)
             [dfs vls] [(filter d? hm) (remove d? hm)]]
         (md/chain
@@ -83,7 +79,7 @@
   )
 
 
-(defn locked-hmap-mdm [poy]
+(defn- locked-hmap-mdm [poy]
   (LockedMapMDM. poy (Object.) (volatile! false) (HashMap.)))
 
 
@@ -92,7 +88,7 @@
     (md/->deferred v v)))
 
 
-(defn force-as-deferred [v]
+(defn- as-deferred [v]
   (if (md/deferrable? v)
     (md/->deferred v)
     (md/success-deferred v)))
@@ -108,13 +104,11 @@
 
 (defrecord WrpdDefer [deferred])
 
-(defn unwrap-defer [w]
-  (if (instance? WrpdDefer w)
-    (:deferred w)
-    w))
-
-(defn wrap-defer [d]
-  (WrpdDefer. d))
+(defmacro unwrap-defer [w]
+  `(let [w# ~w]
+     (if (instance? WrpdDefer w) 
+       (:deferred w#)
+       w#)))
 
 
 (defn yarn-snatch
@@ -125,10 +119,10 @@
      (yarn-snatch* yd mdm))))
 
 (defn yarn-snatch-defer [mdm k]
-  (wrap-defer (force-as-deferred (yarn-snatch mdm k))))
+  (->WrpdDefer (as-deferred (yarn-snatch mdm k))))
 
 (defn yarn-snatch-lazy [mdm k]
-  (delay (force-as-deferred (yarn-snatch mdm k))))
+  (delay (as-deferred (yarn-snatch mdm k))))
 
 
 (defmacro build-yank-fns
@@ -147,18 +141,18 @@
         (mapcat identity
                 (for [[ds _dk] bmap
                       :when (= ::defer (bmap-param-type ds))]
-                  [ds `(unwrap-defer ~ds)]))
+                  [ds `(#'unwrap-defer ~ds)]))
 
         deps (keys bmap)
         fnname #(-> k name (str "--" %) symbol)]
 
-    `(let [;; input - map (no defer unwrapping, for testing)
+    `(let [;; input - map (no defer unwrapping), suitable for testing
            the-fnm#
            (fn ~(fnname "map") [~bmap]
              (coerce-deferred
               ~expr))
 
-           ;; input - vector. unwraps 'defers', see `yarn-snatch-defer
+           ;; input - vector. unwraps 'defers', called by yget-fn#
            the-fnv#
            (fn ~(fnname "vec")
              [[~@deps]]
@@ -188,6 +182,7 @@
        {:yget yget-fn#
         :func the-fnm#
         :funcv the-fnv#})))
+
 
 (defmacro defyarn*
   [nm k doc spec bmap expr]
