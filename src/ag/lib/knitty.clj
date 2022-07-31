@@ -1,102 +1,211 @@
 (ns ag.lib.knitty
-  (:require [clojure.spec.alpha :as s]
-            [clojure.walk :as w]
-            [manifold.deferred :as md :refer [chain]]
-            [taoensso.timbre :refer [debugf]]))
+  (:require
+   [clojure.spec.alpha :as s]
+   [manifold.deferred :as md]
+   [taoensso.timbre :refer [debugf]])
+  (:import
+   [java.util HashMap Map]))
 
 
-(defrecord Yarn
-  [key func deps spec])
+;; TODO(anjensan): Document.
+
+
+(set! *warn-on-reflection* true)
+
+
+(defprotocol YarnDescripitor
+  (yarn-snatch* [_ mdm] "get-or-create value from `poy and `mdm, optionally use tracer `tcr")
+  (yarn-key [_] "get yarn key")
+  )
+
+(defprotocol MutableDeferredMap
+  (mdm-fetch! [_ k] "get value or obligated deferred")
+  (mdm-freeze! [_] "freeze map, return single deferred")
+  )
+
+(defrecord Yarn [key func funcv deps spec yget]
+  YarnDescripitor
+  (yarn-snatch* [_ mdm] (yget mdm))
+  (yarn-key [_] key)
+  )
+
 
 (defonce yarn-registry {})
 
+
 (defn register-yarn [{k :key, s :spec, :as sd}]
-  (if (= s `any?)
-    (debugf "tie yarn %s" k)
-    (debugf "tie yarn %s as '%s" k s))
-  (alter-var-root #'yarn-registry assoc k sd))
+  (if s
+    (debugf "tie yarn %s as '%s" k s)
+    (debugf "tie yarn %s" k))
+  (alter-var-root #'yarn-registry assoc k sd)
+  sd)
 
 
-(defn- yank* [ss k]
-  (if (contains? ss k)
-    ss
-    (let [sd (yarn-registry k)
-          _ (assert sd (str "Yarn " k " is not registered"))
-          deps (:deps sd)
-          func (:func sd)
-          ss' (reduce yank* ss deps)
-          vals (map ss' deps)
-          v (if (some md/deferrable? vals)
-              (chain (apply md/zip vals)
-                     #(func (zipmap deps %)))
-              (func ss'))
-          d? (md/deferrable? v)]
-      (cond-> ss'
-        d? (assoc! ::deferreds (cons k (ss' ::deferreds)))
-        true (assoc! k v)))))
+(deftype LockedMapMDM [poy
+                       lock
+                       frozen
+                       ^Map hm]
+  MutableDeferredMap
+
+  (mdm-fetch!
+    [_ k]
+    (if-let [kv (find poy k)]
+      [false (val kv)]
+      (locking lock
+        (when @frozen
+          (throw (ex-info "attemt to fetch from frozen MDM" {::key k})))
+        (if (.containsKey hm k)
+          (let [v (.get hm k)]
+            (if (and (md/deferred? v) (md/realized? v))
+              (let [vv (md/success-value v v)]
+                (.put hm k vv)
+                [false vv])
+              [false v]))
+          (let [d (md/deferred)]
+            (.put hm k d)
+            [true d])))))
+
+  (mdm-freeze!
+    [_]
+    (locking lock
+      (when @frozen
+        (throw (ex-info "attemt to freeze already frozen MDM" {})))
+      (vreset! frozen true))
+    (when (> (.size hm) 0)
+      (let [d? #(-> % val md/deferred?)
+            [dfs vls] [(filter d? hm) (remove d? hm)]]
+        (md/chain
+         (apply md/zip (map val dfs))
+         (fn [dfs-vals]
+           (-> poy
+               (into vls)
+               (into (zipmap (map key dfs) dfs-vals))))))))
+  )
 
 
-(defn- yank-result-deferred
-  [ss]
-  (if-let [ds (ss ::deferreds)]
-    (chain
-     (apply md/zip (map ss ds))
-     #(into
-       (dissoc ss ::deferreds)
-       (zipmap ds %)))
-    (md/success-deferred ss)))
+(defn locked-hmap-mdm [poy]
+  (LockedMapMDM. poy (Object.) (volatile! false) (HashMap.)))
 
 
-(defn yank
-  ([k]
-   (fn yank-partial [ss]
-     (yank ss k)))
-  ([ss k]
-   (if (contains? ss k)
-     (md/success-deferred ss)
-     (yank-result-deferred
-      (persistent! (yank* (transient ss) k))))))
+(defn coerce-deferred [v]
+  (let [v (force v)]
+    (md/->deferred v v)))
 
 
-(defn yank-all
-  ([ks]
-   (fn yank-all-partial [ss]
-     (yank-all ss ks)))
-  ([ss ks]
-   (yank-result-deferred
-    (persistent!
-     (reduce yank* (transient ss) ks)))))
+(defn force-as-deferred [v]
+  (if (md/deferrable? v)
+    (md/->deferred v)
+    (md/success-deferred v)))
 
 
-(defn select-ns-keys [m ns]
-  (let [s (name ns)]
-    (into
-     (empty m)
-     (comp
-      (filter (comp keyword? key))
-      (filter #(= s (namespace (key %)))))
-     m)))
+(defn- bmap-param-type [ds]
+  (let [m (meta ds)]
+    (cond
+      (:defer m) ::defer
+      (:lazy m)  ::lazy-defer
+      :else      ::sync)))
 
 
-(s/def ::pile-of-yarn (s/keys))
+(defrecord WrpdDefer [deferred])
 
-(defn assert-spec-keys [m]
-  (s/assert ::pile-of-yarn m))
+(defn unwrap-defer [w]
+  (if (instance? WrpdDefer w)
+    (:deferred w)
+    w))
 
+(defn wrap-defer [d]
+  (WrpdDefer. d))
+
+
+(defn yarn-snatch
+  ([mdm k]
+   (let [yd (yarn-registry k)]
+     (when-not yd
+       (throw (ex-info (str "yarn " k " is not registered") {::key k})))
+     (yarn-snatch* yd mdm))))
+
+(defn yarn-snatch-defer [mdm k]
+  (wrap-defer (force-as-deferred (yarn-snatch mdm k))))
+
+(defn yarn-snatch-lazy [mdm k]
+  (delay (force-as-deferred (yarn-snatch mdm k))))
+
+
+(defmacro build-yank-fns
+  [k bmap expr]
+  (let [mdm '__mdm
+        yank-all-deps
+        (mapcat identity
+                (for [[ds dk] bmap]
+                  [ds
+                   (case (bmap-param-type ds)
+                     ::sync       `(yarn-snatch ~mdm ~dk)
+                     ::defer      `(yarn-snatch-defer ~mdm ~dk)
+                     ::lazy-defer `(yarn-snatch-lazy ~mdm ~dk))]))
+
+        maybe-unwrap-defers
+        (mapcat identity
+                (for [[ds _dk] bmap
+                      :when (= ::defer (bmap-param-type ds))]
+                  [ds `(unwrap-defer ~ds)]))
+
+        deps (keys bmap)
+        fnname #(-> k name (str "--" %) symbol)]
+
+    `(let [;; input - map (no defer unwrapping, for testing)
+           the-fnm#
+           (fn ~(fnname "map") [~bmap]
+             (coerce-deferred
+              ~expr))
+
+           ;; input - vector. unwraps 'defers', see `yarn-snatch-defer
+           the-fnv#
+           (fn ~(fnname "vec")
+             [[~@deps]]
+             (coerce-deferred
+              (let [~@maybe-unwrap-defers]
+                ~expr)))
+
+           ;; input - poy mdm and caller, called by `yank-snatch
+           yget-fn#
+           (fn ~(fnname "yget") [~mdm]
+             (let [[new# d#] (mdm-fetch! ~mdm ~k)]
+               (if new#
+                 (try ;; d# is alsways deffered
+                   (let [~@yank-all-deps]
+                     (let [x# (if (or
+                                   ~@(for [d deps
+                                           :when (= (bmap-param-type d) ::sync)]
+                                       `(md/deferred? ~d)))
+                                (md/chain' (md/zip' ~@deps) the-fnv#)
+                                (the-fnv# [~@deps]))]
+                       (md/connect x# d#)
+                       x#))
+                   (catch Throwable e#
+                     (md/error! d# e#)))
+                 d#)))]
+
+       {:yget yget-fn#
+        :func the-fnm#
+        :funcv the-fnv#})))
 
 (defmacro defyarn*
   [nm k doc spec bmap expr]
   `(do
      ~@(when spec `((s/def ~k ~spec)))
      (register-yarn
-      (->Yarn
-       ~k
-       (fn ~nm [~bmap] ~expr)
-       ~(vec (vals bmap))
-       '~spec
-       ))
+      (map->Yarn
+       (merge
+        (build-yank-fns ~k ~bmap ~expr)
+        {:key ~k
+         :deps ~(vec (vals bmap))
+         :spec '~spec})))
      (def ~(vary-meta nm assoc :doc doc) ~k)))
 
+
+(s/def
+  ::pile-of-yarn
+  (s/keys))
 
 (s/def
   ::bmap
@@ -104,16 +213,15 @@
    :vec (s/tuple (s/map-of symbol? (some-fn keyword? symbol?)))
    :map (s/map-of symbol? (some-fn keyword? symbol?))))
 
-
 (s/def
   ::defyarn
   (s/cat
    :name symbol?
    :doc (s/? string?)
    :spec (s/? any?)
-   :bmap ::bmap
-   :expr (s/? any?)))
-
+   :bmap-expr (s/?
+               (s/cat :bmap ::bmap
+                      :expr any?))))
 
 (defn- parse-bmap [bm]
   (let [[bmap-type bmap-body] bm]
@@ -128,51 +236,38 @@
         cf (s/conform ::defyarn bd)]
     (when (s/invalid? cf)
       (throw (Exception. (s/explain-str ::defyarn bd))))
-    (let [{:keys [doc spec bmap expr]
-           :or {doc "", bmap [:map {}]}} cf
+    (let [{:keys [doc spec] {:keys [bmap expr]} :bmap-expr} cf
+          doc (or doc "")
+          bmap (or bmap [:map {}])
           expr (or expr `(throw (IllegalStateException. ~(str "missing yarn " nm))))
           k (keyword (-> *ns* ns-name name) (name nm))]
       `(defyarn* ~nm ~k ~doc ~spec ~(parse-bmap bmap) ~expr))))
 
 
-(defmacro <y
-  [k]
-  (assert (contains? &env '__yarn__) "Should be used only insdie do-yank")
-  `(do
-     (assert (contains? ~'__yarn_ays__ ~k) "Error - yank-do> didn't find all <y calls")
-     (~k ~'__yarn__)))
+(defn yank
+  ([yarns]
+   (fn yank-partial [poy]
+     (yank poy yarns)))
+  ([poy yarns]
+   (let [mdm (locked-hmap-mdm poy)]
+     (doseq [y yarns]
+       (yarn-snatch mdm y))
+     (mdm-freeze! mdm))))
 
 
-(defn- find-yy
-  [ast]
-  (let [a (atom #{})]
-    (w/postwalk
-     (fn [x]
-       (when (list? x)
-         (when-let [[f r] x]
-           (when (#{'<y `<y} f)
-             (swap! a conj r))))
-       x)
-     ast)
-    (set @a)))
+;; helpers
 
+(defn select-ns-keys [m ns]
+  (let [s (name ns)]
+    (into
+     (empty m)
+     (comp
+      (filter (comp keyword? key))
+      (filter #(= s (namespace (key %)))))
+     m)))
 
-(defmacro yank-it>
-  [ss & expr]
-  (let [ays (find-yy expr)]
-    `(chain
-      (yank-all ~ss ~ays)
-      (fn ~'yankit [~'__yarn__]
-        (let [~'__yarn_ays__ ~ays]
-          [~'__yarn__
-           ~@expr])))))
-
-
-(defmacro yank-do>
-  [ss & body]
-  `(chain
-    (yank-it> ~ss (do ~@body nil))
-    first))
+(defn assert-spec-keys [m]
+  (s/assert ::pile-of-yarn m))
 
 
 (comment
@@ -186,16 +281,29 @@
   (keyword? zero)
 
   (defyarn one
-    [{_ zero}]   ;; wait for zero, but don't use it
-    (future 1))  ;; any manifold-like deferred can be returned
+    [{_ zero}]     ;; wait for zero, but don't use it
+    (future
+      1))  ;; any manifold-like deferred can be returned
 
   (defyarn two
-    [{x ::one}]  ;; deps - vector of a single map of 'symbol -> keyword'
-    (inc x))
+    [{^:defer x one}] ;; don't unwrap deferred (all values coerced to manifold/deffered)
+    (md/chain' x inc))
+
+  (defyarn three-fast
+    [{x one y two}]
+    (do
+      (+ x y)))
+
+  (defyarn three-slow
+    [{x one y two}]
+    (future
+      (+ x y)))
 
   (defyarn three
-    [{x one y two}]
-    (+ x y))
+    [{^:lazy t1 three-fast
+      ^:lazy t2 three-slow}]
+    (if (zero? (rand-int 2))
+      t1 t2))
 
   (defyarn four
     [{y two}]
@@ -206,30 +314,15 @@
     (future (+ x y)))
 
   (defyarn six
-    [{x two, y three}]
-    (* x y))
+    [{x two
+      y three}]
+    (+ x y))
 
-  ;; yank - ensure one key is inside map - return deferred
-  @(yank {} one)
-  @(yank {} two)
-  @(yank {one 10} four)
-
-  ;; yank-all - ensure multiple keys at once (faster) - usually prefer this function
-  @(yank-all {one 10} four)
-  ;; 'also' - helper function (FIXME: is there something in stdlib?)
-
-  ;; experimental ;)f
-  @(yank-it>
-    {}
-    {:first (<y six)})
-
-  @(chain
-    (yank {} ::one)
-    #(yank-do> % (println "four = " (<y five)))
-    #(yank-do> % (println "five = " (<y five)))
-    #(yank-do> % (println "six = " (<y six))))
-
-  (require '[criterium.core :as cc])
-  (cc/quick-bench @(yank-all {} [five six]))
-
+  ;; yank - ensure all keys are inside the map - returns deferred
+  @(yank {} [one])
+  @(yank {} [six])
+  @(yank {one 10} [four])
+  @(yank {} [zero])
+  @(yank {} [five six])
+  @(yank {two 2000} [four five])
   )
