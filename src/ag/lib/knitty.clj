@@ -106,7 +106,7 @@
 
 (defmacro unwrap-defer [w]
   `(let [w# ~w]
-     (if (instance? WrpdDefer w) 
+     (if (instance? WrpdDefer w#) 
        (:deferred w#)
        w#)))
 
@@ -141,7 +141,7 @@
         (mapcat identity
                 (for [[ds _dk] bmap
                       :when (= ::defer (bmap-param-type ds))]
-                  [ds `(#'unwrap-defer ~ds)]))
+                  [ds `(unwrap-defer ~ds)]))
 
         deps (keys bmap)
         fnname #(-> k name (str "--" %) symbol)]
@@ -240,14 +240,13 @@
 
 
 (defn yank
-  ([yarns]
-   (fn yank-partial [poy]
-     (yank poy yarns)))
-  ([poy yarns]
-   (let [mdm (locked-hmap-mdm poy)]
-     (doseq [y yarns]
-       (yarn-snatch mdm y))
-     (mdm-freeze! mdm))))
+  [poy yarns]
+  (let [mdm (locked-hmap-mdm poy)
+        ys (mapv #(yarn-snatch mdm %) yarns)]
+    (md/chain
+     (mdm-freeze! mdm)
+     (fn [poy']
+       [(map #(if (md/deferred? %) @% %) ys) poy']))))
 
 
 ;; helpers
