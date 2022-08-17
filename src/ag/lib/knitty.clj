@@ -1,10 +1,14 @@
 (ns ag.lib.knitty
   (:require [clojure.java.browse]
             [clojure.java.browse-ui]
+            [clojure.java.io :as io]
             [clojure.java.shell]
+            [clojure.set :as set]
             [clojure.spec.alpha :as s]
+            [clojure.string :as str]
             [manifold.deferred :as md]
-            [manifold.executor])
+            [manifold.executor]
+            [tangle.core :as tgl])
   (:import [java.util HashMap Map]))
 
 ;; >> API
@@ -12,6 +16,7 @@
 (declare yarn)        ;; macro, (yarn keyword { (bind-symbol keyword)* } expr)
 (declare defyarn)     ;; macro, (defyarn name doc? spec? { (bind-symbol keyword)* } <expr>)
 (declare with-yarns)  ;; macro, (with-yarns [<yarns>+] <body ...>)
+(declare untangle)    ;; func,  (untangle <map> or (deffered [_ <map>]))
 ;; << API
 
 (set! *warn-on-reflection* true)
@@ -478,6 +483,386 @@
                              (ex-cause %))))))))
 
 
+;; ANALYZE TRACE
+
+(defn- safe-minus [a b]
+  (when (and a b (not (zero? a)) (not (zero? b)))
+    (- a b)))
+
+
+(defn- find-traces [poy]
+  (cond
+    (instance? Trace poy) [poy]
+    (map? poy)         (-> poy meta ::trace)
+    (vector? poy)      (-> second poy meta ::trace)
+    (md/deferred? poy) @(md/catch
+                         (md/chain poy find-traces)
+                         #(-> % ex-data ::trace))))
+
+(defn parse-trace [t]
+  (let [{:keys [at base-at done-at poy tracelog yankid]} t
+        ytlog (update-vals
+               (group-by :yarn tracelog)
+               (fn [ts] (into {} (map (juxt :event :value) ts))))
+        ytdep (into {}
+                    (for [{y :yarn, e :event, v :value} tracelog
+                          :when (= e ::trace-dep)
+                          :let [[dep time] v]]
+                      [[y dep] time]))
+        all-deps (set (for [t (vals ytlog), [d _] (::trace-all-deps t)] d))
+        ex-deps (set/difference all-deps (set (keys ytlog)))]
+    {:at at
+     :time (safe-minus done-at base-at)
+     :base-at base-at
+     :done-at done-at
+     :yankid yankid
+
+     :nodes (into
+             {}
+             (concat
+              (for [[y t] ytlog
+                    :when (not= y ::yank)]
+                [y (let [{value  ::trace-value
+                          error  ::trace-error
+                          thread ::trace-thread
+                          finish-at ::trace-finish
+                          start-at  ::trace-start
+                          call-at   ::trace-call
+                          deferred? ::trace-deferred
+                          caller    ::trace-caller} t]
+                     {:type
+                      (cond
+                        (= ::yank caller) :yanked
+                        (nil? finish-at)  :leaked
+                        :else             :interim)
+                      :caller caller
+                      :value value
+                      :error error
+                      :thread thread
+                      :yankid yankid
+                      :start-at start-at
+                      :finish-at finish-at
+                      :deps-time (safe-minus call-at start-at)
+                      :func-time (safe-minus finish-at call-at)
+                      :deferred (or deferred? (nil? finish-at))})])
+              (for [pd ex-deps]
+                [pd (if (contains? poy pd)
+                      {:type :input, :value (get poy pd), :yankid yankid}
+                      {:type :lazy-unused, :deferred true, :yankid yankid})])))
+     :links (into
+             {}
+             (concat
+              (for [[y t] ytlog
+                    [dk dt] (::trace-all-deps t)
+                    :let [time (get ytdep [y dk])]]
+                [[y dk]
+                 {:source (cond
+                            (contains? poy dk) :input
+                            (::trace-deferred (ytlog dk)) :defer
+                            :else :sync)
+                  :cause (= (::trace-caller (ytlog dk)) y)
+                  :time (when-let [t (safe-minus (::trace-finish t)
+                                                 (::trace-finish (ytlog dk)))]
+                          (when (pos? t) t))
+                  :used (not (nil? time))
+                  :type dt
+                  :yankid-src yankid
+                  :yankid-dst yankid}])))}))
+
+
+(defn- merge-two-parsed-traces [b a]
+  (let [nodesa (into {} (:nodes a))
+        nodesb (into {} (:nodes b))
+        sameval #(= (:value (get nodesb %)) (:value (get nodesa %)))]
+    {:clusters (assoc (:clusters b)
+                      (:yankid a) {:at (:at a)
+                                   :time (:time a)
+                                   :base-at (:base-at a)
+                                   :done-at (:done-at a)
+                                   :shift (safe-minus (:base-at a) (:base-at b))})
+     :base-at (or (:base-at b) (:base-at a))
+     :done-at (or (:done-at b) (:done-at a))
+     :at   (or (:at b) (:at a))
+     :time   (+ (:time b 0) (:time a 0))
+     :nodes (concat
+             (:nodes b)
+             (for [[y n :as yn] (:nodes a)
+                   :let [inb (contains? nodesb y)
+                         eq  (sameval y)]
+                   :when (or (not inb) (not eq))]
+               (if inb
+                 [y (assoc n :type :changed-input)]
+                 yn)))
+     :links (concat
+             (:links b)
+             (for [[[_ y :as xy] c] (:links a)]
+               (if (and (contains? nodesb y)
+                        (= (:value (nodesb y))
+                           (:value (nodesa y))))
+                 [xy (assoc c :yankid-dst (:yankid (nodesb y)))]
+                 [xy c]))
+             (set
+              (for [[[_ y] c] (:links a)
+                    :when (contains? nodesb y)
+                    :when (not= (:value (nodesb y)) (:value (nodesa y)))]
+                [[y y] {:yankid-dst (:yankid (nodesb y)),
+                        :yankid-src (:yankid (nodesa y)),
+                        :type :changed-input}])))}))
+
+
+
+(defn merge-parsed-traces [gs]
+  (reduce merge-two-parsed-traces nil (reverse gs)))
+
+
+;; GRAPHVIZ
+
+(defn- graphviz-escape [s]
+  (if s
+    (str/escape
+     s
+     {\< "&lt;", \> "&gt;", \& "&amp;"})
+    ""))
+
+(defn- short-string [n s]
+  (graphviz-escape
+   (if (> (count s) n)
+     (str (subs s 0 (- n 3)) "…")
+     s)))
+
+(defn- short-string-multiline [s]
+  (binding  [*print-length* 8
+             *print-level* 2
+             *print-namespace-maps* true]
+    (->>
+     (pr-str s)
+     (short-string #=(* 10 60))
+     (partition-all 60)
+     (map #(str/join "" %))
+     (map graphviz-escape)
+     (str/join "<br />"))))
+
+(defn- nice-time [t]
+  (when t
+    (let [[f s] (condp > t
+                  1e3  ["%.0fns" 1e-0]
+                  1e4  ["%.2fus" 1e-3]
+                  5e4  ["%.1fus" 1e-3]
+                  1e6  ["%.0fus" 1e-3]
+                  1e7  ["%.2fms" 1e-6]
+                  3e7  ["%.1fms" 1e-6]
+                  5e8  ["%.0fms" 1e-6]
+                  1e10 ["%.2fs"  1e-9]
+                  5e10 ["%.1fs"  1e-9]
+                  ["%.0fs" 1e-9])]
+      (format f (* s t)))))
+
+(defn- render-tracegraph-dot [g]
+  (tgl/graph->dot
+
+   ;; nodes
+   (for [[k v] (sort-by #(some-> % second :start-at -) (:nodes g))]
+     (assoc v :id k))
+
+   ;;regular links
+   (sort-by
+    (fn [[_ c]] (some-> c :time -))
+    (for [[[a b] c] (:links g)]
+      [(str (:yankid-dst c) "$" b)
+       (str (:yankid-src c) "$" a)
+       c]))
+
+   ;; tangle.core options
+   {:directed? true
+
+    :node->id
+    (fn [{:keys [id yankid]}]
+      (str yankid "$" id))
+
+    :graph {:dpi 120
+            :rankdir :TB
+            :ranksep 1.5
+            :newrank true}
+
+    :node->cluster
+    (fn [{:keys [yankid]}]
+      (str yankid))
+
+    :cluster->descriptor
+    (fn [c]
+      (let [x (-> (parse-long c))
+            sg (-> g :clusters (get x))]
+        {:label (str
+                 (nice-time (or (:shift sg) 0))
+                 " ⊕ "
+                 "Δ" (nice-time (:time sg))
+                 " ⟹ "
+                 (nice-time (safe-minus (:done-at sg) (:base-at g))))
+         :style "dashed"
+         :color "gray"
+         :labelloc "b"
+         :labeljust "r"
+         :fontsize  10}))
+
+    :node->descriptor
+    (fn [{:keys [type deferred id value thread error
+                 start-at deps-time func-time finish-at]}]
+      {:shape :rect
+       :color "silver"
+       :style  (cond
+                 (= :lazy-unused type) "dotted,filled"
+                 (= :input type)       "dotted,filled"
+                 (= :yanked type)      "bold,filled"
+                 deferred              "rounded,filled"
+                 :else                 "solid,filled")
+       :fillcolor (cond
+                    error                   "lightpink"
+                    (= :lazy-unused type)   "lightcyan"
+                    (= :leaked type)        "violet"
+                    (= :input type)         "skyblue"
+                    (= :changed-input type) "lightpink"
+                    (= :yanked type)        "lightgreen"
+                    deferred                "navajowhite"
+                    :else                   "lemonchiffon")
+       :label [:font
+               {:face "monospace" :point-size 7, :color "darkslategray"}
+               (cond-> [:table {:border 0}]
+                 true
+                 (conj
+                  [:tr [:td {:colspan 2}
+                        [:font {:face "monospace bold"
+                                :point-size 10
+                                :color "black"}
+                         (str id)]]])
+
+                 (not (#{:lazy-unused :leaked} type))
+                 (conj
+                  [:tr [:td {:colspan 2, :align "text"}
+                        [:font {:point-size 9
+                                :face "monospace",
+                                :color "blue"}
+                         (cond
+                           (some-> error ex-data ::mdm-frozen)
+                           ""
+
+                           (and error (instance? clojure.lang.IExceptionInfo error))
+                           [:font
+                            (ex-message error)
+                            [:br {:align :left}]
+                            (some-> error ex-data short-string-multiline)]
+
+                           error
+                           [:font
+                            "exception " (-> error class (.getName))
+                            [:br {:align :left}]
+                            (ex-message error)]
+
+                           :else (short-string-multiline value))
+                         [:br {:align :left}]]]])
+
+                 (#{:lazy-unused} type)
+                 (conj [:tr [:td {:colspan 2} "unused"]])
+
+                 (#{:leaked} type)
+                 (conj [:tr [:td {:colspan 2} "leaked"]])
+
+                 (#{:yanked :interim :leaked} type)
+                 (conj
+                  [:tr [:td {:align :left}
+                        (if deferred
+                          "thread*"
+                          "thread")]
+                   [:td {:align :right} (short-string 40 thread)]]
+                  [:tr [:td {:align :left} "time"]
+                   [:td {:align :right}
+                    (nice-time (safe-minus start-at (:base-at g)))
+                    " ⊕ "
+                    "Δ" (or (nice-time deps-time) "...")
+                    " ⊎ "
+                    "Δ" (or (nice-time func-time) "...")
+                    (when finish-at " ⟹ ")
+                    (when finish-at
+                      [:font {:color "black"}
+                       (nice-time (safe-minus finish-at (:base-at g)))])]]))]})
+
+    :edge->descriptor
+    (fn [_ _ {:keys [source type used cause timex]}]
+      {:label     (or (when (and timex (pos? timex))
+                        (str "+" (nice-time timex)))
+                      "")
+       :fontsize  8
+       :dir       "both"
+       :color     (if cause "black" "dimgrey")
+       :arrowsize "0.7"
+       :arrowtail (cond
+                    (#{:sync} source)               "normal"
+                    (#{:defer :input-defer} source) "empty"
+                    (#{:input} source)              "vee"
+                    (#{:changed-input} type)        "none"
+                    :else                           "normal")
+       :arrowhead (cond
+                    (= :sync type)           "none"
+                    (= :defer type)          "odot"
+                    (= :lazy-sync type)      "diamond"
+                    (= :lazy-defer type)     "odiamond"
+                    (#{:changed-input} type) "none"
+                    :else                    "normal")
+       :constraint  (not= type :changed-input)
+       :style (cond
+                cause                   "bold"
+                (not used)              "dotted"
+                (= type :changed-input) "tapered"
+                :else                   "solid")})}))
+
+(defn- fix-xdot-escapes [d]
+  ;; slow workaround for https://gitlab.com/graphviz/graphviz/-/issues/165
+  (str/replace d "\\" "⧵"))
+
+
+(defn untangle*
+  [traces type]
+  (let [gs (map parse-trace traces)
+        g (merge-parsed-traces gs)]
+    (case type
+      :raw g
+      :dot (render-tracegraph-dot g)
+      ::xdot (fix-xdot-escapes (render-tracegraph-dot g))
+      :png (tgl/dot->image (render-tracegraph-dot g) "png")
+      :svg (tgl/dot->svg (render-tracegraph-dot g))
+      (tgl/dot->image (render-tracegraph-dot g) (name type)))))
+
+
+(def xdot-available
+  (delay
+   (zero? (:exit (clojure.java.shell/sh "python" "-m" "xdot" "--help")))))
+
+
+(def graphviz-available
+  (delay
+   (zero? (:exit (clojure.java.shell/sh "dot" "-V")))))
+
+
+(defn untangle [poy]
+  (let [t (find-traces poy)]
+    (cond
+      (nil? t)
+      (println "no knitty trace found")
+
+      (and (force xdot-available) (force graphviz-available))
+      (let [f (java.io.File/createTempFile "knitty_untangle_" ".xdot")]
+        (io/copy (untangle* t ::xdot) f)
+        (future (clojure.java.shell/sh "python" "-m" "xdot" (str f))))
+
+      (force graphviz-available)
+      (let [f (java.io.File/createTempFile "knitty_untangle_" ".svg")]
+        (io/copy (untangle* t :svg) f)
+        (future (clojure.java.browse/browse-url f)))
+
+      :else
+      (print "graphviz (dot) was not found, please install it."))))
+
+
+;; PUBLIC HELPERS
 
 (defmacro with-yarns [yarns & body]
   `(binding [*registry*
@@ -496,10 +881,12 @@
       (filter #(= s (namespace (key %)))))
      m)))
 
+
 (defn assert-spec-keys [m]
   (s/assert ::pile-of-yarn m))
 
 
+;;  #_{:clj-kondo/ignore [:knitty/defyarn-symref]}
 (comment
 
   (do
@@ -538,7 +925,7 @@
       (future (+ x y)))
 
     (defyarn five
-      {x ::two, y three}    ;; mixed approach
+      {x ::two, y three}    ;; mixed approach 
       (+ x y))
 
     (defyarn six
@@ -571,5 +958,43 @@
                 [(yarn ::seven {s ::six} (float (+ s 1)))
                  (yarn ::seven {s ::six} (long (+ s 1)))])]
     @(yank {} [::seven]))
-)
+
+   ;; recommended to insntall 'xdot' (via pkg manager or pip)
+  (untangle @(yank {} [six]))
+
+   ;; get raw format
+  (untangle* @(md/chain (yank {} [six]) second) :raw)
+
+   ;; or graphviz dot
+  (untangle* @(md/chain (yank {} [six]) second) :dot)
+
+
+  (identity
+   (untangle*
+    (->
+     @(md/chain
+       {}
+       #(yank % [four])
+       second
+       #(yank % [six])
+       second)
+     meta
+     ::trace)
+    :raw))
+
+  (untangle
+   (md/chain
+    {}
+    #(yank % [two]) second
+    #(yank % [five]) second
+    #(assoc % ::two 222222)
+    #(yank % [six]) second))
+
+  (untangle (yank {} [six]))
+
+  ;; get raw format
+  (untangle* @(md/chain (yank {} [six]) second) :raw)
+
+  ;; or graphviz dot
+  (untangle* @(md/chain (yank {} [six]) second) :dot))
 
