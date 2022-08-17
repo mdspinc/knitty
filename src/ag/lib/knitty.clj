@@ -19,6 +19,8 @@
 ;; mapping {keyword => Yarn}
 (def ^:dynamic *registry* {})
 
+(def ^:dynamic *tracing* true)
+
 
 (defprotocol IYarn
   (yarn-snatch* [_ mdm reg tracer] "get value or obligated deferred")
@@ -32,6 +34,14 @@
   IYarn
   (yarn-snatch* [_ mdm reg tracer] (yget mdm reg tracer))
   (yarn-key* [_] yarn))
+
+(defprotocol Tracer
+  (trace-start [_])
+  (trace-call [_])
+  (trace-finish [_ value error async])
+  (trace-dep [_ k])
+  (trace-all-deps [_ yarns])
+  (trace-build-sub-tracer [_ k]))
 
 
 (defn register-yarn [yarn]
@@ -96,6 +106,82 @@
   (LockedMapMDM. poy (Object.) (volatile! false) (HashMap. (int hm-size))))
 
 
+;; TRACING
+
+(defrecord TraceLog
+           [yarn
+            event
+            value])
+
+(defrecord Trace
+           [at
+            base-at
+            done-at
+            poy
+            yarns
+            tracelog])
+
+
+(deftype NilTracer []
+  Tracer
+  (trace-start [_])
+  (trace-call [_])
+  (trace-finish [_ _value _error _async])
+  (trace-dep [_ _yarn])
+  (trace-all-deps [_ _yarns])
+  (trace-build-sub-tracer [this _yarn] this))
+
+(def nil-tracer (NilTracer.))
+
+
+(defmacro ^:private now [] `(System/nanoTime))
+
+(defn- aconj-tlog [a yarn event value]
+  (let [t (TraceLog. yarn event value)]
+    (swap! a #(when % (cons t %)))))
+
+(deftype TracerImpl
+         [store
+          this-yarn
+          by-yarn]
+
+  Tracer
+  (trace-start [_]
+    (aconj-tlog store this-yarn ::trace-start (now))
+    (aconj-tlog store this-yarn ::trace-caller by-yarn))
+
+  (trace-call [_]
+    (aconj-tlog store this-yarn ::trace-call (now))
+    (aconj-tlog store this-yarn ::trace-thread (.getName (Thread/currentThread))))
+
+  (trace-dep [_ yarn]
+    (aconj-tlog store this-yarn ::trace-dep [yarn (now)]))
+
+  (trace-all-deps
+    [_ yarns]
+    (aconj-tlog store this-yarn ::trace-all-deps yarns))
+
+  (trace-build-sub-tracer
+    [_ k]
+    (TracerImpl. store k this-yarn))
+
+  (trace-finish
+    [_ value error deferred]
+    (when deferred
+      (aconj-tlog store this-yarn ::trace-deferred true))
+    (when value
+      (aconj-tlog store this-yarn ::trace-value value))
+    (when error
+      (aconj-tlog store this-yarn ::trace-error error))
+    (aconj-tlog store this-yarn ::trace-finish (now))))
+
+(defn- empty-tracer [root]
+  (let [a (atom ())]
+    [a (TracerImpl. a root nil)]))
+
+
+;; YARN CODEGEN
+
 (defn coerce-deferred [v]
   (let [v (force v)]
     (md/unwrap' (md/->deferred v v))))
@@ -143,7 +229,8 @@
              :else (throw (ex-info "invalid yarn" {::yarn k})))]
     (when-not yd
       (throw (ex-info "yarn is not registered" {::yarn k})))
-    (yarn-snatch* yd mdm registry tracer)))
+    (trace-dep tracer k)
+    (yarn-snatch* yd mdm registry (trace-build-sub-tracer tracer k))))
 
 
 (defn yarn-snatch-defer [mdm k reg tracer]
@@ -227,6 +314,7 @@
            ~the-fnv
            (fn ~(fnname "vec")
              ([[~@deps] ~tracer]
+              (trace-call ~tracer)
               (coerce-deferred (let [~@maybe-unwrap-defers] ~expr))))
 
            ;; input - mdm and registry, called by `yank-snatch
@@ -236,7 +324,9 @@
                (if new#
                  (maybe-future-with
                   ~executor-var
+                  (trace-start ~tracer)
                   (try ;; d# is alsways deffered
+                    (trace-all-deps ~tracer dep-keys#)
                     (let [~@yank-all-deps]
                       (let [x# (if ~(or
                                      (some? executor-var)
@@ -246,9 +336,22 @@
                                         `(md/deferred? ~d))))
                                  (md/chain' (md/zip' ~@deps) #(~the-fnv % ~tracer))
                                  (~the-fnv [~@deps] ~tracer))]
-                        (md/connect x# d#)
+                        (if (md/deferred? x#)
+                          (md/on-realized
+                           x#
+                           (fn [xv#]
+                             (trace-finish ~tracer xv# nil true)
+                             (md/success! d# xv#))
+                           (fn [xv#]
+                             (trace-finish ~tracer nil xv# true)
+                             (md/error! d# xv#)))
+                          (do
+                            (trace-finish ~tracer x# nil false)
+                            (md/success! d# x#)))
+
                         x#))
                     (catch Throwable e#
+                      (trace-finish ~tracer nil e# false)
                       (md/error! d# e#)
                       d#)))
                  (do
@@ -325,9 +428,9 @@
 
 
 (defn yank*
-  [poy yarns registry]
+  [poy yarns registry tracer]
   (let [mdm (locked-hmap-mdm poy (max 8 (* 2 (count yarns))))
-        ydefs (map #(yarn-snatch mdm % registry nil) yarns)]
+        ydefs (map #(yarn-snatch mdm % registry tracer) yarns)]
     (md/catch'
      (md/chain'
       (apply md/zip' ydefs)
@@ -340,11 +443,40 @@
                        e))))))
 
 
+(def ^:private yank-cnt (atom 0))
+
 (defn yank
   [poy yarns]
   (assert (map? poy) "poy should be a map")
   (assert (sequential? yarns) "yarns should be vector/sequence")
-  (yank* poy yarns *registry*))
+
+  (if-not *tracing*
+    (yank* poy yarns *registry* nil-tracer)
+    (let [at (java.util.Date.)
+          [a t] (empty-tracer ::yank)
+          base (now)
+          pick-trace!
+          (fn []
+            (let [aa @a]
+              (reset! a nil)
+              (map->Trace
+               {:at at
+                :yankid (swap! yank-cnt inc)
+                :base-at base
+                :done-at (now)
+                :poy poy
+                :yarns (mapv yarn-key yarns)
+                :tracelog aa})))]
+      (->
+       (md/chain'
+        (yank* poy yarns *registry* t)
+        (fn [[vs poy']] [vs (vary-meta poy' update ::trace conj (pick-trace!))]))
+       (md/catch' clojure.lang.IExceptionInfo
+                  #(throw
+                    (ex-info "Failed to yank"
+                             (assoc (ex-data %) ::trace (conj (-> poy meta ::trace) (pick-trace!)))
+                             (ex-cause %))))))))
+
 
 
 (defmacro with-yarns [yarns & body]
