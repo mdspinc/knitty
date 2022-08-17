@@ -105,6 +105,23 @@
       (into poy (map (fn [[k v]] [k (unwrap-mdm-deferred v)])) hm))))
 
 
+(defmethod print-method ::leaked-deferred [y ^java.io.Writer w]
+  (.write w "#knitty.LeakD[")
+  (let [error (md/error-value y nil)]
+    (cond
+      error 
+      (do
+        (.write w ":error ")
+        (print-method (class error) w)
+        (.write w " ")
+        (print-method (ex-message error) w))
+      (md/realized? y)
+      (do
+        (.write w ":value ")
+        (print-method (md/success-value y nil) w))
+      :else
+      (.write w "…")))
+  (.write w "]"))
 
 
 (defn- locked-hmap-mdm [poy hm-size]
@@ -125,6 +142,19 @@
             poy
             yarns
             tracelog])
+
+;; PPRINT
+
+(defmethod print-method Trace
+  [x ^java.io.Writer w]
+  (.write w "#knitty.Trace{")
+  (.write w ":at ")
+  (print-method (:at x) w)
+  (.write w " :yarns ")
+  (print-method (:yarns x) w)
+  (.write w " :tracelogs-count ")
+  (print-method (count (:tracelog x)) w) 
+  (.write w " ...}"))
 
 
 (deftype NilTracer []
@@ -870,6 +900,11 @@
                    (map #(vector (yarn-key %) %))
                    ~yarns)]
      ~@body))
+
+
+(defmethod print-method Yarn [y ^java.io.Writer w]
+  (.write w "#knitty/yarn ")
+  (.write w (str (yarn-key* y))))
 
 
 (defn select-ns-keys [m ns]
