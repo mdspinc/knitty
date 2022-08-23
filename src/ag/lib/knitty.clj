@@ -47,9 +47,10 @@
 (defn- unwrap-mdm-deferred
   [d]
   (let [d (md/unwrap' d)]
-    (when (md/deferred? d)
-      (alter-meta! d assoc ::leaked true :type ::leaked-deferred))
-    d))
+    (when-not (identical? d ::nil)
+      (when (md/deferred? d)
+        (alter-meta! d assoc ::leaked true :type ::leaked-deferred))
+      d)))
 
 
 (deftype LockedMapMDM
