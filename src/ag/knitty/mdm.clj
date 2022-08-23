@@ -13,12 +13,13 @@
 (defn- unwrap-mdm-deferred
   [d]
   (let [d (md/unwrap' d)]
-    (when (md/deferred? d)
-      (alter-meta! d assoc
-                   ::leaked true   ;; actual indicator of leaking
-                   :type ::leaked  ;; use custom print-method
-                   ))
-    d))
+    (when-not (= ::nil d)
+      (when (md/deferred? d)
+        (alter-meta! d assoc
+                     ::leaked true   ;; actual indicator of leaking
+                     :type ::leaked  ;; use custom print-method
+                     ))
+      d)))
 
 
 (deftype LockedMapMDM
