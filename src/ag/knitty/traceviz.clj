@@ -1,13 +1,27 @@
-(ns ag.knitty.traceviz 
-  (:require [ag.knitty.trace 
-             :refer [find-traces
-                     merge-parsed-traces
-                     parse-trace]]
+(ns ag.knitty.traceviz
+  (:require [ag.knitty.trace
+             :refer [find-traces merge-parsed-traces parse-trace]]
             [clojure.java.browse :as browse]
             [clojure.java.io :as io]
             [clojure.java.shell :as shell]
+            [clojure.math :as m]
+            [clojure.pprint :as pp]
             [clojure.string :as str]
             [tangle.core :as tgl]))
+
+
+(def ^:dynamic *options*
+  {:format :auto        ;; #{:xdot :raw :edn :svg :svgz :png :pdf :webp :json}
+   :dpi 120             ;; rendering dpi
+   :width 150           ;; max text width
+   :lines 32            ;; max lines in text
+   :pp-max-len 20       ;; print first n items of seqs
+   :pp-max-level 6      ;; print first n levels of colls
+   :clusters true       ;; group sub-traces into clusters
+   :concentrate false   ;; concentrate edges (merge)
+   :hspace 0.5          ;; horizontal space between nodes
+   :vspace 1.5          ;; vertical space between nodes
+   })
 
 
 (defn- graphviz-escape [s]
@@ -17,23 +31,34 @@
      {\< "&lt;", \> "&gt;", \& "&amp;"})
     ""))
 
+
 (defn- short-string [n s]
   (graphviz-escape
    (if (> (count s) n)
-     (str (subs s 0 (- n 3)) "…")
+     (str (subs s 0 (- n 1)) "…")
      s)))
 
+
+(defn- limit-lines [n ss]
+  (concat
+   (take n ss)
+   (when (> (count ss) n) ["…"])))
+
+
 (defn- short-string-multiline [s]
-  (binding  [*print-length* 8
-             *print-level* 2
-             *print-namespace-maps* true]
+  (binding  [*print-length* (:lines *options*)
+             *print-level* (:pp-max-level *options*)
+             pp/*print-lines* (inc (:lines *options*))
+             pp/*print-right-margin* (:width *options*)]
     (->>
-     (pr-str s)
-     (short-string #=(* 10 60))
-     (partition-all 60)
-     (map #(str/join "" %))
+     (with-out-str
+       (pp/pprint s))
+     (str/split-lines)
+     (limit-lines (:lines *options*))
+     (map #(short-string (:width *options*) %))
      (map graphviz-escape)
-     (str/join "<br />"))))
+     (cons "")
+     (str/join "<br align=\"left\" />"))))
 
 
 (defn- safe-minus [a b]
@@ -41,20 +66,20 @@
     (- a b)))
 
 
+(defn p3-round [x]
+  (let [p (m/ceil (m/log10 x))
+        b (m/pow 10.0 (- p 3.0))]
+    (-> x (/ b) (m/round) (* b) (float))))
+
+
 (defn- nice-time [t]
   (when t
-    (let [[f s] (condp > t
-                  1e3  ["%.0fns" 1e-0]
-                  1e4  ["%.2fus" 1e-3]
-                  5e4  ["%.1fus" 1e-3]
-                  1e6  ["%.0fus" 1e-3]
-                  1e7  ["%.2fms" 1e-6]
-                  3e7  ["%.1fms" 1e-6]
-                  5e8  ["%.0fms" 1e-6]
-                  1e10 ["%.2fs"  1e-9]
-                  5e10 ["%.1fs"  1e-9]
-                  ["%.0fs" 1e-9])]
-      (format f (* s t)))))
+    (let [ms (p3-round (* t 1e-6))
+          s (format "%.5f" ms)
+          [_ s] (re-matches #"(.*\..+?)0*" s)    ;; strip trailing 0s
+          [_ s] (re-matches #"(.*?)(?:\.0)?" s)  ;; strip ".0"
+          ]
+      (str s "㎳"))))
 
 
 (defn- render-tracegraph-dot [g]
@@ -79,14 +104,16 @@
     (fn [{:keys [id yankid]}]
       (str yankid "$" id))
 
-    :graph {:dpi 120
+    :graph {:dpi (:dpi *options*)
             :rankdir :TB
-            :ranksep 1.5
-            :newrank true}
+            :ranksep (:vspace *options*)
+            :nodesep (:hspace *options*)
+            :concentrate (:concentrate *options*)}
 
     :node->cluster
-    (fn [{:keys [yankid]}]
-      (str yankid))
+    (when (:clusters *options*)
+      (fn [{:keys [yankid]}]
+        (str yankid)))
 
     :cluster->descriptor
     (fn [c]
@@ -138,7 +165,7 @@
                  (not (#{:lazy-unused :leaked} type))
                  (conj
                   [:tr [:td {:colspan 2, :align "text"}
-                        [:font {:point-size 9
+                        [:font {:point-size 8
                                 :face "monospace",
                                 :color "blue"}
                          (cond
@@ -148,16 +175,15 @@
                            (and error (instance? clojure.lang.IExceptionInfo error))
                            [:font
                             (ex-message error)
-                            [:br {:align :left}]
                             (some-> error ex-data short-string-multiline)]
 
                            error
                            [:font
                             "exception " (-> error class (.getName))
-                            [:br {:align :left}]
                             (ex-message error)]
 
                            :else (short-string-multiline value))
+
                          [:br {:align :left}]]]])
 
                  (#{:lazy-unused} type)
@@ -205,32 +231,36 @@
                     (= :defer type)          "odot"
                     (= :lazy-sync type)      "diamond"
                     (= :lazy-defer type)     "odiamond"
-                    (#{:changed-input} type) "none"
+                    (= :changed-input type)  "none"
                     :else                    "normal")
        :constraint  (not= type :changed-input)
        :style (cond
                 cause                   "bold"
                 (not used)              "dotted"
                 (= type :changed-input) "tapered"
-                :else                   "solid")})}))
+                :else                   "solid")})
+                }))
+
 
 (defn- fix-xdot-escapes [d]
   ;; slow workaround for https://gitlab.com/graphviz/graphviz/-/issues/165
   (str/replace d "\\" "⧵"))
 
 
-(defn view-trace*
-  [traces type]
-  (when-let [traces (find-traces traces)]
-    (let [gs (map parse-trace traces)
-          g (merge-parsed-traces gs)]
-      (case type
-        :raw g
-        :dot (render-tracegraph-dot g)
-        ::xdot (fix-xdot-escapes (render-tracegraph-dot g))
-        :png (tgl/dot->image (render-tracegraph-dot g) "png")
-        :svg (tgl/dot->svg (render-tracegraph-dot g))
-        (tgl/dot->image (render-tracegraph-dot g) (name type))))))
+(defn render-trace
+  [traces & {:as options}]
+  (binding [*options* (into *options* options)]
+    (when-let [traces (find-traces traces)]
+      (let [gs (map parse-trace traces)
+            g (merge-parsed-traces gs)]
+        (case (:format *options*)
+          :raw g
+          :edn (pr-str g)
+          :dot (render-tracegraph-dot g)
+          :xdot (fix-xdot-escapes (render-tracegraph-dot g))
+          :svg (tgl/dot->svg (render-tracegraph-dot g))
+          :png (tgl/dot->image (render-tracegraph-dot g) "png")
+          (tgl/dot->image (render-tracegraph-dot g) (name (:format *options*))))))))
 
 
 (def xdot-available
@@ -243,25 +273,43 @@
    (zero? (:exit (shell/sh "dot" "-V")))))
 
 
-(defn view-trace [poy]
-  (cond 
-    
-    (and (force xdot-available) (force graphviz-available))
-    (let [t (view-trace* poy ::xdot)
-          f (java.io.File/createTempFile "knitty_untangle_" ".xdot")]
-      (when-not t
-        (throw (ex-info "trace not found" {::poy poy})))
-      (io/copy t f)
-      (future (shell/sh "python" "-m" "xdot" (str f))))
+(defn- open-rendered-trace [poy options open-f] 
+  (let [t (render-trace poy options)
+        f (java.io.File/createTempFile
+           "knitty-"
+           (str "." (name (:format options))))]
+    (when-not t
+      (throw (ex-info "trace not found" {::poy poy})))
+    (io/copy t f)
+    (future (open-f (str f)))))
 
-    (force graphviz-available)
-    (let [t (view-trace* poy :svg)
-          f (java.io.File/createTempFile "knitty_untangle_" ".svg")]
-      (when-not t
-        (throw (ex-info "trace not found" {::poy poy})))
-      (io/copy t f)
-      (future (browse/browse-url f)))
 
-    :else
-    (throw (ex-info "graphviz (dot) not found, please install it" {}))))
+(defn view-trace [poy & {:as options}]
+  (let [options (merge *options* options)
+        f (:format options)
+        auto (= :auto f)]
+    (cond
 
+      (or
+       (= :xdot f)
+       (and auto
+            (force xdot-available)
+            (force graphviz-available)))
+      (open-rendered-trace poy 
+                           (assoc options :format :xdot)
+                           #(shell/sh "python" "-m" "xdot" %))
+
+      (or
+       (#{:svg :svgz :png :pdf :webp :json} f)
+       (and auto (force graphviz-available)))
+      (open-rendered-trace poy options browse/browse-url)
+
+      (#{:auto :edn :raw} f)
+      (open-rendered-trace poy (assoc options :format :edn)
+                           browse/browse-url)
+
+      :else
+      (throw (ex-info (str "unavailable traceviz format " f)
+                      {:format f
+                       :graphviz-installed (force graphviz-available)
+                       :xdot-installed (force xdot-available)})))))

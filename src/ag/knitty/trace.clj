@@ -53,38 +53,40 @@
          [store
           this-yarn
           by-yarn
-          extra
-          ]
+          extra]
 
   Tracer
-  (trace-start [_]
-    (aconj-tlog store this-yarn ::trace-start (now))
-    (aconj-tlog store this-yarn ::trace-caller by-yarn))
+  (trace-start
+   [_]
+   (aconj-tlog store this-yarn ::trace-start (now))
+   (aconj-tlog store this-yarn ::trace-caller by-yarn))
 
-  (trace-call [_]
-    (aconj-tlog store this-yarn ::trace-call (now))
-    (aconj-tlog store this-yarn ::trace-thread (.getName (Thread/currentThread))))
+  (trace-call
+   [_]
+   (aconj-tlog store this-yarn ::trace-call (now))
+   (aconj-tlog store this-yarn ::trace-thread (.getName (Thread/currentThread))))
+
 
   (trace-dep [_ yarn]
     (aconj-tlog store this-yarn ::trace-dep [yarn (now)]))
 
   (trace-all-deps
-    [_ yarns]
-    (aconj-tlog store this-yarn ::trace-all-deps yarns))
+   [_ yarns]
+   (aconj-tlog store this-yarn ::trace-all-deps yarns))
 
   (trace-build-sub-tracer
-    [_ k]
-    (TracerImpl. store k this-yarn nil))
+   [_ k]
+   (TracerImpl. store k this-yarn nil))
 
   (trace-finish
-    [_ value error deferred]
-    (when deferred
-      (aconj-tlog store this-yarn ::trace-deferred true))
-    (when value
-      (aconj-tlog store this-yarn ::trace-value value))
-    (when error
-      (aconj-tlog store this-yarn ::trace-error error))
-    (aconj-tlog store this-yarn ::trace-finish (now)))
+   [_ value error deferred]
+   (when deferred
+     (aconj-tlog store this-yarn ::trace-deferred true))
+   (when value
+     (aconj-tlog store this-yarn ::trace-value value))
+   (when error
+     (aconj-tlog store this-yarn ::trace-error error))
+   (aconj-tlog store this-yarn ::trace-finish (now)))
   
   (capture-trace!
    [_]
@@ -93,8 +95,7 @@
      (map->Trace
       (assoc extra
              :done-at (now)
-             :tracelog s))))
-)
+             :tracelog s)))))
 
 
 (def ^:private yank-cnt (atom 0))
@@ -163,7 +164,7 @@
               (for [pd ex-deps]
                 [pd (if (contains? poy pd)
                       {:type :input, :value (get poy pd), :yankid yankid}
-                      {:type :lazy-unused, :deferred true, :yankid yankid})])))
+                      {:type :lazy-unused, :value ::unused, :deferred true, :yankid yankid})])))
      :links (into
              {}
              (concat
@@ -187,7 +188,8 @@
 
 (defn- merge-two-parsed-traces [b a]
   (let [nodes-a (into {} (:nodes a))
-        nodes-b (into {} (:nodes b))]
+        nodes-b (into {} (:nodes b))
+        ]
     {:clusters (assoc (:clusters b)
                       (:yankid a) {:at (:at a)
                                    :time (:time a)
@@ -198,11 +200,11 @@
      :base-at (or (:base-at b) (:base-at a))
      :done-at (or (:done-at b) (:done-at a))
      :at      (or (:at b) (:at a))
-     :time    (+ (:time b 0) (:time a 0)) 
+     :time    ((fnil + 0 0) (:time b 0) (:time a 0)) 
      
      :nodes (concat
              (:nodes b)
-             (for [[y n :as yn] (:nodes a)
+             (for [[y n] (:nodes a)
                    :let [n1 (nodes-b y)
                          n2 (nodes-a y)
                          eq (= (:value n1) (:value n2))
@@ -214,16 +216,18 @@
                    :when (or (nil? n1) (not eq))]
                (if changed
                  [y (assoc n :type :changed-input)]
-                 yn))) 
+                 [y n]))) 
      
      :links (concat
              (:links b)
+             
              (for [[[_ y :as xy] c] (:links a)]
                (if (and (contains? nodes-b y)
                         (= (:value (nodes-b y))
                            (:value (nodes-a y))))
                  [xy (assoc c :yankid-dst (:yankid (nodes-b y)))]
                  [xy c]))
+             
              (set
               (for [[[_ y] _] (:links a)
                     :let [n1 (nodes-b y)

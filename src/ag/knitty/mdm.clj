@@ -16,8 +16,8 @@
     (when-not (= ::nil d)
       (when (md/deferred? d)
         (alter-meta! d assoc
-                     ::leaked true   ;; actual indicator of leaking
-                     :type ::leaked  ;; use custom print-method
+                     ::leakd true   ;; actual indicator of leaking
+                     :type ::leakd  ;; use custom print-method
                      ))
       d)))
 
@@ -61,7 +61,7 @@
       (into init (map (fn [[k v]] [k (unwrap-mdm-deferred v)])) hm))))
 
 
-(defmethod print-method ::leaked [y ^java.io.Writer w]
+(defmethod print-method ::leakd [y ^java.io.Writer w]
   (.write w "#ag.knitty/LeakD[")
   (let [error (md/error-value y nil)]
     (cond

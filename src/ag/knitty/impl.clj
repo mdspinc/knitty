@@ -227,5 +227,9 @@
                        {:ag.knitty/poy poy
                         :ag.knitty/yarns yarns
                         :ag.knitty/mdm (mdm-freeze! mdm)
-                        :ag.knitty/trace (when tracer (capture-trace! tracer))}
+                        :ag.knitty/trace (when tracer
+                                           (conj
+                                            (-> poy meta :ag.knitty/trace)
+                                            (capture-trace! tracer))
+                                           )}
                        e))))))
