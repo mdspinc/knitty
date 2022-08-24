@@ -186,43 +186,55 @@
 
 
 (defn- merge-two-parsed-traces [b a]
-  (let [nodesa (into {} (:nodes a))
-        nodesb (into {} (:nodes b))
-        sameval #(= (:value (get nodesb %)) (:value (get nodesa %)))]
+  (let [nodes-a (into {} (:nodes a))
+        nodes-b (into {} (:nodes b))]
     {:clusters (assoc (:clusters b)
                       (:yankid a) {:at (:at a)
                                    :time (:time a)
                                    :base-at (:base-at a)
                                    :done-at (:done-at a)
                                    :shift (safe-minus (:base-at a) (:base-at b))})
+     
      :base-at (or (:base-at b) (:base-at a))
      :done-at (or (:done-at b) (:done-at a))
-     :at   (or (:at b) (:at a))
-     :time   (+ (:time b 0) (:time a 0))
+     :at      (or (:at b) (:at a))
+     :time    (+ (:time b 0) (:time a 0)) 
+     
      :nodes (concat
              (:nodes b)
              (for [[y n :as yn] (:nodes a)
-                   :let [inb (contains? nodesb y)
-                         eq  (sameval y)]
-                   :when (or (not inb) (not eq))]
-               (if inb
+                   :let [n1 (nodes-b y)
+                         n2 (nodes-a y)
+                         eq (= (:value n1) (:value n2))
+                         changed (and
+                                  n1 n2
+                                  (not eq)
+                                  (not= :lazy-unused (:type n1))
+                                  (not= :lazy-unused (:type n2)))]
+                   :when (or (nil? n1) (not eq))]
+               (if changed
                  [y (assoc n :type :changed-input)]
-                 yn)))
+                 yn))) 
+     
      :links (concat
              (:links b)
              (for [[[_ y :as xy] c] (:links a)]
-               (if (and (contains? nodesb y)
-                        (= (:value (nodesb y))
-                           (:value (nodesa y))))
-                 [xy (assoc c :yankid-dst (:yankid (nodesb y)))]
+               (if (and (contains? nodes-b y)
+                        (= (:value (nodes-b y))
+                           (:value (nodes-a y))))
+                 [xy (assoc c :yankid-dst (:yankid (nodes-b y)))]
                  [xy c]))
              (set
               (for [[[_ y] _] (:links a)
-                    :when (contains? nodesb y)
-                    :when (not= (:value (nodesb y)) (:value (nodesa y)))]
-                [[y y] {:yankid-dst (:yankid (nodesb y)),
-                        :yankid-src (:yankid (nodesa y)),
-                        :type :changed-input}])))}))
+                    :let [n1 (nodes-b y)
+                          n2 (nodes-a y)]
+                    :when (and
+                           n1 n2
+                           (not= (:value n1) (:value n2)))]
+                [[y y] {:yankid-dst (:yankid (nodes-b y)),
+                        :yankid-src (:yankid (nodes-a y)),
+                        :type :changed-input}])))
+     }))
 
 
 (defn merge-parsed-traces [gs]
