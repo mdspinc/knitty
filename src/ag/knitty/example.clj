@@ -1,6 +1,6 @@
 (ns ag.knitty.example
-  (:require [ag.knitty.core :refer [defyarn yarn with-yarns yank]]
-            [ag.knitty.traceviz :refer [view-trace view-trace*]]
+  (:require [ag.knitty.core :refer [defyarn yarn with-yarns doyank yank]]
+            [ag.knitty.traceviz :refer [view-trace render-trace]]
             [manifold.deferred :as md]))
 
 (defyarn zero;; define "yarn" - single slot/value
@@ -86,8 +86,11 @@
   #(yank % [six]) second))
 
 ;; get raw format
-(view-trace* (yank {} [six]) :raw)
+(render-trace (yank {} [six]) :raw)
 
 ;; or graphviz dot
-(view-trace* (yank {} [six]) :dot)
+(render-trace (yank {} [six]) :dot)
 
+@(doyank
+  {one 10} {x six}
+  (println ">>" x))

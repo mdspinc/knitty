@@ -107,3 +107,17 @@
        ;; )
        ])
      }))
+
+
+(defn doyank [{:keys [node]}]
+  (let [[_ poy bmap & body] (:children node)]
+    ;; (doyank x {} body) => (do (yarn ::fake {} body) x)
+    {:node
+     (api/list-node
+      [(api/token-node `do)
+       (yarn*
+        [::fake
+         bmap
+         (api/list-node
+          (list* (api/token-node `do) body))])
+       poy])}))

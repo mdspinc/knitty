@@ -5,6 +5,7 @@
             [clojure.java.browse-ui]
             [clojure.java.shell]
             [clojure.spec.alpha :as s]
+            [manifold.deferred :as md]
             [manifold.executor]))
 
 ;; >> API
@@ -86,3 +87,14 @@
                    (map #(vector (yarn-key %) %))
                    ~yarns)]
      ~@body))
+
+
+(defmacro doyank
+  [poy binds & body] 
+  (when-not (s/valid? ::yarn-binding binds)
+    (throw (Exception. (s/explain-str ::yarn-binding binds))))
+  `(md/chain'
+    (yank ~poy ~(vec (vals binds)))
+    (fn [[[~@(keys binds)] ctx#]]
+      ~@body
+      ctx#)))
