@@ -23,7 +23,7 @@
 
 (defn coerce-deferred [v]
   (let [v (force v)]
-    (md/unwrap' (md/->deferred v v))))
+    (md/unwrap (md/->deferred v v))))
 
 
 (defn- as-deferred [v]
