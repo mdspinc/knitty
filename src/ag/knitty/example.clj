@@ -86,11 +86,13 @@
   #(yank % [six]) second))
 
 ;; get raw format
-(render-trace (yank {} [six]) :raw)
+(render-trace (yank {} [six]), :format :raw)
 
 ;; or graphviz dot
-(render-trace (yank {} [six]) :dot)
+(render-trace (yank {} [six]), :format :dot)
 
+;; yank & run code & return poy'
 @(doyank
-  {one 10} {x six}
-  (println ">>" x))
+  {one 10}
+  {x six}
+  (println "x =" x))

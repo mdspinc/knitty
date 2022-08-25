@@ -55,10 +55,10 @@
   [nm & body]
   (let [bd (cons nm body)
         cf (s/conform ::defyarn bd)]
-    
+
     (when (s/invalid? cf)
       (throw (Exception. (s/explain-str ::defyarn bd))))
-    
+
     (let [k (keyword (-> *ns* ns-name name) (name nm))
           {doc :doc, {:keys [bind expr]} :bind-and-expr} cf
           bind (or bind {})
@@ -91,8 +91,6 @@
 
 (defmacro doyank
   [poy binds & body] 
-  (when-not (s/valid? ::yarn-binding binds)
-    (throw (Exception. (s/explain-str ::yarn-binding binds))))
   `(md/chain'
     (yank ~poy ~(vec (vals binds)))
     (fn [[[~@(keys binds)] ctx#]]
