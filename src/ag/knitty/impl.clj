@@ -118,6 +118,26 @@
     `(md/future-with (resolve-executor-var ~executor-var) ~@body)))
 
 
+(defn- exception-java-cause [ex]
+  (cond
+    (nil? ex) nil
+    (instance? clojure.lang.ExceptionInfo ex) (recur (ex-cause ex))
+    (instance? java.util.concurrent.ExecutionException ex) (recur (ex-cause ex))
+    :else ex))
+
+
+(defn wrap-yarn-exception [k ex]
+  (let [d (ex-data ex)]
+    (if (:knitty/failed-yarn d)
+      ex
+      (let [jc (exception-java-cause ex)]
+        (ex-info "yarn failure"
+                 (assoc (ex-data ex)
+                        :knitty/fail-at   (java.util.Date.)
+                        :knitty/failed-yarn k
+                        :knitty/java-cause jc)
+                 ex)))))
+
 (defn- build-yank-fns
   [k bind expr]
   (let [mdm '_mdm
@@ -182,17 +202,19 @@
                              (when ~tracer (t/trace-finish ~tracer xv# nil true))
                              (md/success! d# xv# claim#))
                            (fn [e#]
-                             (when ~tracer (t/trace-finish ~tracer nil e# true))
-                             (md/error! d# e# claim#)))
+                             (let [ew# (wrap-yarn-exception ~k e#)]
+                               (when ~tracer (t/trace-finish ~tracer nil ew# true))
+                               (md/error! d# ew# claim#))))
                           (do
                             (when ~tracer (t/trace-finish ~tracer x# nil false))
                             (md/success! d# x# claim#)))
 
-                        x#))
+                        d#))
                     (catch Throwable e#
-                      (when ~tracer (t/trace-finish ~tracer nil e# false))
-                      (md/error! d# e# claim#)
-                      d#)))
+                      (let [ew# (wrap-yarn-exception ~k e#)]
+                        (when ~tracer (t/trace-finish ~tracer nil ew# false))
+                        (md/error! d# ew# claim#)
+                        d#))))
                  (do
                    d#))))]
        [~the-fnv
@@ -224,12 +246,12 @@
              poy'))]))
      (fn [e]
        (throw (ex-info "Failed to yank"
-                       {:ag.knitty/poy poy
-                        :ag.knitty/yarns yarns
-                        :ag.knitty/mdm (mdm-freeze! mdm)
-                        :ag.knitty/trace (when tracer
-                                           (conj
-                                            (-> poy meta :ag.knitty/trace)
-                                            (capture-trace! tracer))
-                                           )}
+                       (assoc (ex-data e)
+                              :ag.knitty/yanked-poy poy
+                              :ag.knitty/yanked-yarns yarns
+                              :ag.knitty/failed-poy (mdm-freeze! mdm)
+                              :ag.knitty/trace (when tracer
+                                                 (conj
+                                                  (-> poy meta :ag.knitty/trace)
+                                                  (capture-trace! tracer))))
                        e))))))
