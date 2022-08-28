@@ -13,13 +13,18 @@
 (defn- unwrap-mdm-deferred
   [d]
   (let [d (md/unwrap' d)]
-    (when-not (= ::nil d)
-      (when (md/deferred? d)
-        (alter-meta! d assoc
-                     ::leakd true   ;; actual indicator of leaking
-                     :type ::leakd  ;; use custom print-method
-                     ))
-      d)))
+    (cond
+      (identical? d ::nil) nil
+      (md/deferred? d) (let [sv (md/success-value d ::none)]
+                         (if false #_(identical? ::none sv)
+                           (do
+                             (alter-meta! d assoc
+                                          ::leakd true   ;; actual indicator of leaking
+                                          :type ::leakd  ;; use custom print-method
+                                          )
+                             d)
+                           sv))
+      :else d)))
 
 
 (deftype LockedMapMDM

@@ -1,5 +1,5 @@
 (ns ag.knitty.core
-  (:require [ag.knitty.impl :refer [gen-yarn yank* yarn-key]]
+  (:require [ag.knitty.impl :as impl :refer [yank* yarn-key]]
             [ag.knitty.trace :refer [create-tracer]]
             [clojure.java.browse]
             [clojure.java.browse-ui]
@@ -43,14 +43,21 @@
     (let [{{:keys [bind expr]} :bind-and-expr} cf
           bind (or bind {})
           expr (or expr `(throw (ex-info "missing input-only yarn" {::yarn ~k})))]
-      (gen-yarn k bind expr))))
+      (impl/gen-yarn k bind expr))))
+
+
+(defn- pick-yarn-meta [obj ex-meta doc]
+  (let [m (merge ex-meta (meta obj))
+        doc (or doc (:doc m))
+        m (if doc (assoc m :doc doc) m)]
+    [(with-meta obj m)
+     m]))
 
 
 (s/def ::defyarn (s/cat
                   :name symbol?
                   :doc (s/? string?)
                   :bind-and-expr ::bind-and-expr))
-
 (defmacro defyarn
   [nm & body]
   (let [bd (cons nm body)
@@ -62,16 +69,26 @@
     (let [k (keyword (-> *ns* ns-name name) (name nm))
           {doc :doc, {:keys [bind expr]} :bind-and-expr} cf
           bind (or bind {})
-          m (merge (meta bind) (meta nm))
-          doc (or doc (:doc m))
-          m (if doc (assoc m :doc doc) m)
+          [nm m] (pick-yarn-meta nm (meta bind) doc)
           expr (or expr `(throw (ex-info "missing input-only yarn" {::yarn ~k})))
           spec (:spec m)
-          nm (with-meta nm m)]
-      `(do
-         ~@(when spec `((s/def ~k ~spec)))
-         (register-yarn (yarn ~k ~bind ~expr))
-         (def ~nm ~k)))))
+          inline (:inline m)]
+
+      (when (and inline (not= 1 (count bind)))
+        (throw (Exception. "Inline yarn must have exactly one binding")))
+      (when (and inline (not= :sync (impl/bind-param-type (ffirst bind))))
+        (throw (Exception. "Inline yarn binding must be :sync")))
+
+      (list
+       `do
+       (when spec `(s/def ~k ~spec))
+       (if inline
+         `(register-yarn
+           ~(impl/gen-yarn-ref k
+                               (-> bind first val)
+                               (list `fn [(-> bind first key)] expr)))
+         `(register-yarn (yarn ~k ~bind ~expr)))
+       `(def ~nm ~k)))))
 
 
 (defn yank

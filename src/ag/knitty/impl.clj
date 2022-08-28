@@ -2,7 +2,7 @@
   (:require [ag.knitty.mdm :refer [mdm-fetch! mdm-freeze! locked-hmap-mdm]]
             [ag.knitty.trace :as t :refer [capture-trace!]]
             [manifold.deferred :as md]
-            manifold.executor))
+            [manifold.executor]))
 
 
 (defprotocol IYarn
@@ -10,10 +10,30 @@
   (yarn-key* [_] "get yarn key"))
 
 
-(deftype Yarn [yarn deps funcv yget]
+(deftype Yarn [key deps funcv yget]
   IYarn
   (yarn-snatch* [_ mdm reg tracer] (yget mdm reg tracer))
-  (yarn-key* [_] yarn))
+  (yarn-key* [_] key))
+
+
+(deftype YarnAlias [key orig-key transform]
+  IYarn
+  (yarn-key*
+   [_]
+   (yarn-key* key))
+  (yarn-snatch*
+   [t mdm reg tracer]
+   (let [y (get reg orig-key)
+         d (yarn-snatch* y mdm reg tracer)]
+     (cond
+       (nil? transform) d
+       (md/deferred? d) (md/chain' d transform)
+       :else (transform d)))))
+
+
+(extend-protocol IYarn
+  clojure.lang.Keyword
+  (yarn-key* [k] k))
 
 
 (defmethod print-method Yarn [y ^java.io.Writer w]
@@ -32,7 +52,7 @@
     (md/success-deferred v nil)))
 
 
-(defn- bind-param-type [ds]
+(defn bind-param-type [ds]
   (let [{:keys [defer lazy]} (meta ds)]
     (cond
       (and defer lazy) :lazy-defer
@@ -52,12 +72,9 @@
        w#)))
 
 
-(defn yarn-key
+(definline yarn-key
   [k]
-  (cond
-    (keyword? k) k
-    (instance? Yarn k) (yarn-key* k)
-    :else (throw (ex-info "invalid yarn key" {::yarn k}))))
+  `(yarn-key* ~k))
 
 
 (defn yarn-snatch
@@ -196,20 +213,21 @@
                                  (md/chain' (md/zip' ~@deps) #(~the-fnv % ~tracer))
                                  (~the-fnv [~@deps] ~tracer))]
                         (if (md/deferred? x#)
-                          (md/on-realized
-                           x#
-                           (fn [xv#]
-                             (when ~tracer (t/trace-finish ~tracer xv# nil true))
-                             (md/success! d# xv# claim#))
-                           (fn [e#]
-                             (let [ew# (wrap-yarn-exception ~k e#)]
+                          (do
+                            (md/on-realized
+                             x#
+                             (fn [xv#]
+                               (when ~tracer (t/trace-finish ~tracer xv# nil true))
+                               (md/success! d# xv# claim#))
+                             (fn [e#]
+                               (let [ew# (wrap-yarn-exception ~k e#)]
                                (when ~tracer (t/trace-finish ~tracer nil ew# true))
-                               (md/error! d# ew# claim#))))
+                                 (md/error! d# ew# claim#))))
+                            d#)
                           (do
                             (when ~tracer (t/trace-finish ~tracer x# nil false))
-                            (md/success! d# x# claim#)))
-
-                        d#))
+                            (md/success! d# x# claim#)
+                            d#))))
                     (catch Throwable e#
                       (let [ew# (wrap-yarn-exception ~k e#)]
                         (when ~tracer (t/trace-finish ~tracer nil ew# false))
@@ -229,6 +247,14 @@
       ~(vec (vals bind))
       funcv#
       yget#)))
+
+
+(defn gen-yarn-ref
+  [key dest transform]
+  `(YarnAlias.
+    ~key
+    ~dest
+    ~transform))
 
 
 (defn yank*
