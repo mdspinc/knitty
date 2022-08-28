@@ -1,0 +1,191 @@
+(ns ag.knitty.knitty-test 
+  (:require [ag.knitty.core :as knitty :refer [defyarn with-yarns yank yarn]]
+            [clojure.spec.alpha :as s]
+            [clojure.test :as t :refer [deftest is testing]]
+            [manifold.deferred :as md]))
+
+
+(defn fix-knitty-registry [body]
+  (with-redefs [knitty/*registry* {}]
+    (body)))
+
+(t/use-fixtures :each #'fix-knitty-registry)
+
+
+(deftest defyarn-test
+
+  (testing "define yarn without args"
+    (defyarn test-yarn)
+    (is (= test-yarn ::test-yarn))
+    (is (some? (get ag.knitty.core/*registry* test-yarn))))
+
+  (testing "define yarn without args but meta"
+
+    (s/def ::the-spec string?)
+    (defyarn
+      ^{:doc "some doc"
+        :spec ::the-spec}
+      test-yarn)
+
+    (is (some? (get ag.knitty.core/*registry* test-yarn)))
+    (is (= "some doc" (-> #'test-yarn meta :doc)))
+    (is (= `string? (s/form (get (s/registry) test-yarn)))))
+
+  (testing "define yarn with args"
+    (defyarn y1 {} 1)
+    (defyarn y2 {x1 y1} (+ x1 x1))
+    (defyarn y3 {x1 y1, x2 y2} (+ x1 x2))
+    (is (every? keyword? [y1 y2 y3])))
+  )
+
+
+(deftest types-of-bindings-test
+
+  (testing "const yarn"
+    (defyarn y {} 1)
+    (is (= [[1] {::y 1}] @(yank {} [y]))))
+
+  (testing "sync binding"
+    (defyarn y1 {} 1)
+    (defyarn y2 {x1 y1} (+ x1 1))
+    (is (= [[2] {::y1 1, ::y2 2}] @(yank {} [y2]))))
+
+  (testing "defer binding"
+    (defyarn y1 {} 1)
+    (defyarn y2 {^:defer x1 y1} (md/chain' x1 inc))
+    (is (= [[2] {::y1 1, ::y2 2}] @(yank {} [y2]))))
+
+  (testing "lazy binding"
+    (defyarn y1 {} 1)
+    (defyarn y2 {^:lazy x1 y1} (+ @x1 1))
+    (is (= [[2] {::y1 1, ::y2 2}] @(yank {} [y2]))))
+
+  (testing "lazy defer binding"
+    (defyarn y1 {} 1)
+    (defyarn y2 {^:lazy ^:defer x1 y1} (md/chain' @x1 inc))
+    (is (= [[2] {::y1 1, ::y2 2}] @(yank {} [y2]))))
+
+  (testing "lazy unused binding"
+    (defyarn y1 {} 1)
+    (defyarn y2 {} (throw (AssertionError.)))
+    (defyarn y3 {^:lazy x1 y1
+                 ^:lazy _x2 y2}
+      (+ @x1 10))
+    (is (= [[11] {::y1 1, ::y3 11}] @(yank {} [y3]))))
+  )
+
+  
+(deftest yank-deferreds-coercing-test
+
+  (testing "coerce future to deferred"
+    (defyarn y {} (future 1))
+    (is (= [[1] {::y 1}] @(yank {} [y]))))
+
+  (testing "autoforce delays"
+    (defyarn y {} (delay 1))
+    (is (= [[1] {::y 1}] @(yank {} [y]))))
+
+  (testing "coerce promises"
+    (defyarn y {} (let [p (promise)]
+                    (future (deliver p 1))
+                    p))
+    (is (= [[1] {::y 1}] @(yank {} [y]))))
+  )
+
+
+(deftest inline-yarn-test
+
+  (defyarn y1 {} 1) 
+  (defyarn ^:inline y2 {x1 y1} (inc x1))
+  (defyarn y3 {x1 y1, x2 y2} (+ x1 x2))
+
+  (is (= [[3] {::y1 1, ::y3 3}] @(yank {} [y3]))))
+
+
+(deftest long-chain-of-yanks-test
+  (eval
+   (list*
+    `do
+    `(defyarn ~'chain-0)
+    (for [i (range 1 100)]
+      `(defyarn
+         ~(symbol (str "chain-" i))
+         {x# ~(symbol (str "chain-" (dec i)))}
+         (+ x# 1)))))
+
+  (is (= 99 @(md/chain (yank {::chain-0 0} [::chain-99]) ffirst)))
+  (is (= 100 @(md/chain (yank {::chain-0 0} [::chain-99]) second count)))
+
+  (is (= 9 @(md/chain (yank {::chain-90 0} [::chain-99]) ffirst)))
+  (is (= 10 @(md/chain (yank {::chain-90 0} [::chain-99]) second count))))
+
+  
+(deftest everytying-is-memoized-test
+
+  #_{:clj-kondo/ignore [:inline-def]}
+  (def everything-memoized-counter (atom 0))
+
+  (eval
+   (list*
+    `do
+    `(defyarn ~'net-0 {} (swap! everything-memoized-counter inc))
+    (for [i (range 1 100)]
+      `(defyarn
+         ~(symbol (str "net-" i))
+         {_2# ~(symbol (str "net-" (dec i)))
+          _1# ~(symbol (str "net-" (quot i 2)))}
+         (swap! everything-memoized-counter inc)))))
+
+  (is (= 100 @(md/chain (yank {} [::net-99]) ffirst)))
+  (is (= 100 @everything-memoized-counter)))
+
+  
+(deftest hundred-of-inputs-test
+  
+  (eval
+   (list*
+    `do
+    (for [i (range 100)]
+      `(defyarn ~(symbol (str "pass-" i)) {} ~i))))
+
+  (eval
+   `(defyarn ~'sum1k
+      ~(zipmap
+        (for [i (range 100)] (symbol (str "x" i)))
+        (for [i (range 100)] (keyword (name (ns-name *ns*)) (str "pass-" i))))
+      (reduce + 0 ~(vec (for [i (range 100)] (symbol (str "x" i)))))))
+
+  (is (= 4950 @(md/chain (yank {} [::sum1k]) ffirst))))
+
+
+(deftest registry-test
+
+  (defyarn y1 {} 1)
+  (defyarn y2 {x1 y1} (+ x1 x1))
+  (defyarn y3 {x1 y1, x2 y2} (+ x1 x2))
+
+  (testing "yank adhoc yarns"
+    (is (= 6 @(md/chain (yank {} [(yarn ::six {x2 y2, x3 y3} (* x2 x3))]) ffirst))))
+
+  (testing "yank adhoc yarns with capturing"
+    (is (= [6 12 18]
+           (for [i [1 2 3]]
+             @(md/chain (yank {} [(yarn ::six {x2 y2, x3 y3} (* x2 x3 i))]) ffirst)))))
+
+  (testing "override yanks from registry"
+    (with-yarns [(yarn ::y1 {} 101)]
+      (is (= 303 @(md/chain (yank {} [y3]) ffirst))))
+      ))
+
+
+(deftest errhandle-test
+  )
+
+
+(deftest tracing-test
+  )
+
+  
+(comment
+  (clojure.test/test-ns *ns*)
+  )
