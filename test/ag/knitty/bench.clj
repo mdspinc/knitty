@@ -63,7 +63,7 @@
 
   (print "Tracing off")
   (binding [ag.knitty.core/*tracing* false]
-    (cc/quick-bench
+    (cc/bench
      @(md/chain (yank {} target-keys) second count)))
   )
 
@@ -74,6 +74,7 @@
    (dotimes [_ 100]
      @(md/chain (yank {} target-keys) second count)))
 
+  (dobench)
   (dobench)
 
   (prof/profile (dobench))

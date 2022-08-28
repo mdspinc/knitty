@@ -6,25 +6,29 @@
 
 
 (defprotocol IYarn
-  (yarn-snatch* [_ mdm reg tracer] "get value or obligated deferred")
-  (yarn-key* [_] "get yarn key"))
+  (yarn-get [_ mdm reg tracer] "get value or obligated deferred")
+  (yarn-key [_] "get yarn key"))
 
 
 (deftype Yarn [key deps funcv yget]
   IYarn
-  (yarn-snatch* [_ mdm reg tracer] (yget mdm reg tracer))
-  (yarn-key* [_] key))
+  (yarn-get
+    [_ mdm reg tracer]
+    (yget mdm reg tracer))
+  (yarn-key [_] key))
 
 
 (deftype YarnAlias [key orig-key transform]
+  
   IYarn
-  (yarn-key*
+  (yarn-key
    [_]
-   (yarn-key* key))
-  (yarn-snatch*
-   [t mdm reg tracer]
+   (yarn-key key))
+  
+  (yarn-get
+   [_ mdm reg tracer]
    (let [y (get reg orig-key)
-         d (yarn-snatch* y mdm reg tracer)]
+         d (yarn-get y mdm reg tracer)]
      (cond
        (nil? transform) d
        (md/deferred? d) (md/chain' d transform)
@@ -33,12 +37,20 @@
 
 (extend-protocol IYarn
   clojure.lang.Keyword
-  (yarn-key* [k] k))
+  (yarn-key 
+    [k] 
+    k)
+  (yarn-get 
+    [k mdm reg tracer]
+    (let [y (reg k)]
+      (when-not y
+        (throw (ex-info "yarn is not registered" {::yarn k})))
+      (yarn-get y mdm reg tracer))))
 
 
 (defmethod print-method Yarn [y ^java.io.Writer w]
   (.write w "#knitty/yarn ")
-  (.write w (str (yarn-key* y))))
+  (.write w (str (yarn-key y))))
 
 
 (defn coerce-deferred [v]
@@ -72,38 +84,25 @@
        w#)))
 
 
-(definline yarn-key
-  [k]
-  `(yarn-key* ~k))
+(definline yarn-get-sync [k mdm reg tracer]
+  `(yarn-get (~reg ~k ~k) ~mdm ~reg ~tracer))
 
 
-(defn yarn-snatch
-  [mdm k registry tracer]
-  (let [yd (cond
-             (keyword? k) (registry k)
-             (instance? Yarn k) k
-             :else (throw (ex-info "invalid yarn" {::yarn k})))]
-    (when-not yd
-      (throw (ex-info "yarn is not registered" {::yarn k})))
-    (when tracer (t/trace-dep tracer k))
-    (yarn-snatch* yd mdm registry (when tracer (t/trace-build-sub-tracer tracer k)))))
+(definline yarn-get-defer [k mdm reg tracer]
+  `(NotADeferred. (as-deferred (yarn-get (~reg ~k ~k) ~mdm ~reg ~tracer))))
 
 
-(defn yarn-snatch-defer [mdm k reg tracer]
-  (NotADeferred. (as-deferred (yarn-snatch mdm k reg tracer))))
-
-
-(defn yarn-snatch-lazy-defer [mdm k reg tracer]
+(defn yarn-get-lazy-defer [k mdm reg tracer]
   (NotADeferred.
    (delay
     (as-deferred
-     (yarn-snatch mdm k reg tracer)))))
+     (yarn-get (reg k k) mdm reg tracer)))))
 
 
-(defn yarn-snatch-lazy-sync [mdm k reg tracer]
+(defn yarn-get-lazy-sync [k mdm reg tracer]
   (NotADeferred.
    (delay
-    (let [d (yarn-snatch mdm k reg tracer)]
+    (let [d (yarn-get (reg k k) mdm reg tracer)]
       (if (md/deferred? d) @d d)))))
 
 
@@ -167,10 +166,10 @@
                 (for [[ds dk] bind]
                   [ds
                    (case (bind-param-type ds)
-                     :sync        `(yarn-snatch ~mdm ~dk ~reg ~tracer)
-                     :defer       `(yarn-snatch-defer ~mdm ~dk ~reg ~tracer)
-                     :lazy-sync   `(yarn-snatch-lazy-sync ~mdm ~dk ~reg ~tracer)
-                     :lazy-defer  `(yarn-snatch-lazy-defer ~mdm ~dk ~reg ~tracer))]))
+                     :sync        `(yarn-get-sync       ~dk ~mdm ~reg ~tracer)
+                     :defer       `(yarn-get-defer      ~dk ~mdm ~reg ~tracer)
+                     :lazy-sync   `(yarn-get-lazy-sync  ~dk ~mdm ~reg ~tracer)
+                     :lazy-defer  `(yarn-get-lazy-defer ~dk ~mdm ~reg ~tracer))]))
 
         maybe-unwrap-defers
         (mapcat identity
@@ -179,62 +178,68 @@
                   [ds `(unwrap-defer ~ds)]))
 
         deps (keys bind)
-        fnname #(-> k name (str "--" %) symbol)
+        fnname #(-> k name (str "-" %) symbol)
         any-lazy-sync (->> deps (map bind-param-type) (some #{:lazy-sync}) some?)
         executor-var (or (:executor (meta bind))
                          (when any-lazy-sync #'get-synclazy-executor))]
 
     `(let [;; input - vector. unwraps 'defers', called by yget-fn#
            ~the-fnv
-           (fn ~(fnname "vec")
+           (fn ~(fnname "expr")
              ([[~@deps] ~tracer]
               (when ~tracer (t/trace-call ~tracer))
               (coerce-deferred (let [~@maybe-unwrap-defers] ~expr))))
 
            ;; input - mdm and registry, called by `yank-snatch
            yget-fn#
-           (fn ~(fnname "yget") [~mdm ~reg ~tracer]
-             (let [[claim# d#] (mdm-fetch! ~mdm ~k)]
-               (if claim#
-                 (maybe-future-with
-                  ~executor-var
-                  (when ~tracer (t/trace-start ~tracer))
-                  (try ;; d# is alsways deffered
-                    (when ~tracer
-                      (t/trace-all-deps ~tracer
-                                        ~(vec (for [[ds dk] bind] [dk (bind-param-type ds)]))))
-                    (let [~@yank-all-deps]
-                      (let [x# (if ~(or
-                                     (some? executor-var)
-                                     (list*
-                                      `or
-                                      (for [d deps, :when (= (bind-param-type d) :sync)]
-                                        `(md/deferred? ~d))))
-                                 (md/chain' (md/zip' ~@deps) #(~the-fnv % ~tracer))
-                                 (~the-fnv [~@deps] ~tracer))]
-                        (if (md/deferred? x#)
-                          (do
-                            (md/on-realized
-                             x#
-                             (fn [xv#]
-                               (when ~tracer (t/trace-finish ~tracer xv# nil true))
-                               (md/success! d# xv# claim#))
-                             (fn [e#]
-                               (let [ew# (wrap-yarn-exception ~k e#)]
-                               (when ~tracer (t/trace-finish ~tracer nil ew# true))
-                                 (md/error! d# ew# claim#))))
-                            d#)
-                          (do
-                            (when ~tracer (t/trace-finish ~tracer x# nil false))
-                            (md/success! d# x# claim#)
-                            d#))))
-                    (catch Throwable e#
-                      (let [ew# (wrap-yarn-exception ~k e#)]
-                        (when ~tracer (t/trace-finish ~tracer nil ew# false))
-                        (md/error! d# ew# claim#)
-                        d#))))
-                 (do
-                   d#))))]
+           (fn ~(fnname "yarn") [~mdm ~reg ~tracer]
+             (let [~tracer (when ~tracer (t/trace-build-sub-tracer ~tracer ~k))]
+               (let [[claim# d#] (mdm-fetch! ~mdm ~k)]
+                 (if-not claim#
+                   ;; got item from mdm
+                   d#
+
+                   ;; calculate & provide to mdm
+                   (maybe-future-with
+                    ~executor-var
+                    (when ~tracer (t/trace-start ~tracer))
+
+                    (try ;; d# is alsways deffered
+                      (when ~tracer
+                        (t/trace-all-deps ~tracer
+                                          ~(vec (for [[ds dk] bind] [dk (bind-param-type ds)]))))
+
+                      (let [~@yank-all-deps]
+                        (let [x# (if ~(or
+                                       (some? executor-var)
+                                       (list*
+                                        `or
+                                        (for [d deps, :when (= (bind-param-type d) :sync)]
+                                          `(md/deferred? ~d))))
+                                   (md/chain' (md/zip' ~@deps) #(~the-fnv % ~tracer))
+                                   (~the-fnv [~@deps] ~tracer))]
+                          (if (md/deferred? x#)
+                            (do
+                              (md/on-realized
+                               x#
+                               (fn [xv#]
+                                 (when ~tracer (t/trace-finish ~tracer xv# nil true))
+                                 (md/success! d# xv# claim#))
+                               (fn [e#]
+                                 (let [ew# (wrap-yarn-exception ~k e#)]
+                                   (when ~tracer (t/trace-finish ~tracer nil ew# true))
+                                     (md/error! d# ew# claim#))))
+                              d#)
+                            (do
+                              (when ~tracer (t/trace-finish ~tracer x# nil false))
+                              (md/success! d# x# claim#)
+                              d#))))
+                      
+                      (catch Throwable e#
+                        (let [ew# (wrap-yarn-exception ~k e#)]
+                          (when ~tracer (t/trace-finish ~tracer nil ew# false))
+                            (md/error! d# ew# claim#)
+                          d#))))))))]
        [~the-fnv
         yget-fn#])))
 
@@ -260,7 +265,7 @@
 (defn yank*
   [poy yarns registry tracer]
   (let [mdm (locked-hmap-mdm poy (max 8 (* 2 (count yarns))))
-        ydefs (map #(yarn-snatch mdm % registry tracer) yarns)]
+        ydefs (map #(yarn-get (registry % %) mdm registry tracer) yarns)]
     (md/catch'
      (md/chain'
       (apply md/zip' ydefs)

@@ -16,7 +16,7 @@
     (cond
       (identical? d ::nil) nil
       (md/deferred? d) (let [sv (md/success-value d ::none)]
-                         (if false #_(identical? ::none sv)
+                         (if (identical? ::none sv)
                            (do
                              (alter-meta! d assoc
                                           ::leakd true   ;; actual indicator of leaking
@@ -35,11 +35,16 @@
   (mdm-fetch!
     [_ k]
     (if-let [kv (find init k)]
-      (let [v (val kv)
-            vv (md/unwrap' v)]
-        (when-not (identical? vv v)
-          (locking lock (.put hm k vv)))
-        [false vv])
+      (let [v (val kv)]
+        [false
+        (if-not (md/deferred? v)
+          v
+          (let [vv (md/success-deferred v ::none)]
+            (if (identical? vv ::none)
+              v
+              (locking lock (.put hm k vv) vv))))
+        ])
+
       (locking lock
         (if-let [v (.get hm k)]
           (if (and (md/deferred? v) (md/realized? v) (not @frozen))

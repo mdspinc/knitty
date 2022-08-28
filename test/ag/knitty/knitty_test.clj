@@ -12,6 +12,27 @@
 (t/use-fixtures :each #'fix-knitty-registry)
 
 
+(deftest smoke-test
+
+  (defyarn zero {} 0)
+  (defyarn one {_ zero} 1)
+  (defyarn one-slooow {} (future (Thread/sleep 10) 1))
+  (defyarn two {^:defer x one, ^:defer y one-slooow} (md/chain' (md/alt x y) inc))
+  (defyarn three-fast {x one, y two} (future (Thread/sleep 1) (+ x y)))
+  (defyarn three-slow {x one, y two} (future (Thread/sleep 10) (+ x y)))
+  (defyarn three {^:lazy f three-fast, ^:lazy ^:defer s three-slow} (if (zero? (rand-int 2)) f s))
+  (defyarn four {x one, y three} (future (+ x y)))
+  (defyarn six {x two , y three} (* x y))
+
+  (testing "trace enabled"
+    (binding [ag.knitty.core/*tracing* true]
+      (is (= [4 6] @(md/chain (yank {} [four six]) first)))))
+
+  (testing "trace disabled"
+    (binding [ag.knitty.core/*tracing* false]
+      (is (= [4 6] @(md/chain (yank {} [four six]) first))))))
+  
+
 (deftest defyarn-test
 
   (testing "define yarn without args"
