@@ -19,12 +19,12 @@
 
 
 (deftype YarnAlias [key orig-key transform]
-  
+
   IYarn
   (yarn-key
    [_]
    (yarn-key key))
-  
+
   (yarn-get
    [_ mdm reg tracer]
    (let [y (get reg orig-key)
@@ -37,10 +37,10 @@
 
 (extend-protocol IYarn
   clojure.lang.Keyword
-  (yarn-key 
-    [k] 
+  (yarn-key
+    [k]
     k)
-  (yarn-get 
+  (yarn-get
     [k mdm reg tracer]
     (let [y (reg k)]
       (when-not y
@@ -55,10 +55,10 @@
 
 (defn coerce-deferred [v]
   (let [v (force v)]
-    (md/unwrap (md/->deferred v v))))
+    (md/->deferred v v)))
 
 
-(defn- as-deferred [v]
+(defn as-deferred [v]
   (if (md/deferrable? v)
     (md/->deferred v)
     (md/success-deferred v nil)))
@@ -216,7 +216,7 @@
                                         `or
                                         (for [d deps, :when (= (bind-param-type d) :sync)]
                                           `(md/deferred? ~d))))
-                                   (md/chain' (md/zip' ~@deps) #(~the-fnv % ~tracer))
+                                   (md/chain' (md/zip' ~@deps) (fn [z#] (~the-fnv z# ~tracer)))
                                    (~the-fnv [~@deps] ~tracer))]
                           (if (md/deferred? x#)
                             (do
@@ -234,7 +234,7 @@
                               (when ~tracer (t/trace-finish ~tracer x# nil false))
                               (md/success! d# x# claim#)
                               d#))))
-                      
+
                       (catch Throwable e#
                         (let [ew# (wrap-yarn-exception ~k e#)]
                           (when ~tracer (t/trace-finish ~tracer nil ew# false))

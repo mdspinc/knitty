@@ -22,7 +22,7 @@
 (defn mod-or-future [x y]
   (let [m (mod x y)]
     (if (zero? m) 
-      (future 0)
+      m #_(future 0)
       m)))
 
 
@@ -56,16 +56,15 @@
 
 (defn dobench  []
 
-  (println "Tracing on")
-  (binding [ag.knitty.core/*tracing* true]
-    (cc/bench
-     @(md/chain (yank {} target-keys) second count)))
-
   (print "Tracing off")
   (binding [ag.knitty.core/*tracing* false]
-    (cc/bench
+    (cc/quick-bench
      @(md/chain (yank {} target-keys) second count)))
-  )
+
+  (println "Tracing on")
+  (binding [ag.knitty.core/*tracing* true]
+    (cc/quick-bench
+     @(md/chain (yank {} target-keys) second count))))
 
 
 (comment

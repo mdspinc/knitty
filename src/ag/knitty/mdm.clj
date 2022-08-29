@@ -34,31 +34,31 @@
 
   (mdm-fetch!
     [_ k]
-    (if-let [kv (find init k)]
-      (let [v (val kv)]
-        [false
-        (if-not (md/deferred? v)
-          v
-          (let [vv (md/success-deferred v ::none)]
-            (if (identical? vv ::none)
-              v
-              (locking lock (.put hm k vv) vv))))
-        ])
-
-      (locking lock
-        (if-let [v (.get hm k)]
-          (if (and (md/deferred? v) (md/realized? v) (not @frozen))
-            (let [vv (md/success-value v v)]
-              (.put hm k (if (nil? vv) ::nil vv))
-              [false vv])
-            [false (when-not (identical? ::nil v) v)])
-          (let [d (md/deferred nil)
-                c (md/claim! d)]
-            (when @frozen
-              (throw (ex-info "fetch from frozen mdm" {:ag.knitty/yarn k
-                                                       ::mdm-frozen true})))
-            (.put hm k d)
-            [c d])))))
+    (let [v (get init k ::none)]
+      (if-not (identical? ::none v)
+        [nil
+         (if-not (md/deferred? v)
+           v
+           (let [vv (md/success-deferred v ::none)]
+             (if (identical? vv ::none)
+               v
+               (locking lock 
+                 (when-not @frozen (.put hm k vv)) vv))))]
+        (locking lock
+          (if-let [v (.get hm k)]
+            (if (and (md/deferred? v) (md/realized? v) (not @frozen))
+              (let [vv (md/success-value v v)]
+                (when-not @frozen
+                  (.put hm k (if (nil? vv) ::nil vv)))
+                [nil vv])
+              [nil (when-not (identical? ::nil v) v)])
+            (let [d (md/deferred nil)
+                  c (md/claim! d)]
+              (when @frozen
+                (throw (ex-info "fetch from frozen mdm" {:ag.knitty/yarn k
+                                                         ::mdm-frozen true})))
+              (.put hm k d)
+              [c d]))))))
 
   (mdm-freeze!
     [_]
@@ -68,7 +68,7 @@
       (vreset! frozen true))
     (if (.isEmpty hm)
       init
-      (into init (map (fn [[k v]] [k (unwrap-mdm-deferred v)])) hm))))
+      (into init (map (fn [kv] [(key kv) (unwrap-mdm-deferred (val kv))])) hm))))
 
 
 (defmethod print-method ::leakd [y ^java.io.Writer w]

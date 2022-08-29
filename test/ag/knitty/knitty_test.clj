@@ -114,6 +114,14 @@
   )
 
 
+(deftest input-deferreds-test
+  (defyarn y1)
+  (defyarn y2 {x1 y1} (inc x1))
+
+  (is (= [[1] {::y1 10, ::y2 11}] @(yank {y1 (future 10)} [y2])))
+  )
+
+
 (deftest inline-yarn-test
 
   (defyarn y1 {} 1) 
