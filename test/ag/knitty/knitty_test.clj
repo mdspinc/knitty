@@ -6,11 +6,15 @@
             [manifold.executor :as executor]))
 
 
-(defn fix-knitty-registry [body]
-  (with-redefs [knitty/*registry* {}]
-    (body)))
+(defn clean-knitty-registry [body]
+  (let [t knitty/*registry*]
+    (try
+      (body)
+      (finally
+        (alter-var-root #'knitty/*registry* (constantly t))))))
 
-(t/use-fixtures :each #'fix-knitty-registry)
+
+;;(t/use-fixtures :each #'clean-knitty-registry)
 
 
 (deftest smoke-test
@@ -26,11 +30,11 @@
   (defyarn six {x two , y three} (* x y))
 
   (testing "trace enabled"
-    (binding [ag.knitty.core/*tracing* true]
+    (binding [knitty/*tracing* true]
       (is (= [4 6] @(md/chain (yank {} [four six]) first)))))
 
   (testing "trace disabled"
-    (binding [ag.knitty.core/*tracing* false]
+    (binding [knitty/*tracing* false]
       (is (= [4 6] @(md/chain (yank {} [four six]) first))))))
   
 
@@ -39,7 +43,7 @@
   (testing "define yarn without args"
     (defyarn test-yarn)
     (is (= test-yarn ::test-yarn))
-    (is (some? (get ag.knitty.core/*registry* test-yarn))))
+    (is (some? (get knitty/*registry* test-yarn))))
 
   (testing "define yarn without args but meta"
 
@@ -49,7 +53,7 @@
         :spec ::the-spec}
       test-yarn)
 
-    (is (some? (get ag.knitty.core/*registry* test-yarn)))
+    (is (some? (get knitty/*registry* test-yarn)))
     (is (= "some doc" (-> #'test-yarn meta :doc)))
     (is (= `string? (s/form (get (s/registry) test-yarn)))))
 
@@ -131,16 +135,20 @@
   (is (= [[3] {::y1 1, ::y3 3}] @(yank {} [y3]))))
 
 
+(defmacro mado [& body]
+  `(do ~@(eval (cons `do body))))
+
+
 (deftest long-chain-of-yanks-test
-  (eval
-   (list*
-    `do
-    `(defyarn ~'chain-0)
-    (for [i (range 1 100)]
-      `(defyarn
-         ~(symbol (str "chain-" i))
-         {x# ~(symbol (str "chain-" (dec i)))}
-         (+ x# 1)))))
+  
+  (defyarn chain-0)
+
+  (mado
+   (for [i (range 1 100)]
+     `(defyarn
+        ~(symbol (str "chain-" i))
+        {x# ~(symbol (str "chain-" (dec i)))}
+        (+ x# 1))))
 
   (is (= 99 @(md/chain (yank {::chain-0 0} [::chain-99]) ffirst)))
   (is (= 100 @(md/chain (yank {::chain-0 0} [::chain-99]) second count)))
@@ -153,17 +161,15 @@
 
   #_{:clj-kondo/ignore [:inline-def]}
   (def everything-memoized-counter (atom 0))
+  (defyarn net-0 {} (swap! everything-memoized-counter inc))
 
-  (eval
-   (list*
-    `do
-    `(defyarn ~'net-0 {} (swap! everything-memoized-counter inc))
-    (for [i (range 1 100)]
-      `(defyarn
-         ~(symbol (str "net-" i))
-         {_2# ~(symbol (str "net-" (dec i)))
-          _1# ~(symbol (str "net-" (quot i 2)))}
-         (swap! everything-memoized-counter inc)))))
+  (mado
+   (for [i (range 1 100)]
+     `(defyarn
+        ~(symbol (str "net-" i))
+        {_2# ~(symbol (str "net-" (dec i)))
+         _1# ~(symbol (str "net-" (quot i 2)))}
+        (swap! everything-memoized-counter inc))))
 
   (is (= 100 @(md/chain (yank {} [::net-99]) ffirst)))
   (is (= 100 @everything-memoized-counter)))
@@ -171,40 +177,35 @@
 
 (deftest use-executor-test
 
-  (let [nodsym #(symbol (str "node-" %))
-        nodkey #(keyword (name (ns-name *ns*)) (str "node-" %))]
+  (defyarn node-0 {} 0)
+  (mado
+   (for [i (range 1 100)]
+     (let [x (with-meta
+               (symbol (str "node-" i))
+               {:executor #'executor/execute-pool})
+           deps [(max (dec i) 0) (quot i 2)]]
+       `(defyarn ~x
+          ~(zipmap (map #(symbol (str "node-" %)) deps)
+                   (map #(keyword (name (ns-name *ns*)) (str "node-" %)) deps))
+          (+ 1 (max ~@(map #(symbol (str "node-" %)) deps)))))))
 
-    (eval
-     (list*
-      `do
-      '(defyarn node-0 {} 0)
-      (for [i (range 1 100)]
-        (let [x (with-meta
-                  (nodsym i)
-                  {:executor #'executor/execute-pool})
-              deps [(max (dec i) 0) (quot i 2)]]
-          `(defyarn ~x
-             ~(zipmap (map nodsym deps) (map nodkey deps))
-             (+ 1 (max ~@(map nodsym deps))))))))
-
-    (is (= 99 @(md/chain (yank {} [::node-99]) ffirst))))
+  (is (= 99 @(md/chain (yank {} [::node-99]) ffirst)))
   )
 
   
 (deftest hundred-of-inputs-test
   
-  (eval
-   (list*
-    `do
-    (for [i (range 100)]
-      `(defyarn ~(symbol (str "pass-" i)) {} ~i))))
+  (mado
+   (for [i (range 100)]
+     `(defyarn ~(symbol (str "pass-" i)) {} ~i)))
 
-  (eval
-   `(defyarn ~'sum1k
-      ~(zipmap
-        (for [i (range 100)] (symbol (str "x" i)))
-        (for [i (range 100)] (keyword (name (ns-name *ns*)) (str "pass-" i))))
-      (reduce + 0 ~(vec (for [i (range 100)] (symbol (str "x" i)))))))
+  (mado
+   (list
+    `(defyarn ~'sum1k
+       ~(zipmap
+         (for [i (range 100)] (symbol (str "x" i)))
+         (for [i (range 100)] (keyword (name (ns-name *ns*)) (str "pass-" i))))
+       (reduce + 0 ~(vec (for [i (range 100)] (symbol (str "x" i))))))))
 
   (is (= 4950 @(md/chain (yank {} [::sum1k]) ffirst))))
 

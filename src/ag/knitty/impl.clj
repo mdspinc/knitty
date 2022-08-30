@@ -45,7 +45,7 @@
     [k mdm reg tracer]
     (let [y (reg k)]
       (when-not y
-        (throw (ex-info "yarn is not registered" {::yarn k})))
+        (throw (ex-info "yarn is not registered" {:knitty/yarn k})))
       (yarn-get y mdm reg tracer))))
 
 
