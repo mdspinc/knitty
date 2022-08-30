@@ -1,5 +1,5 @@
 (ns ag.knitty.impl
-  (:require [ag.knitty.mdm :refer [locked-hmap-mdm mdm-fetch! mdm-freeze!]]
+  (:require [ag.knitty.mdm :refer [create-mdm mdm-fetch! mdm-freeze!]]
             [ag.knitty.trace :as t :refer [capture-trace!]]
             [manifold.deferred :as md]
             [manifold.executor]
@@ -286,7 +286,7 @@
 
 (defn yank*
   [poy yarns registry tracer]
-  (let [mdm (locked-hmap-mdm poy (max 8 (* 2 (count yarns))))
+  (let [mdm (create-mdm poy (max 8 (* 2 (count yarns))))
         errh (fn [e]
                (throw (ex-info "failed to yank"
                                (assoc (dissoc (ex-data e) ::inyank)

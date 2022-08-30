@@ -1,6 +1,7 @@
-(ns ag.knitty.mdm 
-  (:require [manifold.deferred :as md]) 
-  (:import [java.util Map HashMap]))
+(ns ag.knitty.mdm
+  (:require [manifold.deferred :as md])
+  (:import [java.util Map HashMap]
+           [java.util.concurrent ConcurrentMap ConcurrentHashMap]))
 
 
 (set! *warn-on-reflection* true)
@@ -26,6 +27,17 @@
                            sv))
       :else d)))
 
+
+(defmacro none? [x]
+  `(identical? ::none ~x))
+
+
+(defmacro to-nil [x]
+  `(let [x# ~x] (when-not (identical? ::nil x#) x#)))
+
+
+(defmacro de-nil [x]
+  `(let [x# ~x] (if (nil? x#) ::nil x#)))
 
 (deftype LockedMapMDM
          [init lock frozen ^Map hm]
@@ -71,6 +83,49 @@
       (into init (map (fn [kv] [(key kv) (unwrap-mdm-deferred (val kv))])) hm))))
 
 
+(deftype ConcurrentMapMDM
+         [init ^ConcurrentMap hm]
+
+  MutableDeferredMap
+
+  (mdm-fetch!
+    [_ k]
+    (let [v (get init k ::none)]
+      (if (none? v)
+
+        ;; from hm or new
+        (let [v (.get ^ConcurrentMap hm k)]
+          (if (nil? v)
+            ;; new
+            (do
+              
+              (let [d (md/deferred nil)
+                    p (.putIfAbsent hm k d)
+                    d (to-nil (if (nil? p) d p))
+                    c (when (md/deferred? d) (md/claim! d))]
+                [c d]))
+            ;; from hm
+            (let [v (to-nil v)
+                  v' (if (md/deferred? v) (md/success-value v v) v)]
+              (when-not (identical? v v')
+                (.put hm k (de-nil v')))
+              [nil v'])))
+
+        ;; from init
+        (if (md/deferred? v)
+          (let [v' (md/success-value v v)]
+            (when (not (identical? v v'))
+              (.putIfAbsent hm k (de-nil v')))
+            [nil v'])
+          [nil v]))))
+
+  (mdm-freeze!
+   [_]
+   (if (.isEmpty hm)
+     init
+     (into init
+           (map (fn [kv] [(key kv) (unwrap-mdm-deferred (val kv))]))
+           hm))))
 (defmethod print-method ::leakd [y ^java.io.Writer w]
   (.write w "#ag.knitty/LeakD[")
   (let [error (md/error-value y nil)]
@@ -90,6 +145,12 @@
   (.write w "]"))
 
 
-(defn locked-hmap-mdm [init hm-size]
-  (LockedMapMDM. init (Object.) (volatile! false) (HashMap. (int hm-size))))
+(defn locked-hash-map-mdm [init hm-size]
+  (->LockedMapMDM init (Object.) (volatile! false) (HashMap. (int hm-size))))
 
+
+(defn concurrent-hash-map-mdm [init hm-size]
+  (->ConcurrentMapMDM init (ConcurrentHashMap. (int hm-size) 0.75 (int 2))))
+
+(defn create-mdm [init size-hint]
+  (concurrent-hash-map-mdm init size-hint))
