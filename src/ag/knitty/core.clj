@@ -70,9 +70,10 @@
           {doc :doc, {:keys [bind expr]} :bind-and-expr} cf
           bind (or bind {})
           [nm m] (pick-yarn-meta nm (meta bind) doc)
-          expr (or expr `(throw (ex-info "missing input-only yarn" {::yarn ~k})))
+          expr (or expr `(throw (java.lang.UnsupportedOperationException. "input-only yarn")))
           spec (:spec m)
-          inline (:inline m)]
+          inline (:inline m)
+          bind (with-meta bind m)]
 
       (when (and inline (not= 1 (count bind)))
         (throw (Exception. "Inline yarn must have exactly one binding")))

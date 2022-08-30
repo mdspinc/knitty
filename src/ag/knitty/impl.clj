@@ -1,5 +1,5 @@
 (ns ag.knitty.impl
-  (:require [ag.knitty.mdm :refer [mdm-fetch! mdm-freeze! locked-hmap-mdm]]
+  (:require [ag.knitty.mdm :refer [locked-hmap-mdm mdm-fetch! mdm-freeze!]]
             [ag.knitty.trace :as t :refer [capture-trace!]]
             [manifold.deferred :as md]
             [manifold.executor]))
@@ -144,15 +144,21 @@
 
 (defn wrap-yarn-exception [k ex]
   (let [d (ex-data ex)]
-    (if (:knitty/failed-yarn d)
-      ex
-      (let [jc (exception-java-cause ex)]
-        (ex-info "yarn failure"
-                 (assoc (ex-data ex)
-                        :knitty/fail-at   (java.util.Date.)
-                        :knitty/failed-yarn k
-                        :knitty/java-cause jc)
-                 ex)))))
+    (if (::inyank d)
+      (ex-info "yarn failure"
+               (assoc d
+                      :knitty/failed-yarn k
+                      :knitty/failed-yarn-chain (conj (:knitty/failed-yarn-chain d) k))
+               (ex-cause ex))
+      (ex-info "yarn failure"
+               (assoc d
+                      ::inyank true
+                      :knitty/fail-at   (java.util.Date.)
+                      :knitty/failed-yarn k
+                      :knitty/failed-yarn-chain [k]
+                      :knitty/java-cause (exception-java-cause ex))
+               ex))))
+
 
 (defn- build-yank-fns
   [k bind expr]
@@ -265,24 +271,26 @@
 (defn yank*
   [poy yarns registry tracer]
   (let [mdm (locked-hmap-mdm poy (max 8 (* 2 (count yarns))))
-        ydefs (map #(yarn-get (registry % %) mdm registry tracer) yarns)]
-    (md/catch'
-     (md/chain'
-      (apply md/zip' ydefs)
-      (fn [yvals]
-        [yvals
-         (let [poy' (mdm-freeze! mdm)]
-           (if tracer
-             (vary-meta poy' update :ag.knitty/trace conj (capture-trace! tracer))
-             poy'))]))
-     (fn [e]
-       (throw (ex-info "Failed to yank"
-                       (assoc (ex-data e)
-                              :ag.knitty/yanked-poy poy
-                              :ag.knitty/yanked-yarns yarns
-                              :ag.knitty/failed-poy (mdm-freeze! mdm)
-                              :ag.knitty/trace (when tracer
-                                                 (conj
-                                                  (-> poy meta :ag.knitty/trace)
-                                                  (capture-trace! tracer))))
-                       e))))))
+        errh (fn [e]
+               (throw (ex-info "failed to yank"
+                               (assoc (dissoc (ex-data e) ::inyank)
+                                      :ag.knitty/yanked-poy poy
+                                      :ag.knitty/yanked-yarns yarns
+                                      :ag.knitty/failed-poy (mdm-freeze! mdm)
+                                      :ag.knitty/trace (when tracer
+                                                         (conj
+                                                          (-> poy meta :ag.knitty/trace)
+                                                          (capture-trace! tracer))))
+                               e)))]
+    (try
+      (md/catch'
+       (md/chain'
+        (apply md/zip' (map #(yarn-get (registry % %) mdm registry tracer) yarns))
+        (fn [yvals]
+          [yvals
+           (let [poy' (mdm-freeze! mdm)]
+             (if tracer
+               (vary-meta poy' update :ag.knitty/trace conj (capture-trace! tracer))
+               poy'))]))
+       errh)
+      (catch Throwable e (errh e)))))
