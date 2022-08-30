@@ -2,7 +2,8 @@
   (:require [ag.knitty.core :as knitty :refer [defyarn with-yarns yank yarn]]
             [clojure.spec.alpha :as s]
             [clojure.test :as t :refer [deftest is testing]]
-            [manifold.deferred :as md]))
+            [manifold.deferred :as md]
+            [manifold.executor :as executor]))
 
 
 (defn fix-knitty-registry [body]
@@ -117,8 +118,7 @@
 (deftest input-deferreds-test
   (defyarn y1)
   (defyarn y2 {x1 y1} (inc x1))
-
-  (is (= [[1] {::y1 10, ::y2 11}] @(yank {y1 (future 10)} [y2])))
+  (is (= [11] @(md/chain (yank {y1 (md/future 10)} [y2]) first)))
   )
 
 
@@ -167,6 +167,28 @@
 
   (is (= 100 @(md/chain (yank {} [::net-99]) ffirst)))
   (is (= 100 @everything-memoized-counter)))
+
+
+(deftest use-executor-test
+
+  (let [nodsym #(symbol (str "node-" %))
+        nodkey #(keyword (name (ns-name *ns*)) (str "node-" %))]
+
+    (eval
+     (list*
+      `do
+      '(defyarn node-0 {} 0)
+      (for [i (range 1 100)]
+        (let [x (with-meta
+                  (nodsym i)
+                  {:executor #'executor/execute-pool})
+              deps [(max (dec i) 0) (quot i 2)]]
+          `(defyarn ~x
+             ~(zipmap (map nodsym deps) (map nodkey deps))
+             (+ 1 (max ~@(map nodsym deps))))))))
+
+    (is (= 99 @(md/chain (yank {} [::node-99]) ffirst))))
+  )
 
   
 (deftest hundred-of-inputs-test

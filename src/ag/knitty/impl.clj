@@ -2,7 +2,8 @@
   (:require [ag.knitty.mdm :refer [locked-hmap-mdm mdm-fetch! mdm-freeze!]]
             [ag.knitty.trace :as t :refer [capture-trace!]]
             [manifold.deferred :as md]
-            [manifold.executor]))
+            [manifold.executor]
+            [manifold.utils]))
 
 
 (defprotocol IYarn
@@ -22,17 +23,17 @@
 
   IYarn
   (yarn-key
-   [_]
-   (yarn-key key))
+    [_]
+    (yarn-key key))
 
   (yarn-get
-   [_ mdm reg tracer]
-   (let [y (get reg orig-key)
-         d (yarn-get y mdm reg tracer)]
-     (cond
-       (nil? transform) d
-       (md/deferred? d) (md/chain' d transform)
-       :else (transform d)))))
+    [_ mdm reg tracer]
+    (let [y (get reg orig-key)
+          d (yarn-get y mdm reg tracer)]
+      (cond
+        (nil? transform) d
+        (md/deferred? d) (md/chain' d transform)
+        :else (transform d)))))
 
 
 (extend-protocol IYarn
@@ -73,11 +74,9 @@
       :else            :sync)))
 
 
-(defrecord NotADeferred
-           [deferred])
+(defrecord NotADeferred [deferred])
 
-
-(defmacro unwrap-defer [w]
+(defmacro unwrap-not-a-deferred [w]
   `(let [w# ~w]
      (if (instance? NotADeferred w#)
        (.-deferred ^NotADeferred w#)
@@ -128,10 +127,27 @@
       (if (ifn? ee) (ee) ee))))
 
 
+(defn run-future [executor-var thefn]
+  (let [d (md/deferred)
+        c (md/claim! d)]
+    (manifold.utils/future-with
+     (resolve-executor-var executor-var)
+     (try
+       (let [v (md/unwrap' (thefn))]
+         (if (md/deferred? v)
+           (md/on-realized v
+                           #(md/success! d % c)
+                           #(md/error! d % c))
+           (md/success! d v c)))
+       (catch Throwable e
+         (md/error! d e c))))
+    d))
+
+
 (defmacro maybe-future-with [executor-var & body]
   (if-not executor-var
     `(do ~@body)
-    `(md/future-with (resolve-executor-var ~executor-var) ~@body)))
+    `(run-future ~executor-var (fn [] ~@body))))
 
 
 (defn- exception-java-cause [ex]
@@ -181,7 +197,7 @@
         (mapcat identity
                 (for [[ds _dk] bind
                       :when (#{:lazy-sync :defer :lazy-defer} (bind-param-type ds))]
-                  [ds `(unwrap-defer ~ds)]))
+                  [ds `(unwrap-not-a-deferred ~ds)]))
 
         deps (keys bind)
         fnname #(-> k name (str "-" %) symbol)
@@ -202,7 +218,7 @@
              (let [~tracer (when ~tracer (t/trace-build-sub-tracer ~tracer ~k))]
                (let [[claim# d#] (mdm-fetch! ~mdm ~k)]
                  (if-not claim#
-                   ;; got item from mdm
+                   ;; got item from mdm 
                    d#
 
                    ;; calculate & provide to mdm
@@ -234,7 +250,7 @@
                                (fn [e#]
                                  (let [ew# (wrap-yarn-exception ~k e#)]
                                    (when ~tracer (t/trace-finish ~tracer nil ew# true))
-                                     (md/error! d# ew# claim#))))
+                                   (md/error! d# ew# claim#))))
                               d#)
                             (do
                               (when ~tracer (t/trace-finish ~tracer x# nil false))
@@ -244,7 +260,7 @@
                       (catch Throwable e#
                         (let [ew# (wrap-yarn-exception ~k e#)]
                           (when ~tracer (t/trace-finish ~tracer nil ew# false))
-                            (md/error! d# ew# claim#)
+                          (md/error! d# ew# claim#)
                           d#))))))))]
        [~the-fnv
         yget-fn#])))
