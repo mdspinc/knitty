@@ -255,13 +255,13 @@
     poy
 
     (map? poy)
-    (-> poy meta :ag.knitty/trace)
+    (-> poy meta :knitty/trace)
 
     (vector? poy)
-    (-> poy second meta :ag.knitty/trace)
+    (-> poy second meta :knitty/trace)
 
     (instance? clojure.lang.IExceptionInfo poy)
-    (:ag.knitty/trace (ex-data poy))
+    (:knitty/trace (ex-data poy))
 
     (md/deferred? poy)
     @(md/catch (md/chain poy find-traces) find-traces)))

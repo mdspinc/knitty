@@ -290,12 +290,12 @@
         errh (fn [e]
                (throw (ex-info "failed to yank"
                                (assoc (dissoc (ex-data e) ::inyank)
-                                      ;; :ag.knitty/yanked-poy poy
-                                      :ag.knitty/yanked-yarns yarns
-                                      ;; :ag.knitty/failed-poy (mdm-freeze! mdm)
-                                      :ag.knitty/trace (when tracer
+                                      :knitty/yanked-poy poy
+                                      :knitty/yanked-yarns yarns
+                                      :knitty/failed-poy (mdm-freeze! mdm)
+                                      :knitty/trace (when tracer
                                                          (conj
-                                                          (-> poy meta :ag.knitty/trace)
+                                                          (-> poy meta :knitty/trace)
                                                           (capture-trace! tracer))))
                                e)))]
     (try
@@ -306,7 +306,7 @@
           [yvals
            (let [poy' (mdm-freeze! mdm)]
              (if tracer
-               (vary-meta poy' update :ag.knitty/trace conj (capture-trace! tracer))
+               (vary-meta poy' update :knitty/trace conj (capture-trace! tracer))
                poy'))]))
        errh)
       (catch Throwable e (errh e)))))

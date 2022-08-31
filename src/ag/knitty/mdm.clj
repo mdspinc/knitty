@@ -67,7 +67,7 @@
             (let [d (md/deferred nil)
                   c (md/claim! d)]
               (when @frozen
-                (throw (ex-info "fetch from frozen mdm" {:ag.knitty/yarn k
+                (throw (ex-info "fetch from frozen mdm" {:knitty/yarn k
                                                          ::mdm-frozen true})))
               (.put hm k d)
               [c d]))))))
