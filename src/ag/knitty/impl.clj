@@ -290,9 +290,9 @@
         errh (fn [e]
                (throw (ex-info "failed to yank"
                                (assoc (dissoc (ex-data e) ::inyank)
-                                      :ag.knitty/yanked-poy poy
+                                      ;; :ag.knitty/yanked-poy poy
                                       :ag.knitty/yanked-yarns yarns
-                                      :ag.knitty/failed-poy (mdm-freeze! mdm)
+                                      ;; :ag.knitty/failed-poy (mdm-freeze! mdm)
                                       :ag.knitty/trace (when tracer
                                                          (conj
                                                           (-> poy meta :ag.knitty/trace)
