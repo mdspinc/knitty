@@ -47,12 +47,12 @@
   (mdm-fetch!
     [_ k]
     (let [v (get init k ::none)]
-      (if-not (identical? ::none v)
+      (if-not (none? v)
         [nil
          (if-not (md/deferred? v)
            v
            (let [vv (md/success-deferred v ::none)]
-             (if (identical? vv ::none)
+             (if (none? vv)
                v
                (locking lock 
                  (when-not @frozen (.put hm k vv)) vv))))]
@@ -97,13 +97,11 @@
         (let [v (.get ^ConcurrentMap hm k)]
           (if (nil? v)
             ;; new
-            (do
-              
-              (let [d (md/deferred nil)
-                    p (.putIfAbsent hm k d)
-                    d (to-nil (if (nil? p) d p))
-                    c (when (md/deferred? d) (md/claim! d))]
-                [c d]))
+            (let [d (md/deferred nil)
+                  p (.putIfAbsent hm k d)
+                  d (to-nil (if (nil? p) d p))
+                  c (when (md/deferred? d) (md/claim! d))]
+              [c d])
             ;; from hm
             (let [v (to-nil v)
                   v' (if (md/deferred? v) (md/success-value v v) v)]
@@ -126,6 +124,8 @@
      (into init
            (map (fn [kv] [(key kv) (unwrap-mdm-deferred (val kv))]))
            hm))))
+
+
 (defmethod print-method ::leakd [y ^java.io.Writer w]
   (.write w "#ag.knitty/LeakD[")
   (let [error (md/error-value y nil)]
@@ -147,7 +147,6 @@
 
 (defn locked-hash-map-mdm [init hm-size]
   (->LockedMapMDM init (Object.) (volatile! false) (HashMap. (int hm-size))))
-
 
 (defn concurrent-hash-map-mdm [init hm-size]
   (->ConcurrentMapMDM init (ConcurrentHashMap. (int hm-size) 0.75 (int 2))))

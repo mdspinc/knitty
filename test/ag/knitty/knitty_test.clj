@@ -6,17 +6,6 @@
             [manifold.executor :as executor]))
 
 
-(defn clean-knitty-registry [body]
-  (let [t knitty/*registry*]
-    (try
-      (body)
-      (finally
-        (alter-var-root #'knitty/*registry* (constantly t))))))
-
-
-;;(t/use-fixtures :each #'clean-knitty-registry)
-
-
 (deftest smoke-test
 
   (defyarn zero {} 0)
@@ -25,7 +14,7 @@
   (defyarn two {^:defer x one, ^:defer y one-slooow} (md/chain' (md/alt x y) inc))
   (defyarn three-fast {x one, y two} (future (Thread/sleep 1) (+ x y)))
   (defyarn three-slow {x one, y two} (future (Thread/sleep 10) (+ x y)))
-  (defyarn three {^:lazy f three-fast, ^:lazy ^:defer s three-slow} (if (zero? (rand-int 2)) f s))
+  (defyarn three {^:lazy f three-fast, ^:lazy s three-slow} (if (zero? (rand-int 2)) f @s))
   (defyarn four {x one, y three} (future (+ x y)))
   (defyarn six {x two , y three} (* x y))
 
@@ -43,7 +32,7 @@
   (testing "define yarn without args"
     (defyarn test-yarn)
     (is (= test-yarn ::test-yarn))
-    (is (some? (get knitty/*registry* test-yarn))))
+    (is (some? (get @knitty/*registry* test-yarn))))
 
   (testing "define yarn without args but meta"
 
@@ -53,7 +42,7 @@
         :spec ::the-spec}
       test-yarn)
 
-    (is (some? (get knitty/*registry* test-yarn)))
+    (is (some? (get @knitty/*registry* test-yarn)))
     (is (= "some doc" (-> #'test-yarn meta :doc)))
     (is (= `string? (s/form (get (s/registry) test-yarn)))))
 
@@ -81,14 +70,9 @@
     (defyarn y2 {^:defer x1 y1} (md/chain' x1 inc))
     (is (= [[2] {::y1 1, ::y2 2}] @(yank {} [y2]))))
 
-  (testing "lazy binding"
-    (defyarn y1 {} 1)
-    (defyarn y2 {^:lazy x1 y1} (+ @x1 1))
-    (is (= [[2] {::y1 1, ::y2 2}] @(yank {} [y2]))))
-
   (testing "lazy defer binding"
     (defyarn y1 {} 1)
-    (defyarn y2 {^:lazy ^:defer x1 y1} (md/chain' @x1 inc))
+    (defyarn y2 {^:lazy x1 y1} (md/chain' @x1 inc))
     (is (= [[2] {::y1 1, ::y2 2}] @(yank {} [y2]))))
 
   (testing "lazy unused binding"
@@ -96,9 +80,8 @@
     (defyarn y2 {} (throw (AssertionError.)))
     (defyarn y3 {^:lazy x1 y1
                  ^:lazy _x2 y2}
-      (+ @x1 10))
-    (is (= [[11] {::y1 1, ::y3 11}] @(yank {} [y3]))))
-  )
+      (+ @@x1 10))
+    (is (= [[11] {::y1 1, ::y3 11}] @(yank {} [y3])))))
 
   
 (deftest yank-deferreds-coercing-test
@@ -124,15 +107,6 @@
   (defyarn y2 {x1 y1} (inc x1))
   (is (= [11] @(md/chain (yank {y1 (md/future 10)} [y2]) first)))
   )
-
-
-(deftest inline-yarn-test
-
-  (defyarn y1 {} 1) 
-  (defyarn ^:inline y2 {x1 y1} (inc x1))
-  (defyarn y3 {x1 y1, x2 y2} (+ x1 x2))
-
-  (is (= [[3] {::y1 1, ::y3 3}] @(yank {} [y3]))))
 
 
 (defmacro mado [& body]

@@ -1,6 +1,7 @@
 (ns ag.knitty.example
-  (:require [ag.knitty.core :refer [defyarn yarn with-yarns doyank yank]]
-            [ag.knitty.traceviz :refer [view-trace render-trace]]
+  (:require [ag.knitty.core :refer
+             [defyarn doyank tieknot with-yarns yank yarn]]
+            [ag.knitty.traceviz :refer [render-trace view-trace]]
             [manifold.deferred :as md]))
 
 (defyarn zero;; define "yarn" - single slot/value
@@ -29,29 +30,33 @@
     (Thread/sleep (rand-int 10)) (+ x y)))
 
 (defyarn three        ;; put deferred into delay, enables branching
-  {^:lazy         f three-fast
-   ^:lazy ^:defer s three-slow}
+  {^:lazy f three-fast
+   ^:lazy s three-slow}
   (if (zero? (rand-int 2)) f s))
 
 (defyarn four
   {x ::one, y ::three};; use raw keywords (not recommended)
   (future (+ x y)))
 
+(defyarn abs-three)
+
 (defyarn five
-  {x ::two, y three}  ;; mixed approach 
+  {x ::two, y abs-three}  ;; mixed approach 
   (+ x y))
 
 (defyarn six
   ^{:doc "doc string"}       ;; doc
   ^{:spec number?}           ;; spec
-  {x ::two , y ::three}
+  {x ::two, y ::three}
   (do                        ;; explicit do
     (println "debug print")
     (* x y)))
 
+(tieknot three abs-three)
+
 ;; yank - ensure all keys are inside the map - finishs deferred
-@(yank {} [one])
-@(yank {} [six])
+@(yank {} [abs-three])
+@(yank {} [five])
 @(yank {one 1000} [four six])
 @(yank {two 2000} [four five])
 
@@ -74,7 +79,7 @@
   @(yank {} [::seven]))
 
 ;; recommended to insntall 'xdot' (via pkg manager or pip)
-(view-trace @(yank {} [six]))
+(render-trace @(yank {} [five]), :format :raw)
 
 ;; view all traces at once
 (view-trace

@@ -149,6 +149,7 @@
                     (= :input type)         "skyblue"
                     (= :changed-input type) "lightpink"
                     (= :yanked type)        "lightgreen"
+                    (= :knot type)          "lightgray"
                     deferred                "navajowhite"
                     :else                   "lemonchiffon")
        :label [:font
@@ -162,7 +163,7 @@
                                 :color "black"}
                          (str id)]]])
 
-                 (not (#{:lazy-unused :leaked} type))
+                 (not (#{:lazy-unused :leaked :knot} type))
                  (conj
                   [:tr [:td {:colspan 2, :align "text"}
                         [:font {:point-size 8
@@ -213,20 +214,23 @@
 
     :edge->descriptor
     (fn [_ _ {:keys [source type used cause timex]}]
-      {:label     (or (when (and timex (pos? timex))
-                        (str "+" (nice-time timex)))
-                      "")
+      {:label     (or
+                   (when (and timex (pos? timex) (not= type :ref))
+                     (str "+" (nice-time timex)))
+                   "")
        :fontsize  8
        :dir       "both"
        :color     (if cause "black" "dimgrey")
        :arrowsize "0.7"
        :arrowtail (cond
+                    (#{:ref} type)                  "none"
                     (#{:sync} source)               "normal"
                     (#{:defer :input-defer} source) "empty"
                     (#{:input} source)              "vee"
                     (#{:changed-input} type)        "none"
                     :else                           "normal")
        :arrowhead (cond
+                    (= :ref type)            "none"
                     (= :sync type)           "none"
                     (= :defer type)          "odot"
                     (= :lazy-sync type)      "diamond"
@@ -237,7 +241,7 @@
        :style (cond
                 cause                   "bold"
                 (not used)              "dotted"
-                (= type :changed-input) "tapered"
+                (= type :changed-input) "dotted"
                 :else                   "solid")})
                 }))
 
@@ -297,7 +301,7 @@
             (force graphviz-available)))
       (open-rendered-trace poy 
                            (assoc options :format :xdot)
-                           #(shell/sh "python" "-m" "xdot" %))
+                           #(shell/sh "xdot" %))
 
       (or
        (#{:svg :svgz :png :pdf :webp :json} f)

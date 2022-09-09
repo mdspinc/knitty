@@ -1,9 +1,11 @@
 (ns ag.knitty.impl
-  (:require [ag.knitty.mdm :refer [create-mdm mdm-fetch! mdm-freeze!]]
+  (:require [ag.knitty.mdm :refer [create-mdm mdm-freeze! mdm-fetch!]]
             [ag.knitty.trace :as t :refer [capture-trace!]]
             [manifold.deferred :as md]
             [manifold.executor]
-            [manifold.utils]))
+            [manifold.utils]
+            [taoensso.timbre :refer [info]])
+  (:import [ag.knitty.mdm MutableDeferredMap]))
 
 
 (defprotocol IYarn
@@ -17,23 +19,6 @@
     [_ mdm reg tracer]
     (yget mdm reg tracer))
   (yarn-key [_] key))
-
-
-(deftype YarnAlias [key orig-key transform]
-
-  IYarn
-  (yarn-key
-    [_]
-    (yarn-key key))
-
-  (yarn-get
-    [_ mdm reg tracer]
-    (let [y (get reg orig-key)
-          d (yarn-get y mdm reg tracer)]
-      (cond
-        (nil? transform) d
-        (md/deferred? d) (md/chain' d transform)
-        :else (transform d)))))
 
 
 (extend-protocol IYarn
@@ -68,10 +53,9 @@
 (defn bind-param-type [ds]
   (let [{:keys [defer lazy]} (meta ds)]
     (cond
-      (and defer lazy) :lazy-defer
-      lazy             :lazy-sync
-      defer            :defer
-      :else            :sync)))
+      lazy  :lazy
+      defer :defer
+      :else :sync)))
 
 
 (defrecord NotADeferred [deferred])
@@ -84,41 +68,22 @@
 
 
 (definline yarn-get-sync [k mdm reg tracer]
-  `(yarn-get (~reg ~k ~k) ~mdm ~reg ~tracer))
+  `(do
+     (when ~tracer (t/trace-dep ~tracer ~k))
+     (yarn-get (~reg ~k ~k) ~mdm ~reg ~tracer)))
 
 
 (definline yarn-get-defer [k mdm reg tracer]
-  `(NotADeferred. (as-deferred (yarn-get (~reg ~k ~k) ~mdm ~reg ~tracer))))
+  `(do
+     (when ~tracer (t/trace-dep ~tracer ~k))
+     (NotADeferred. (as-deferred (yarn-get (~reg ~k ~k) ~mdm ~reg ~tracer)))))
 
 
-(defn yarn-get-lazy-defer [k mdm reg tracer]
-  (NotADeferred.
-   (delay
-    (as-deferred
-     (yarn-get (reg k k) mdm reg tracer)))))
-
-
-(defn yarn-get-lazy-sync [k mdm reg tracer]
-  (NotADeferred.
-   (delay
-    (let [d (yarn-get (reg k k) mdm reg tracer)]
-      (if (md/deferred? d) @d d)))))
-
-
-(defonce synclazy-executor-delay
+(defn yarn-get-lazy [k mdm reg tracer]
   (delay
-   (let [cnt (atom 0)]
-     (manifold.executor/utilization-executor
-      0.95 Integer/MAX_VALUE
-      {:thread-factory (manifold.executor/thread-factory
-                        #(str "knitty-synclazy-" (swap! cnt inc))
-                        (deliver (promise) nil))
-       ;; :stats-callback (fn [stats] )
-       }))))
-
-
-(defn get-synclazy-executor []
-  @synclazy-executor-delay)
+   (when tracer (t/trace-dep tracer k))
+   (as-deferred
+    (yarn-get (reg k k) mdm reg tracer))))
 
 
 (defn resolve-executor-var [e]
@@ -178,7 +143,7 @@
 
 (defn- build-yank-fns
   [k bind expr]
-  (let [mdm '_mdm
+  (let [mdm (with-meta '_mdm {:tag `MutableDeferredMap})
         reg '_reg
         tracer '_tracer
         the-fnv (gensym "fn")
@@ -188,43 +153,39 @@
                 (for [[ds dk] bind]
                   [ds
                    (case (bind-param-type ds)
-                     :sync        `(yarn-get-sync       ~dk ~mdm ~reg ~tracer)
-                     :defer       `(yarn-get-defer      ~dk ~mdm ~reg ~tracer)
-                     :lazy-sync   `(yarn-get-lazy-sync  ~dk ~mdm ~reg ~tracer)
-                     :lazy-defer  `(yarn-get-lazy-defer ~dk ~mdm ~reg ~tracer))]))
+                     :sync   `(yarn-get-sync  ~dk ~mdm ~reg ~tracer)
+                     :defer  `(yarn-get-defer ~dk ~mdm ~reg ~tracer)
+                     :lazy   `(yarn-get-lazy  ~dk ~mdm ~reg ~tracer))]))
 
         maybe-unwrap-defers
         (mapcat identity
                 (for [[ds _dk] bind
-                      :when (#{:lazy-sync :defer :lazy-defer} (bind-param-type ds))]
+                      :when (#{:defer :lazy} (bind-param-type ds))]
                   [ds `(unwrap-not-a-deferred ~ds)]))
 
         deps (keys bind)
-        fnname #(-> k name (str "-" %) symbol)
-        any-lazy-sync (->> deps (map bind-param-type) (some #{:lazy-sync}) some?)
-        executor-var (or (:executor (meta bind))
-                         (when any-lazy-sync #'get-synclazy-executor))]
+        executor-var (:executor (meta bind))]
 
     `(let [;; input - vector. unwraps 'defers', called by yget-fn#
            ~the-fnv
-           (fn ~(fnname "expr")
+           (fn ~(-> k name symbol)
              ([[~@deps] ~tracer]
               (when ~tracer (t/trace-call ~tracer))
               (coerce-deferred (let [~@maybe-unwrap-defers] ~expr))))
 
            ;; input - mdm and registry, called by `yank-snatch
            yget-fn#
-           (fn ~(fnname "yarn") [~mdm ~reg ~tracer]
+           (fn ~(-> k name (str "--yarn") symbol) [~mdm ~reg ~tracer]
              (let [~tracer (when ~tracer (t/trace-build-sub-tracer ~tracer ~k))]
                (let [[claim# d#] (mdm-fetch! ~mdm ~k)]
                  (if-not claim#
-                   ;; got item from mdm 
+                   ;; got item from mdm
                    d#
 
                    ;; calculate & provide to mdm
                    (maybe-future-with
                     ~executor-var
-                    (when ~tracer (t/trace-start ~tracer))
+                    (when ~tracer (t/trace-start ~tracer :yarn))
 
                     (try ;; d# is alsways deffered
                       (when ~tracer
@@ -255,7 +216,7 @@
                             (do
                               (when ~tracer (t/trace-finish ~tracer x# nil false))
                               (md/success! d# x# claim#)
-                              d#))))
+                              x#))))
 
                       (catch Throwable e#
                         (let [ew# (wrap-yarn-exception ~k e#)]
@@ -264,6 +225,52 @@
                           d#))))))))]
        [~the-fnv
         yget-fn#])))
+
+
+(deftype YarnRef [key orig-key]
+
+  IYarn
+  (yarn-key
+    [_]
+    key)
+
+  (yarn-get
+   [_ mdm reg tracer]
+   (let [tracer (when tracer (t/trace-build-sub-tracer tracer key))
+         [claim d] (mdm-fetch! ^MutableDeferredMap mdm key)]
+     (if-not claim
+       d
+       (do
+         (when tracer (t/trace-start tracer :knot))
+         (try ;; d# is alsways deffered
+           (when tracer (t/trace-all-deps tracer [[orig-key :ref]]))
+           (let [x (yarn-get-sync orig-key mdm reg tracer)]
+             (if (md/deferred? x)
+               (do
+                 (md/on-realized
+                  x
+                  (fn [xv]
+                    (when tracer (t/trace-finish tracer xv nil true))
+                    (md/success! d xv claim))
+                  (fn [e]
+                    (let [ew (wrap-yarn-exception key e)]
+                      (when tracer (t/trace-finish tracer nil ew true))
+                      (md/error! d ew claim))))
+                 d)
+               (do
+                 (when tracer (t/trace-finish tracer x nil false))
+                 (md/success! d x claim)
+                 x)))
+           (catch Throwable e
+             (let [ew (wrap-yarn-exception key e)]
+               (when tracer (t/trace-finish tracer nil ew false))
+               (md/error! d ew claim)
+               d))))))))
+
+
+(defmethod print-method YarnRef [^YarnRef y ^java.io.Writer w]
+  (.write w "#knitty/yarn ")
+  (.write w (str [(.-key y) (.-orig-key y)])))
 
 
 (defn gen-yarn
@@ -276,12 +283,14 @@
       yget#)))
 
 
+
 (defn gen-yarn-ref
-  [key dest transform]
-  `(YarnAlias.
-    ~key
-    ~dest
-    ~transform))
+  [key from]
+  (list `YarnRef. key from))
+
+
+(defn- hide [d]
+  (delay d))
 
 
 (defn yank*
@@ -290,9 +299,9 @@
         errh (fn [e]
                (throw (ex-info "failed to yank"
                                (assoc (dissoc (ex-data e) ::inyank)
-                                      :knitty/yanked-poy poy
+                                      :knitty/yanked-poy (hide poy)
+                                      :knitty/failed-poy (hide (mdm-freeze! mdm))
                                       :knitty/yanked-yarns yarns
-                                      :knitty/failed-poy (mdm-freeze! mdm)
                                       :knitty/trace (when tracer
                                                          (conj
                                                           (-> poy meta :knitty/trace)

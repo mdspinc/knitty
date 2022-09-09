@@ -16,7 +16,7 @@
 ;; << API
 
 ;; mapping {keyword => Yarn}
-(def ^:dynamic *registry* {})
+(def ^:dynamic *registry* (atom {}))
 (def ^:dynamic *tracing* true)
 
 
@@ -24,7 +24,7 @@
   (let [k (yarn-key yarn)]
     (when-not (qualified-keyword? k)
       (throw (ex-info "yarn must be a qualified keyword" {::yarn k})))
-    (alter-var-root #'*registry* assoc k yarn)))
+    (swap! *registry* assoc k yarn)))
 
 
 (s/def ::yarn-binding (s/map-of symbol? ident?))
@@ -72,23 +72,12 @@
           [nm m] (pick-yarn-meta nm (meta bind) doc)
           expr (or expr `(throw (java.lang.UnsupportedOperationException. "input-only yarn")))
           spec (:spec m)
-          inline (:inline m)
           bind (with-meta bind m)]
-
-      (when (and inline (not= 1 (count bind)))
-        (throw (Exception. "Inline yarn must have exactly one binding")))
-      (when (and inline (not= :sync (impl/bind-param-type (ffirst bind))))
-        (throw (Exception. "Inline yarn binding must be :sync")))
 
       (list
        `do
        (when spec `(s/def ~k ~spec))
-       (if inline
-         `(register-yarn
-           ~(impl/gen-yarn-ref k
-                               (-> bind first val)
-                               (list `fn [(-> bind first key)] expr)))
-         `(register-yarn (yarn ~k ~bind ~expr)))
+       `(register-yarn (yarn ~k ~bind ~expr))
        `(def ~nm ~k)))))
 
 
@@ -96,21 +85,28 @@
   [poy yarns]
   (assert (map? poy) "poy should be a map")
   (assert (sequential? yarns) "yarns should be vector/sequence")
-  (yank* poy yarns *registry* (when *tracing* (create-tracer poy yarns))))
+  (yank* poy yarns @*registry* (when *tracing* (create-tracer poy yarns))))
 
 
 (defmacro with-yarns [yarns & body]
-  `(binding [*registry*
-             (into *registry*
-                   (map #(vector (yarn-key %) %))
-                   ~yarns)]
+  `(binding [*registry* (atom
+                         (into @*registry*
+                               (map #(vector (yarn-key %) %))
+                               ~yarns))]
      ~@body))
 
 
 (defmacro doyank
-  [poy binds & body] 
+  [poy binds & body]
   `(md/chain'
     (yank ~poy ~(vec (vals binds)))
     (fn [[[~@(keys binds)] ctx#]]
       ~@body
       ctx#)))
+
+
+;; TODO: name?
+(defn tieknot [from dst]
+     ;; TODO: check (abstract? to)
+  (register-yarn #=(impl/gen-yarn-ref dst from))
+  from)

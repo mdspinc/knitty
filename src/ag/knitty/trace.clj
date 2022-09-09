@@ -8,11 +8,11 @@
 
 
 (defprotocol Tracer 
-  (trace-start [_])
+  (trace-start [_ kind])
   (trace-call [_])
   (trace-finish [_ value error async])
-  (trace-dep [_ k])
   (trace-all-deps [_ yarns])
+  (trace-dep [_ k])  
   (trace-build-sub-tracer [_ k])
   (capture-trace! [_]))
 
@@ -57,15 +57,15 @@
 
   Tracer
   (trace-start
-   [_]
+   [_ kind]
    (aconj-tlog store this-yarn ::trace-start (now))
+   (aconj-tlog store this-yarn ::trace-kind kind)
    (aconj-tlog store this-yarn ::trace-caller by-yarn))
 
   (trace-call
    [_]
    (aconj-tlog store this-yarn ::trace-call (now))
    (aconj-tlog store this-yarn ::trace-thread (.getName (Thread/currentThread))))
-
 
   (trace-dep [_ yarn]
     (aconj-tlog store this-yarn ::trace-dep [yarn (now)]))
@@ -126,7 +126,18 @@
                           :let [[dep time] v]]
                       [[y dep] time]))
         all-deps (set (for [t (vals ytlog), [d _] (::trace-all-deps t)] d))
-        ex-deps (set/difference all-deps (set (keys ytlog)))]
+        ex-deps (set/difference all-deps (set (keys ytlog)))
+
+        knot-ref (fn [t]
+                   (and
+                    (-> t ::trace-all-deps count (= 1))
+                    (-> t ::trace-all-deps first second (= :ref))
+                    (-> t ::trace-all-deps first first)))
+        resolve-knots (fn [t]
+                        (if-let [k (knot-ref t)]
+                          (recur (ytlog k))
+                          t))
+        ]
     {:at at
      :time (safe-minus done-at base-at)
      :base-at base-at
@@ -138,19 +149,21 @@
              (concat
               (for [[y t] ytlog
                     :when (not= y ::yank)]
-                [y (let [{value  ::trace-value
-                          error  ::trace-error
-                          thread ::trace-thread
+                [y (let [{value     ::trace-value
+                          error     ::trace-error
+                          thread    ::trace-thread
                           finish-at ::trace-finish
                           start-at  ::trace-start
                           call-at   ::trace-call
+                          kind      ::trace-kind
                           deferred? ::trace-deferred
                           caller    ::trace-caller} t]
                      {:type
                       (cond
-                        (= ::yank caller) :yanked
-                        (nil? finish-at)  :leaked
-                        :else             :interim)
+                        (= ::yank caller)  :yanked
+                        (= :knot kind)     :knot
+                        (nil? finish-at)   :leaked
+                        :else              :interim)
                       :caller caller
                       :value value
                       :error error
@@ -178,7 +191,7 @@
                             :else :sync)
                   :cause (= (::trace-caller (ytlog dk)) y)
                   :timex (when-let [t (safe-minus (::trace-finish t)
-                                                  (::trace-finish (ytlog dk)))]
+                                                  (::trace-finish (resolve-knots (ytlog dk))))]
                            (when (pos? t) t))
                   :used (not (nil? time))
                   :type dt
