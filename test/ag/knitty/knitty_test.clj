@@ -1,5 +1,7 @@
 (ns ag.knitty.knitty-test 
-  (:require [ag.knitty.core :as knitty :refer [defyarn with-yarns yank yarn]]
+  (:require [ag.knitty.core :as knitty 
+             :refer [defyarn doyank with-yarns yank
+                     yarn]]
             [clojure.spec.alpha :as s]
             [clojure.test :as t :refer [deftest is testing]]
             [manifold.deferred :as md]
@@ -209,6 +211,35 @@
 
 
 (deftest tracing-test
+  )
+
+
+(deftest cancellation-test
+
+  (defyarn cnt)
+
+  (defyarn count1 {c cnt}
+    (md/future
+      (Thread/sleep 10)
+      (swap! c inc)))
+
+  (defyarn count2 {c cnt, _ count1}
+    (md/future
+      (Thread/sleep 10)
+      (swap! c inc)))
+
+  (defyarn count3 {c cnt, _ count2}
+    (md/future
+      (Thread/sleep 10)
+      (swap! c inc)))
+
+  (let [a (atom 0)]
+    (is (= 3 (-> (yank {cnt a} [count3]) deref second cnt deref))))
+
+  (let [a (atom  0)]
+    (is (= ::t @(-> (doyank {cnt a} {x count3} x) (md/timeout! 15 ::t))))
+    (is (= 1 @a)))
+
   )
 
   

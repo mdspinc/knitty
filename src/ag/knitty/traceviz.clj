@@ -236,7 +236,7 @@
                     (= :lazy-sync type)      "diamond"
                     (= :lazy-defer type)     "odiamond"
                     (= :changed-input type)  "none"
-                    :else                    "normal")
+                    :else                    "none")
        :constraint  (not= type :changed-input)
        :style (cond
                 cause                   "bold"
@@ -277,7 +277,7 @@
    (zero? (:exit (shell/sh "dot" "-V")))))
 
 
-(defn- open-rendered-trace [poy options open-f] 
+(defn- open-rendered-trace [poy options open-f]
   (let [t (render-trace poy options)
         f (java.io.File/createTempFile
            "knitty-"
@@ -299,7 +299,7 @@
        (and auto
             (force xdot-available)
             (force graphviz-available)))
-      (open-rendered-trace poy 
+      (open-rendered-trace poy
                            (assoc options :format :xdot)
                            #(shell/sh "xdot" %))
 

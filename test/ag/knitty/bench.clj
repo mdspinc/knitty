@@ -61,8 +61,8 @@
     (cc/quick-bench
      @(md/chain (yank {} target-keys) second count)))
 
-  (println "Tracing on")
-  (binding [ag.knitty.core/*tracing* true]
+  #_(println "Tracing on")
+  #_(binding [ag.knitty.core/*tracing* true]
     (cc/quick-bench
      @(md/chain (yank {} target-keys) second count))))
 

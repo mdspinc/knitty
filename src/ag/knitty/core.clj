@@ -1,11 +1,11 @@
 (ns ag.knitty.core
   (:require [ag.knitty.impl :as impl :refer [yank* yarn-key]]
             [ag.knitty.trace :refer [create-tracer]]
+            [ag.knitty.deferred :as kd]
             [clojure.java.browse]
             [clojure.java.browse-ui]
             [clojure.java.shell]
             [clojure.spec.alpha :as s]
-            [manifold.deferred :as md]
             [manifold.executor]))
 
 ;; >> API
@@ -42,7 +42,7 @@
       (throw (Exception. (s/explain-str ::yarn bd))))
     (let [{{:keys [bind expr]} :bind-and-expr} cf
           bind (or bind {})
-          expr (or expr `(throw (ex-info "missing input-only yarn" {::yarn ~k})))]
+          expr (or expr `(throw (java.lang.UnsupportedOperationException. ~(str "input-only yarn " k))))]
       (impl/gen-yarn k bind expr))))
 
 
@@ -70,7 +70,7 @@
           {doc :doc, {:keys [bind expr]} :bind-and-expr} cf
           bind (or bind {})
           [nm m] (pick-yarn-meta nm (meta bind) doc)
-          expr (or expr `(throw (java.lang.UnsupportedOperationException. "input-only yarn")))
+          expr (or expr `(throw (java.lang.UnsupportedOperationException. ~(str "input-only yarn " k))))
           spec (:spec m)
           bind (with-meta bind m)]
 
@@ -98,7 +98,7 @@
 
 (defmacro doyank
   [poy binds & body]
-  `(md/chain'
+  `(kd/chain-revoke'
     (yank ~poy ~(vec (vals binds)))
     (fn [[[~@(keys binds)] ctx#]]
       ~@body

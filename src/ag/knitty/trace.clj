@@ -1,4 +1,4 @@
-(ns ag.knitty.trace 
+(ns ag.knitty.trace
   (:require
    [clojure.set :as set]
    [manifold.deferred :as md]))
@@ -7,14 +7,13 @@
 (set! *warn-on-reflection* true)
 
 
-(defprotocol Tracer 
-  (trace-start [_ kind])
-  (trace-call [_])
-  (trace-finish [_ value error async])
-  (trace-all-deps [_ yarns])
-  (trace-dep [_ k])  
-  (trace-build-sub-tracer [_ k])
+(defprotocol Tracer
+  (trace-start [_ yk kind deps])
+  (trace-call [_ yk])
+  (trace-finish [_ yk value error async])
+  (trace-dep [_ yk dep])
   (capture-trace! [_]))
+
 
 (defrecord TraceLog
            [yarn
@@ -49,45 +48,34 @@
   (let [t (TraceLog. yarn event value)]
     (swap! a #(when % (cons t %)))))
 
-(deftype TracerImpl
-         [store
-          this-yarn
-          by-yarn
-          extra]
+(deftype TracerImpl [store extra]
 
   Tracer
   (trace-start
-   [_ kind]
-   (aconj-tlog store this-yarn ::trace-start (now))
-   (aconj-tlog store this-yarn ::trace-kind kind)
-   (aconj-tlog store this-yarn ::trace-caller by-yarn))
+   [_ yk kind deps]
+   (aconj-tlog store yk ::trace-start (now))
+   (aconj-tlog store yk ::trace-kind kind)
+   (aconj-tlog store yk ::trace-all-deps deps)
+   )
 
   (trace-call
-   [_]
-   (aconj-tlog store this-yarn ::trace-call (now))
-   (aconj-tlog store this-yarn ::trace-thread (.getName (Thread/currentThread))))
+   [_ yk]
+   (aconj-tlog store yk ::trace-call (now))
+   (aconj-tlog store yk ::trace-thread (.getName (Thread/currentThread))))
 
-  (trace-dep [_ yarn]
-    (aconj-tlog store this-yarn ::trace-dep [yarn (now)]))
-
-  (trace-all-deps
-   [_ yarns]
-   (aconj-tlog store this-yarn ::trace-all-deps yarns))
-
-  (trace-build-sub-tracer
-   [_ k]
-   (TracerImpl. store k this-yarn nil))
+  (trace-dep [_ yk dep]
+    (aconj-tlog store yk ::trace-dep [dep (now)]))
 
   (trace-finish
-   [_ value error deferred]
+   [_ yk value error deferred]
    (when deferred
-     (aconj-tlog store this-yarn ::trace-deferred true))
+     (aconj-tlog store yk ::trace-deferred true))
    (when value
-     (aconj-tlog store this-yarn ::trace-value value))
+     (aconj-tlog store yk ::trace-value value))
    (when error
-     (aconj-tlog store this-yarn ::trace-error error))
-   (aconj-tlog store this-yarn ::trace-finish (now)))
-  
+     (aconj-tlog store yk ::trace-error error))
+   (aconj-tlog store yk ::trace-finish (now)))
+
   (capture-trace!
    [_]
    (let [s @store]
@@ -107,7 +95,7 @@
                :base-at (now)
                :poy poy
                :yarns yarns}]
-    (TracerImpl. store ::yank nil extra)))
+    (TracerImpl. store extra)))
 
 
 (defn- safe-minus [a b]
@@ -116,15 +104,27 @@
 
 
 (defn parse-trace [t]
-  (let [{:keys [at base-at done-at poy tracelog yankid]} t
+  (let [{:keys [at base-at done-at poy tracelog yankid yarns]} t
+
+        yanked? (set yarns)
         ytlog (update-vals
                (group-by :yarn tracelog)
                (fn [ts] (into {} (map (juxt :event :value) ts))))
-        ytdep (into {}
-                    (for [{y :yarn, e :event, v :value} tracelog
-                          :when (= e ::trace-dep)
-                          :let [[dep time] v]]
-                      [[y dep] time]))
+
+        ytdep-time (into {}
+                         (for [{y :yarn, e :event, v :value} tracelog
+                               :when (= e ::trace-dep)
+                               :let [[dep time] v]]
+                           [[y dep] time]))
+
+        ytcause (into
+                 {}
+                 (comp
+                  (filter #(= ::trace-dep (:event %)))
+                  (filter #(-> (get ytlog (first (:value %))) ::trace-call some?))
+                  (map (fn [{c :yarn, [y _] :value}] [y c])))
+                 tracelog)
+
         all-deps (set (for [t (vals ytlog), [d _] (::trace-all-deps t)] d))
         ex-deps (set/difference all-deps (set (keys ytlog)))
 
@@ -136,8 +136,7 @@
         resolve-knots (fn [t]
                         (if-let [k (knot-ref t)]
                           (recur (ytlog k))
-                          t))
-        ]
+                          t))]
     {:at at
      :time (safe-minus done-at base-at)
      :base-at base-at
@@ -157,13 +156,14 @@
                           call-at   ::trace-call
                           kind      ::trace-kind
                           deferred? ::trace-deferred
-                          caller    ::trace-caller} t]
+                          } t
+                         caller (ytcause y)]
                      {:type
                       (cond
-                        (= ::yank caller)  :yanked
-                        (= :knot kind)     :knot
-                        (nil? finish-at)   :leaked
-                        :else              :interim)
+                        (yanked? y)      :yanked
+                        (= :knot kind)   :knot
+                        (nil? finish-at) :leaked
+                        :else            :interim)
                       :caller caller
                       :value value
                       :error error
@@ -183,13 +183,13 @@
              (concat
               (for [[y t] ytlog
                     [dk dt] (::trace-all-deps t)
-                    :let [time (get ytdep [y dk])]]
+                    :let [time (get ytdep-time [y dk])]]
                 [[y dk]
                  {:source (cond
                             (contains? poy dk) :input
                             (::trace-deferred (ytlog dk)) :defer
                             :else :sync)
-                  :cause (= (::trace-caller (ytlog dk)) y)
+                  :cause (= (ytcause dk) y)
                   :timex (when-let [t (safe-minus (::trace-finish t)
                                                   (::trace-finish (resolve-knots (ytlog dk))))]
                            (when (pos? t) t))
@@ -209,12 +209,12 @@
                                    :base-at (:base-at a)
                                    :done-at (:done-at a)
                                    :shift (safe-minus (:base-at a) (:base-at b))})
-     
+
      :base-at (or (:base-at b) (:base-at a))
      :done-at (or (:done-at b) (:done-at a))
      :at      (or (:at b) (:at a))
-     :time    ((fnil + 0 0) (:time b 0) (:time a 0)) 
-     
+     :time    ((fnil + 0 0) (:time b 0) (:time a 0))
+
      :nodes (concat
              (:nodes b)
              (for [[y n] (:nodes a)
@@ -229,18 +229,18 @@
                    :when (or (nil? n1) (not eq))]
                (if changed
                  [y (assoc n :type :changed-input)]
-                 [y n]))) 
-     
+                 [y n])))
+
      :links (concat
              (:links b)
-             
+
              (for [[[_ y :as xy] c] (:links a)]
                (if (and (contains? nodes-b y)
                         (= (:value (nodes-b y))
                            (:value (nodes-a y))))
                  [xy (assoc c :yankid-dst (:yankid (nodes-b y)))]
                  [xy c]))
-             
+
              (set
               (for [[[_ y] _] (:links a)
                     :let [n1 (nodes-b y)

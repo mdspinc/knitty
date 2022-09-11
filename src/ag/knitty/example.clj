@@ -41,13 +41,13 @@
 (defyarn abs-three)
 
 (defyarn five
-  {x ::two, y abs-three}  ;; mixed approach 
+  {x ::two, y abs-three}  ;; mixed approach
   (+ x y))
 
 (defyarn six
   ^{:doc "doc string"}       ;; doc
   ^{:spec number?}           ;; spec
-  {x ::two, y ::three}
+  {y ::three x ::two}
   (do                        ;; explicit do
     (println "debug print")
     (* x y)))
@@ -80,6 +80,11 @@
 
 ;; recommended to insntall 'xdot' (via pkg manager or pip)
 (render-trace @(yank {} [five]), :format :raw)
+
+(view-trace
+ (md/chain
+  {}
+  #(yank % [six]) second))
 
 ;; view all traces at once
 (view-trace
