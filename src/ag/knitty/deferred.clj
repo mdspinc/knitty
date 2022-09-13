@@ -100,11 +100,33 @@
   (chain-revoke* revoke' md/chain' x fns))
 
 
-(defn zip* 
+(defn zip*
   ([ds] (apply md/zip ds))
   ([a ds] (apply md/zip a ds))
   ([a b ds] (apply md/zip a b ds))
   ([a b c ds] (apply md/zip a b c ds))
   ([a b c d ds] (apply md/zip a b c d ds))
-  ([a b c d e & ds] (zip* (apply list* a b c d e ds)))
-  )
+  ([a b c d e & ds] (zip* (apply list* a b c d e ds))))
+
+
+(defn- via-n [chain n k r => [expr & forms]]
+  (let [x (gensym "x")
+        ns (take n forms)
+        rs (take r forms)
+        ks (drop k forms)]
+      (if (seq ks)
+        `(~chain ~expr (fn [~x]
+                         ~(via-n chain n k r => 
+                                 `((~=> ~x ~@ns)
+                                   ~@rs
+                                   ~@ks))))
+        `(~chain (~=> ~expr ~@ns)))))
+
+
+(defmacro via [chain [=> & forms]]
+  (let [s (symbol (name =>))]
+    (cond
+      (#{'-> '->> 'some-> 'some->>} s) (via-n chain 1 1 0 => forms)
+      (#{'cond-> 'cond->>} s)          (via-n chain 2 2 0 => forms)
+      (#{'as->} s)                     (via-n chain 2 2 1 => forms)
+      :else (throw (Exception. (str "unsupported arrow " =>))))))

@@ -8,39 +8,6 @@
   {}         ;; no inputs
   0)         ;; value, use explicit `do when needed
 
-
-(defyarn x1 {}
-  (md/future
-   (println "X1")
-   (Thread/sleep 1000) 1))
-
-(defyarn x2 {x x1}
-  (md/future
-   (println "X2")   
-    (Thread/sleep 1000) (inc x)))
-
-(defyarn x3 {x x2}
-  (md/future
-   (println "X3")   
-    (Thread/sleep 1000) (inc x)))
-
-(defyarn x4 {x x3}
-  (md/future
-    (println "X4")
-    (Thread/sleep 1000) (inc x)))
-
-(defyarn x5 {x x4}
-  (md/future
-    (println "X5")
-    (Thread/sleep 1000) (inc x)))
-
-
-@(md/timeout!
- (yank {} [x5])
-  1500
-  ::timeout)
-
-
 (defyarn one
   {_ zero}   ;; wait for zero, but don't use it
   1)         ;; any manifold-like deferred can be finished
