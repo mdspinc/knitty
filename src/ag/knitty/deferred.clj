@@ -11,9 +11,9 @@
   {:pre [(every? simple-symbol? binds)]}
   (if (empty? binds)
     `(do ~@body)
-    `(let [x ~(first binds)]
+    `(let [x# ~(first binds)]
        (md/chain'
-        (md/->deferred x x)
+        (md/->deferred x# x#)
         (fn [~(first binds)]
           (realize [~@(rest binds)] ~@body))))))
 
