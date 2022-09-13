@@ -101,19 +101,18 @@
 
 
 (defn run-future [executor-var thefn]
-  (let [d (md/deferred)
-        c (md/claim! d)]
+  (let [d (md/deferred)]
     (manifold.utils/future-with
      (resolve-executor-var executor-var)
      (try
        (let [v (md/unwrap' (thefn))]
          (if (md/deferred? v)
            (md/on-realized v
-                           #(md/success! d % c)
-                           #(md/error! d % c))
-           (md/success! d v c)))
+                           #(md/success! d %)
+                           #(md/error! d %))
+           (md/success! d v)))
        (catch Throwable e
-         (md/error! d e c))))
+         (md/error! d e))))
     d))
 
 
@@ -151,7 +150,7 @@
                  ex)))))
 
 
-(defn connect-result-mdm [ykey result mdm-deferred claim-token tracer maybe-real-result]
+(defn connect-result-mdm [ykey result mdm-deferred tracer maybe-real-result]
 
   (if (md/deferred? result)
     (do
@@ -173,23 +172,23 @@
        (fn [xv]
          (when-not (md/realized? mdm-deferred)
            (when tracer (t/trace-finish tracer ykey xv nil true))
-           (md/success! mdm-deferred xv claim-token)))
+           (md/success! mdm-deferred xv)))
 
        (fn [e]
          (when-not (md/realized? mdm-deferred)
            (let [ew (wrap-yarn-exception ykey e)]
              (when tracer (t/trace-finish tracer ykey nil ew true))
-             (md/error! mdm-deferred ew claim-token)))))
+             (md/error! mdm-deferred ew)))))
 
       mdm-deferred)
 
     (do
       (when tracer (t/trace-finish tracer ykey result nil false))
-      (md/success! mdm-deferred result claim-token)
+      (md/success! mdm-deferred result)
       result)))
 
 
-(defn connect-error-mdm [ykey error mdm-deferred claim-token tracer maybe-real-result]
+(defn connect-error-mdm [ykey error mdm-deferred tracer maybe-real-result]
   (let [ew (wrap-yarn-exception ykey error)]
 
     ;; try to revoke
@@ -200,7 +199,7 @@
 
     (when tracer (t/trace-finish tracer ykey nil ew false))
 
-    (md/error! mdm-deferred ew claim-token)
+    (md/error! mdm-deferred ew)
     mdm-deferred))
 
 
@@ -242,8 +241,8 @@
            ;; input - mdm and registry, called by `yank-snatch
            yget-fn#
            (fn ~(-> ykey name (str "--yarn") symbol) [~ctx ~tracer]
-             (let [[claim# d#] (mdm-fetch! ~ctx ~ykey)]
-               (if-not claim#
+             (let [[new# d#] (mdm-fetch! ~ctx ~ykey)]
+               (if-not new#
                  ;; got item from mdm
                  d#
                  ;; calculate & provide to mdm
@@ -265,27 +264,27 @@
                                                                      (vreset! ~reald (~the-fnv ~ctx ~tracer ~@deps)))))
                                    (vreset! ~reald (~the-fnv ~ctx ~tracer ~@deps)))]
 
-                          (connect-result-mdm ~ykey x# d# claim# ~tracer ~reald)))
+                          (connect-result-mdm ~ykey x# d# ~tracer ~reald)))
 
                       (catch Throwable e#
-                        (connect-error-mdm ~ykey e# d# claim# ~tracer ~reald))))))))]
+                        (connect-error-mdm ~ykey e# d# ~tracer ~reald))))))))]
 
        yget-fn#)))
 
 
 (defn build-yarn-ref-gtr  [ykey orig-ykey]
   (fn [ctx tracer]
-    (let [[claim d] (mdm-fetch! ctx ykey)]
-      (if-not claim
+    (let [[new d] (mdm-fetch! ctx ykey)]
+      (if-not new
         d
         (do
           (when tracer (t/trace-start tracer ykey :knot [[orig-ykey :ref]]))
           (try
             (when tracer (t/trace-call tracer ykey))
             (let [x (yarn-get-sync ykey orig-ykey ctx tracer)]
-              (connect-result-mdm ykey x d claim tracer nil))
+              (connect-result-mdm ykey x d tracer nil))
             (catch Throwable e
-              (connect-error-mdm ykey e d claim tracer nil))))))))
+              (connect-error-mdm ykey e d tracer nil))))))))
 
 
 (defn gen-yarn

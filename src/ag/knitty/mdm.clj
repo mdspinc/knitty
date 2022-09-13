@@ -8,7 +8,7 @@
 
 
 (defprotocol MutableDeferredMap
-  (mdm-fetch! [_ k] "get value or claimed deferred")
+  (mdm-fetch! [_ k] "get value or deferred")
   (mdm-freeze! [_] "freeze map, deref all completed deferreds")
   (mdm-cancel! [_] "freeze map, cancel all deferreds")
   )
@@ -44,19 +44,18 @@
     [_ k]
     (let [v (init k ::none)]
       (if-not (none? v)
-        [nil v]               ;; from init
+        [false v]             ;; from init
         (let [v (.get hm k)]  ;; from hm or new
           (if (nil? v)
             ;; new
             (let [d (md/deferred nil)
                   p (.putIfAbsent hm k d)
-                  d (if (nil? p) d p)
-                  c (when (nil? p) (md/claim! d))]
-              (when c (swap! added conj [k d c]))
-              [c d])
+                  d (if (nil? p) d p)]
+              (when (nil? p) (swap! added conj [k d]))
+              [true d])
             ;; from hm
             (let [v' (md/success-value v v)]
-              [nil v']))))))
+              [false v']))))))
 
   (mdm-freeze!
    [_]
@@ -69,9 +68,9 @@
 
   (mdm-cancel!
    [_]
-   (doseq [[_k d c] @added]
+   (doseq [[_k d] @added]
      (when-not (md/realized? d)
-       (kd/cancel! d c))))
+       (kd/cancel! d))))
   )
 
 
