@@ -58,27 +58,25 @@
     (md/success! d2 d1)))
 
 
-(defn revoke [d c]
-  (let [^IDeferred d (md/->deferred d)
-        e (.executor d)
-        d' (md/deferred e)]
-    (connect'' d d')
-    (md/finally' d' (fn [] (when-not (md/realized? d) (c))))
-    d'))
-
-
 (defn revoke' [^IDeferred d c]
   (let [e (.executor d)
-        d' (md/deferred e)]
+        d' (md/deferred e)
+        cc (fn [_] (when-not
+                    (md/realized? d)
+                     (c)))]
     (connect'' d d')
-    (md/finally' d' (fn [] (when-not (md/realized? d) (c))))
+    (md/on-realized d' cc cc)
     d'))
+
+
+(defn revoke [d c]
+  (revoke' (md/->deferred d) c))
 
 
 (defn- chain-revoke*
   [revoke chain x fns]
   (let [abort (volatile! false)
-        curd  (volatile! nil)
+        curd  (volatile! x)
         fnf (fn [f]
               (fn [d]
                 (when-not @abort
