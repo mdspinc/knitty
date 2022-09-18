@@ -22,7 +22,7 @@
 (defn mod-or-future [x y]
   (let [m (mod x y)]
     (if (zero? m) 
-      m #_(future 0)
+      (future m)
       m)))
 
 
@@ -54,7 +54,7 @@
 (time @(md/chain (yank {} target-keys) second count))
 
 
-(defn dobench  []
+(defn dobench []
 
   (print "Tracing off")
   (binding [ag.knitty.core/*tracing* false]
@@ -70,8 +70,7 @@
 (comment
   
   (time
-   (dotimes [_ 100]
-     @(md/chain (yank {} target-keys) second count)))
+     @(md/chain (yank {} target-keys) second count))
 
   (dobench)
   (dobench)
