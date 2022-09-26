@@ -16,7 +16,7 @@
 ;; << API
 
 ;; mapping {keyword => Yarn}
-(def ^:dynamic *registry* (atom {}))
+(def ^:dynamic *registry* (atom (hash-map)))
 (def ^:dynamic *tracing* true)
 
 

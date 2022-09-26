@@ -56,7 +56,7 @@
                   kd [k d]]
               (when (nil? p)
                 (loop [g (.get added)]
-                  (when-not (.compareAndSet added g (conj g kd))
+                  (when-not (.compareAndSet added g (cons kd g))
                     (recur (.get added)))))
               [true d])
             ;; from hm

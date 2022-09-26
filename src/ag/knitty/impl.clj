@@ -10,7 +10,7 @@
 
 (defprotocol IYarn
   (yarn-gtr [_] "get value or obligated deferred")
-  (yarn-key [_] "get yarn ykey"))
+  (yarn-key* [_] "get yarn ykey"))
 
 
 (defprotocol IYankCtx
@@ -40,7 +40,13 @@
 (deftype Yarn [ykey deps yget]
   IYarn
   (yarn-gtr [_] yget)
-  (yarn-key [_] ykey))
+  (yarn-key* [_] ykey))
+
+
+(defn yarn-key [k]
+  (if (keyword? k)
+    k
+    (yarn-key* k)))
 
 
 (defmethod print-method Yarn [y ^java.io.Writer w]
@@ -67,12 +73,6 @@
       :else :sync)))
 
 
-(defrecord NotADeferred [deferred])
-
-(defmacro unwrap-not-a-deferred [w]
-  `(let [^NotADeferred w# ~w]
-     (.-deferred w#)))
-
 
 (definline yarn-get-sync [yk ykey ctx tracer]
   `(do
@@ -83,15 +83,15 @@
 (definline yarn-get-defer [yk  ykey ctx tracer]
   `(do
      (when ~tracer (t/trace-dep ~tracer ~yk ~ykey))
-     (NotADeferred. (as-deferred
-                     ((resolve-yarn-gtr ~ctx ~ykey) ~ctx ~tracer)))))
+     (as-deferred
+      ((resolve-yarn-gtr ~ctx ~ykey) ~ctx ~tracer))))
+
 
 (defn yarn-get-lazy [yk ykey ctx tracer]
-  (NotADeferred.
-   (delay
-    (when tracer (t/trace-dep tracer yk ykey))
-    (as-deferred
-     ((resolve-yarn-gtr ctx ykey) ctx tracer)))))
+  (delay
+   (when tracer (t/trace-dep tracer yk ykey))
+   (as-deferred
+    ((resolve-yarn-gtr ctx ykey) ctx tracer))))
 
 
 (defn resolve-executor-var [e]
@@ -106,13 +106,9 @@
      (resolve-executor-var executor-var)
      (try
        (let [v (md/unwrap' (thefn))]
-         (if (md/deferred? v)
-           (md/on-realized v
-                           #(md/success! d %)
-                           #(md/error! d %))
-           (md/success! d v)))
+         (kd/connect'' v d))
        (catch Throwable e
-         (md/error! d e))))
+         (kd/error'! d e))))
     d))
 
 
@@ -161,30 +157,29 @@
          mdm-deferred
          #(when-let [d @maybe-real-result]
             (when (instance? manifold.deferred.IMutableDeferred d)
-              (md/success! d %)))
+              (kd/success'! d %)))
          #(when-let [d @maybe-real-result]
             (when (instance? manifold.deferred.IMutableDeferred d)
-              (md/error! d %)))))
+              (kd/error'! d %)))))
 
       ;; connect result -> mdm-deferred
-      (md/on-realized
-       result
-       (fn [xv]
-         (when-not (md/realized? mdm-deferred)
+      (if tracer
+        (md/on-realized
+         result
+         (fn [xv]
            (when tracer (t/trace-finish tracer ykey xv nil true))
-           (md/success! mdm-deferred xv)))
-
-       (fn [e]
-         (when-not (md/realized? mdm-deferred)
+           (kd/success'! mdm-deferred xv))
+         (fn [e]
            (let [ew (wrap-yarn-exception ykey e)]
              (when tracer (t/trace-finish tracer ykey nil ew true))
-             (md/error! mdm-deferred ew)))))
+             (kd/error'! mdm-deferred ew))))
+        (kd/connect'' result mdm-deferred))
 
       mdm-deferred)
 
     (do
       (when tracer (t/trace-finish tracer ykey result nil false))
-      (md/success! mdm-deferred result)
+      (kd/success'! mdm-deferred result)
       result)))
 
 
@@ -195,11 +190,11 @@
     (when maybe-real-result
       (when-let [d @maybe-real-result]
         (when (instance? manifold.deferred.IMutableDeferred d)
-          (md/error! d error))))
+          (kd/error'! d error))))
 
     (when tracer (t/trace-finish tracer ykey nil ew false))
 
-    (md/error! mdm-deferred ew)
+    (kd/error'! mdm-deferred ew)
     mdm-deferred))
 
 
@@ -219,11 +214,16 @@
                      :defer  `(yarn-get-defer ~ykey ~dk ~ctx ~tracer)
                      :lazy   `(yarn-get-lazy  ~ykey ~dk ~ctx ~tracer))]))
 
-        maybe-unwrap-defers
+        sync-deps
+        (for [[ds _dk] bind
+              :when (#{:sync} (bind-param-type ds))]
+          ds)
+
+        maybe-defers
         (mapcat identity
                 (for [[ds _dk] bind
-                      :when (#{:defer :lazy} (bind-param-type ds))]
-                  [ds `(unwrap-not-a-deferred ~ds)]))
+                      :when (#{:sync} (bind-param-type ds))]
+                  [ds `(md/unwrap' ~ds)]))
 
         deps (keys bind)
         [deps1 deps2] (split-at 16 deps)
@@ -236,7 +236,7 @@
              ([~ctx ~tracer ~@deps1 ~@(when (seq deps2) ['& (vec deps2)])]
               (when-not (cancelled? ~ctx)
                 (when ~tracer (t/trace-call ~tracer ~ykey))
-                (coerce-deferred (let [~@maybe-unwrap-defers] ~expr)))))
+                (coerce-deferred ~expr))))
 
            ;; input - mdm and registry, called by `yank-snatch
            yget-fn#
@@ -246,26 +246,19 @@
                  ;; got item from mdm
                  d#
                  ;; calculate & provide to mdm
-                 (maybe-future-with
-                  ~executor-var
-
+                 (maybe-future-with ~executor-var
                   (when ~tracer (t/trace-start ~tracer ~ykey :yarn ~all-deps-tr))
-
                   (let [~reald (volatile! nil)]
                     (try ;; d# is alsways deffered
                       (let [~@yank-all-deps]
-                        (let [x# (if ~(list*
-                                       `or
-                                       (for [d deps, :when (= (bind-param-type d) :sync)]
-                                         `(md/deferred? ~d)))
-                                   ~(if (<= (count deps) 3) ;; TOOD: check this number
-                                      `(kd/realize' [~@deps] (vreset! ~reald (~the-fnv ~ctx ~tracer ~@deps)))
-                                      `(md/chain' (md/zip' ~@deps) (fn [[~@deps]]
-                                                                     (vreset! ~reald (~the-fnv ~ctx ~tracer ~@deps)))))
-                                   (vreset! ~reald (~the-fnv ~ctx ~tracer ~@deps)))]
-
+                        (let [x# (if ~(list* `or (for [d sync-deps] `(md/deferred? ~d)))
+                                   (md/chain'
+                                    (kd/await' [~@deps])
+                                    (fn [_#]
+                                      (let [~@maybe-defers]
+                                        (vreset! ~reald (~the-fnv ~ctx ~tracer ~@deps)))))
+                                   (~the-fnv ~ctx ~tracer ~@deps))]
                           (connect-result-mdm ~ykey x# d# ~tracer ~reald)))
-
                       (catch Throwable e#
                         (connect-error-mdm ~ykey e# d# ~tracer ~reald))))))))]
 
@@ -324,14 +317,14 @@
                                e)))]
     (try
       (->
-       (apply md/zip' (map #((resolve-yarn-gtr ctx %) ctx tracer) yarns))
+       (kd/await' (mapv #((resolve-yarn-gtr ctx %) ctx tracer) yarns))
        (md/chain'
-        (fn [yvals]
-          [yvals
-           (let [poy' (mdm-freeze! ctx)]
+        (fn [_]
+          (let [poy' (mdm-freeze! ctx)]
+            [(map (comp poy' yarn-key) yarns)
              (if tracer
                (vary-meta poy' update :knitty/trace conj (capture-trace! tracer))
-               poy'))]))
+               poy')])))
        (md/catch' errh)
        (kd/revoke' #(mdm-cancel! ctx)))
       (catch Throwable e (errh e)))))

@@ -1,10 +1,43 @@
 (ns ag.knitty.deferred
-  (:require [clojure.tools.logging :refer [error]]
+  (:require [clojure.tools.logging :as log]
             [manifold.deferred :as md])
   (:import [java.util.concurrent CancellationException TimeoutException]
-           [manifold.deferred IDeferred]))
+           [manifold.deferred IDeferred IMutableDeferred IDeferredListener]))
 
 (set! *warn-on-reflection* true)
+
+
+(definline success'!
+  [d x]
+  `(let [^IMutableDeferred d# ~d] (.success d# ~x)))
+
+
+(definline error'!
+  [d x]
+  `(let [^IMutableDeferred d# ~d] (.error d# ~x)))
+
+
+(definline listen'!
+  [d ls]
+  `(let [^IMutableDeferred d# ~d] (.addListener d# ~ls)))
+
+
+(defn await' [vals]
+  (let [ds (filterv md/deferred? vals)
+        c (count ds)]
+    (case c
+      0 ::sync
+      1 (first ds)
+      (let [d (md/deferred nil)
+            a (atom c)
+            f (reify IDeferredListener
+                (onSuccess [_ _]
+                  (when (zero? (swap! a unchecked-dec))
+                    (success'! d ::async)))
+                (onError [_ e]
+                  (md/error! d e)))]
+        (reduce #(listen'! %2 f) nil ds)
+        d))))
 
 
 (defmacro realize [binds & body]
@@ -37,11 +70,11 @@
   ([d]
    (try
      (md/error! d cancellation-exception)
-     (catch Exception e (error e "failure while cancelling"))))
+     (catch Exception e (log/error e "failure while cancelling"))))
   ([d claim-token]
    (try
      (md/error! d cancellation-exception claim-token)
-     (catch Exception e (error e "failure while cancelling")))))
+     (catch Exception e (log/error e "failure while cancelling")))))
 
 
 (defn revokation-exception? [e]
@@ -53,9 +86,9 @@
   (if (md/deferred? d1)
     (md/on-realized
      d1
-     #(md/success! d2 %)
-     #(md/error! d2 %))
-    (md/success! d2 d1)))
+     #(connect'' % d2)
+     #(error'! d2 %))
+    (success'! d2 d1)))
 
 
 (defn revoke' [^IDeferred d c]
@@ -116,7 +149,7 @@
         ks (drop k forms)]
       (if (seq ks)
         `(~chain ~expr (fn [~x]
-                         ~(via-n chain n k r => 
+                         ~(via-n chain n k r =>
                                  `((~=> ~x ~@ns)
                                    ~@rs
                                    ~@ks))))
