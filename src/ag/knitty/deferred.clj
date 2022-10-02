@@ -23,7 +23,7 @@
 
 
 (defn await' [vals]
-  (let [ds (filterv md/deferred? vals)
+  (let [ds (filter md/deferred? vals)
         c (count ds)]
     (case c
       0 ::sync
