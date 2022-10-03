@@ -1,7 +1,7 @@
 (ns ag.knitty.core
-  (:require [ag.knitty.impl :as impl :refer [yank* yarn-key]]
+  (:require [ag.knitty.deferred :as kd]
+            [ag.knitty.impl :as impl :refer [yank* yarn-key]]
             [ag.knitty.trace :refer [create-tracer]]
-            [ag.knitty.deferred :as kd]
             [clojure.java.browse]
             [clojure.java.browse-ui]
             [clojure.java.shell]
@@ -16,7 +16,7 @@
 ;; << API
 
 ;; mapping {keyword => Yarn}
-(def ^:dynamic *registry* (atom (hash-map)))
+(def ^:dynamic *registry* (atom (impl/create-fast-registry)))
 (def ^:dynamic *tracing* true)
 
 

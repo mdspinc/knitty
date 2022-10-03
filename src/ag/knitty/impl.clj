@@ -330,3 +330,42 @@
        (md/catch' errh)
        (kd/revoke' #(mdm-cancel! ctx)))
       (catch Throwable e (errh e)))))
+
+
+(deftype FastRegistry [asmap thunks-cache]
+
+  clojure.lang.Seqable
+  (seq [_] (seq asmap))
+
+  clojure.lang.ILookup
+  (valAt [_ k] (asmap k))
+  (valAt [_ k d] (asmap k d))
+
+  clojure.lang.IKeywordLookup
+  (getLookupThunk
+    [fr k]
+    (or
+     (k @thunks-cache)
+     (k (swap!
+         thunks-cache
+         (fn [thunks]
+           (if (contains? thunks k)
+             thunks
+             (assoc
+              thunks k
+              (let [v (k asmap)]
+                (reify clojure.lang.ILookupThunk
+                  (get [t fr']
+                    (if (identical? fr fr')
+                      v
+                      t)))))))))))
+
+  clojure.lang.Associative
+  (containsKey [_ k] (contains? asmap k))
+  (entryAt [_ k] (find asmap k))
+  (empty [_] (FastRegistry. {} (atom {})))
+  (assoc [_ k v] (FastRegistry. (assoc asmap k v) (atom {}))))
+
+
+(defn create-fast-registry []
+  (FastRegistry.))
