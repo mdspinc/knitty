@@ -253,7 +253,7 @@
                       (let [~@yank-all-deps]
                         (let [x# (if ~(list* `or (for [d sync-deps] `(md/deferred? ~d)))
                                    (md/chain'
-                                    (kd/await' [~@deps])
+                                    (kd/await' [~@sync-deps])
                                     (fn [_#]
                                       (let [~@maybe-defers]
                                         (vreset! ~reald (~the-fnv ~ctx ~tracer ~@deps)))))
