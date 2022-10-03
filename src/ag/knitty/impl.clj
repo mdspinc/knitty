@@ -1,7 +1,7 @@
 (ns ag.knitty.impl
   (:require [ag.knitty.deferred :as kd]
-            [ag.knitty.mdm :refer [create-mdm mdm-cancel! mdm-fetch!
-                                   mdm-freeze! MutableDeferredMap]]
+            [ag.knitty.mdm :as mdm :refer [create-mdm mdm-cancel! mdm-fetch!
+                                           mdm-freeze! MutableDeferredMap]]
             [ag.knitty.trace :as t :refer [capture-trace!]]
             [manifold.deferred :as md]
             [manifold.executor]
@@ -22,7 +22,7 @@
 (deftype YankCtx [mdm registry ^:volatile-mutable ^boolean cancelled]
 
   MutableDeferredMap
-  (mdm-fetch! [_ k] (mdm-fetch! mdm k))
+  (mdm-fetch! [_ k i] (mdm-fetch! mdm k i))
   (mdm-freeze! [_] (mdm-freeze! mdm))
   (mdm-cancel! [_] (set! cancelled (boolean true)) (mdm-cancel! mdm))
 
@@ -203,6 +203,7 @@
         tracer '_yank_tracer
         the-fnv (gensym "fn")
         reald  (gensym "real_deferred")
+        kid (mdm/keyword->intid ykey)
 
         yank-all-deps
         (mapcat identity
@@ -240,7 +241,7 @@
            ;; input - mdm and registry, called by `yank-snatch
            yget-fn#
            (fn ~(-> ykey name (str "--yarn") symbol) [~ctx ~tracer]
-             (let [[new# d#] (mdm-fetch! ~ctx ~ykey)]
+             (let [[new# d#] (mdm-fetch! ~ctx ~ykey ~kid)]
                (if-not new#
                  ;; got item from mdm
                  d#
@@ -264,19 +265,20 @@
        yget-fn#)))
 
 
-(defn build-yarn-ref-gtr  [ykey orig-ykey]
-  `(fn [ctx# tracer#]
-     (let [[new# d#] (mdm-fetch! ctx# ~ykey)]
-       (if-not new#
-         d#
-         (do
-           (when tracer# (t/trace-start tracer# ~ykey :knot [[~orig-ykey :ref]]))
-           (try
-             (when tracer# (t/trace-call tracer# ~ykey))
-             (let [x# (yarn-get-sync ~ykey ~orig-ykey ctx# tracer#)]
-               (connect-result-mdm ~ykey x# d# tracer# nil))
-             (catch Throwable e#
-               (connect-error-mdm ~ykey e# d# tracer# nil))))))))
+(defn build-yarn-ref-gtr [ykey orig-ykey]
+  (let [kid (mdm/keyword->intid ykey)]
+    `(fn [ctx# tracer#]
+       (let [[new# d#] (mdm-fetch! ctx# ~ykey ~kid)]
+         (if-not new#
+           d#
+           (do
+             (when tracer# (t/trace-start tracer# ~ykey :knot [[~orig-ykey :ref]]))
+             (try
+               (when tracer# (t/trace-call tracer# ~ykey))
+               (let [x# (yarn-get-sync ~ykey ~orig-ykey ctx# tracer#)]
+                 (connect-result-mdm ~ykey x# d# tracer# nil))
+               (catch Throwable e#
+                 (connect-error-mdm ~ykey e# d# tracer# nil)))))))))
 
 
 (defn gen-yarn
@@ -319,7 +321,11 @@
                                e)))]
     (try
       (->
-       (kd/await' (map #((yarn-gtr ((yarn-key %) registry)) ctx tracer) yarns))
+       (kd/await' (map (fn [y]
+                         (if (keyword? y)
+                           ((get-yank-fn ctx y) nil y ctx tracer)
+                           ((yarn-gtr y) ctx tracer)))
+                       yarns))
        (md/chain'
         (fn [_]
           (let [poy' (mdm-freeze! ctx)]
@@ -368,4 +374,4 @@
 
 
 (defn create-fast-registry []
-  (FastRegistry.))
+  (FastRegistry. {} (atom {})))

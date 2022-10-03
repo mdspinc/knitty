@@ -92,10 +92,7 @@
 
 
 (defmacro with-yarns [yarns & body]
-  `(binding [*registry* (atom
-                         (into @*registry*
-                               (map #(vector (yarn-key %) %))
-                               ~yarns))]
+  `(binding [*registry* (atom (reduce #(assoc %1 (yarn-key %2) %2) @*registry* ~yarns))]
      ~@body))
 
 
@@ -111,5 +108,5 @@
 ;; TODO: name?
 (defn tieknot [from dst]
      ;; TODO: check (abstract? to)
-  (register-yarn #=(impl/gen-yarn-ref dst from))
+  (register-yarn (eval (impl/gen-yarn-ref dst from)))
   from)

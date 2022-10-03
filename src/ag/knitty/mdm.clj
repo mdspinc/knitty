@@ -8,11 +8,28 @@
 (set! *warn-on-reflection* true)
 
 
+(defonce ^:private keywords-int-ids (atom {:counter 0, :ids {}}))
+
+
+(defn keyword->intid
+  ^long [k]
+  {:pre [(keyword? k)]}
+  (long
+   (or
+    (-> keywords-int-ids deref :ids k)
+    (->
+     (swap! keywords-int-ids
+            #(-> %
+                 (update :ids assoc k (:counter %))
+                 (update :counter inc)))
+     :ids
+     k))))
+
+
 (defprotocol MutableDeferredMap
-  (mdm-fetch! [_ k] "get value or deferred")
+  (mdm-fetch! [_ kkw kid] "get value or deferred")
   (mdm-freeze! [_] "freeze map, deref all completed deferreds")
-  (mdm-cancel! [_] "freeze map, cancel all deferreds")
-  )
+  (mdm-cancel! [_] "freeze map, cancel all deferreds"))
 
 
 (defn- unwrap-mdm-deferred
@@ -43,7 +60,7 @@
   MutableDeferredMap
 
   (mdm-fetch!
-    [_ k]
+    [_ k _]
     (let [v (init k ::none)]
       (if-not (none? v)
         [false v]             ;; from init
@@ -62,7 +79,7 @@
             ;; from hm
             (let [v' (md/success-value v v)]
               [false v']))))))
-  
+
   (mdm-freeze!
     [_]
     (let [a (.get added)]
