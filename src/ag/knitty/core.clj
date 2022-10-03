@@ -42,7 +42,10 @@
       (throw (Exception. (s/explain-str ::yarn bd))))
     (let [{{:keys [bind expr]} :bind-and-expr} cf
           bind (or bind {})
+          bind (update-vals bind #(if (keyword? %) % @(resolve &env %)))
           expr (or expr `(throw (java.lang.UnsupportedOperationException. ~(str "input-only yarn " k))))]
+      (when-not (every? qualified-keyword? (vals bind))
+        (throw (Exception. "yarn bindings must be qualified keywords")))
       (impl/gen-yarn k bind expr))))
 
 

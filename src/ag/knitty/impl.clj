@@ -14,16 +14,12 @@
 
 
 (defprotocol IYankCtx
+  (get-registry [_])
   (cancelled? [_])
-  (resolve-yarn [_ k])
-  (resolve-yarn-gtr [_ k])
   )
 
 
-(deftype YankCtx
-         [mdm
-          registry
-          ^:volatile-mutable ^boolean cancelled]
+(deftype YankCtx [mdm registry ^:volatile-mutable ^boolean cancelled]
 
   MutableDeferredMap
   (mdm-fetch! [_ k] (mdm-fetch! mdm k))
@@ -32,8 +28,7 @@
 
   IYankCtx
   (cancelled? [_] cancelled)
-  (resolve-yarn [_ k] (registry k k))
-  (resolve-yarn-gtr [_ k] (yarn-gtr (registry k k)))
+  (get-registry [_] registry)
   )
 
 
@@ -73,25 +68,29 @@
       :else :sync)))
 
 
+(defmacro get-yank-fn [ctx ykey]
+  `(yarn-gtr (~ykey (get-registry ~ctx))))
 
-(definline yarn-get-sync [yk ykey ctx tracer]
+
+(defmacro yarn-get-sync [yk ykey ctx tracer]
   `(do
      (when ~tracer (t/trace-dep ~tracer ~yk ~ykey))
-     ((resolve-yarn-gtr ~ctx ~ykey) ~ctx ~tracer)))
+     ((get-yank-fn ~ctx ~ykey) ~ctx ~tracer)))
 
 
-(definline yarn-get-defer [yk  ykey ctx tracer]
+(defmacro yarn-get-defer [yk  ykey ctx tracer]
   `(do
      (when ~tracer (t/trace-dep ~tracer ~yk ~ykey))
      (as-deferred
-      ((resolve-yarn-gtr ~ctx ~ykey) ~ctx ~tracer))))
+      ((get-yank-fn ~ctx ~ykey) ~ctx ~tracer))))
 
 
-(defn yarn-get-lazy [yk ykey ctx tracer]
-  (delay
-   (when tracer (t/trace-dep tracer yk ykey))
-   (as-deferred
-    ((resolve-yarn-gtr ctx ykey) ctx tracer))))
+(defmacro yarn-get-lazy [yk ykey ctx tracer]
+  `(delay
+    (when ~tracer (t/trace-dep ~tracer ~yk ~ykey))
+    (as-deferred
+     ((get-yank-fn ~ctx ~ykey) ~ctx ~tracer)
+     )))
 
 
 (defn resolve-executor-var [e]
@@ -266,18 +265,18 @@
 
 
 (defn build-yarn-ref-gtr  [ykey orig-ykey]
-  (fn [ctx tracer]
-    (let [[new d] (mdm-fetch! ctx ykey)]
-      (if-not new
-        d
-        (do
-          (when tracer (t/trace-start tracer ykey :knot [[orig-ykey :ref]]))
-          (try
-            (when tracer (t/trace-call tracer ykey))
-            (let [x (yarn-get-sync ykey orig-ykey ctx tracer)]
-              (connect-result-mdm ykey x d tracer nil))
-            (catch Throwable e
-              (connect-error-mdm ykey e d tracer nil))))))))
+  `(fn [ctx# tracer#]
+     (let [[new# d#] (mdm-fetch! ctx# ~ykey)]
+       (if-not new#
+         d#
+         (do
+           (when tracer# (t/trace-start tracer# ~ykey :knot [[~orig-ykey :ref]]))
+           (try
+             (when tracer# (t/trace-call tracer# ~ykey))
+             (let [x# (yarn-get-sync ~ykey ~orig-ykey ctx# tracer#)]
+               (connect-result-mdm ~ykey x# d# tracer# nil))
+             (catch Throwable e#
+               (connect-error-mdm ~ykey e# d# tracer# nil))))))))
 
 
 (defn gen-yarn
@@ -293,7 +292,7 @@
   `(Yarn.
     ~ykey
     [~from]
-    (build-yarn-ref-gtr ~ykey ~from)))
+    ~(build-yarn-ref-gtr ykey from)))
 
 
 (defn- hide [d]
@@ -306,18 +305,21 @@
         ctx (YankCtx. mdm registry false)
         errh (fn [e]
                (throw (ex-info "failed to yank"
-                               (assoc (dissoc (ex-data e) ::inyank)
-                                      :knitty/yanked-poy (hide poy)
-                                      :knitty/failed-poy (hide (mdm-freeze! ctx))
-                                      :knitty/yanked-yarns yarns
-                                      :knitty/trace (when tracer
-                                                      (conj
-                                                       (-> poy meta :knitty/trace)
-                                                       (capture-trace! tracer))))
+                               (cond->
+                                (assoc (dissoc (ex-data e) ::inyank)
+                                       :knitty/yanked-poy (hide poy)
+                                       :knitty/failed-poy (hide (mdm-freeze! ctx))
+                                       :knitty/yanked-yarns yarns)
+                                 tracer (assoc
+                                         :knitty/trace
+                                         (when tracer
+                                           (conj
+                                            (-> poy meta :knitty/trace)
+                                            (capture-trace! tracer)))))
                                e)))]
     (try
       (->
-       (kd/await' (mapv #((resolve-yarn-gtr ctx %) ctx tracer) yarns))
+       (kd/await' (map #((yarn-gtr ((yarn-key %) registry)) ctx tracer) yarns))
        (md/chain'
         (fn [_]
           (let [poy' (mdm-freeze! ctx)]
