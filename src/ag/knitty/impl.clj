@@ -1,11 +1,11 @@
 (ns ag.knitty.impl
   (:require [ag.knitty.deferred :as kd]
-            [ag.knitty.mdm :as mdm :refer [create-mdm mdm-cancel! mdm-fetch!
-                                           mdm-freeze! MutableDeferredMap]]
+            [ag.knitty.mdm :as mdm :refer [create-mdm mdm-cancel! mdm-fetch! mdm-freeze!]]
             [ag.knitty.trace :as t :refer [capture-trace!]]
             [manifold.deferred :as md]
             [manifold.executor]
-            [manifold.utils]))
+            [manifold.utils])
+  (:import [ag.knitty.mdm MutableDeferredMap]))
 
 
 (defprotocol IYarn
@@ -19,12 +19,14 @@
   )
 
 
-(deftype YankCtx [mdm registry ^:volatile-mutable ^boolean cancelled]
+(deftype YankCtx [^MutableDeferredMap mdm
+                  registry 
+                  ^:volatile-mutable ^boolean cancelled]
 
   MutableDeferredMap
-  (mdm-fetch! [_ k i] (mdm-fetch! mdm k i))
-  (mdm-freeze! [_] (mdm-freeze! mdm))
-  (mdm-cancel! [_] (set! cancelled (boolean true)) (mdm-cancel! mdm))
+  (mdmFetch [_ k i] (.mdmFetch mdm k i))
+  (mdmFreeze [_] (.mdmFreeze mdm))
+  (mdmCancel [_] (set! cancelled (boolean true)) (.mdmCancel mdm))
 
   IYankCtx
   (cancelled? [_] cancelled)
@@ -252,9 +254,9 @@
                     (try ;; d# is alsways deffered
                       (let [~@yank-all-deps]
                         (let [x# (if ~(list* `or (for [d sync-deps] `(md/deferred? ~d)))
-                                   (md/chain'
-                                    (kd/await' [~@sync-deps])
-                                    (fn [_#]
+                                   (kd/await'
+                                    [~@sync-deps]
+                                    (fn []
                                       (let [~@maybe-defers]
                                         (vreset! ~reald (~the-fnv ~ctx ~tracer ~@deps)))))
                                    (~the-fnv ~ctx ~tracer ~@deps))]
@@ -321,13 +323,14 @@
                                e)))]
     (try
       (->
-       (kd/await' (map (fn [y]
-                         (if (keyword? y)
-                           ((get-yank-fn ctx y) nil y ctx tracer)
-                           ((yarn-gtr y) ctx tracer)))
-                       yarns))
-       (md/chain'
-        (fn [_]
+       (kd/await'
+        (eduction
+         (map (fn [y]
+                (if (keyword? y)
+                  ((get-yank-fn ctx y) ctx tracer)
+                  ((yarn-gtr y) ctx tracer))))
+         yarns)
+        (fn []
           (let [poy' (mdm-freeze! ctx)]
             [(map (comp poy' yarn-key) yarns)
              (if tracer

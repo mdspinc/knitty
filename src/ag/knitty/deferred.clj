@@ -2,6 +2,7 @@
   (:require [clojure.tools.logging :as log]
             [manifold.deferred :as md])
   (:import [java.util.concurrent CancellationException TimeoutException]
+           [java.util.concurrent.atomic AtomicInteger]
            [manifold.deferred IDeferred IMutableDeferred IDeferredListener]))
 
 (set! *warn-on-reflection* true)
@@ -17,26 +18,23 @@
   `(let [^IMutableDeferred d# ~d] (.error d# ~x)))
 
 
-(definline listen'!
-  [d ls]
-  `(let [^IMutableDeferred d# ~d] (.addListener d# ~ls)))
-
-
-(defn await' [vals]
-  (let [ds (filter md/deferred? vals)
+(defn await' [vals f]
+  (let [ds (filterv #(and (md/deferred? %) (not (md/realized? %))) vals)
         c (count ds)]
     (case c
-      0 ::sync
-      1 (first ds)
+      0 (f)
+      1 (md/chain' (nth ds 0) (fn [_] (f)))
+      2 (md/chain' (nth ds 0) (fn [_] (nth ds 1)) (fn [_] (f)))
       (let [d (md/deferred nil)
-            a (atom c)
-            f (reify IDeferredListener
-                (onSuccess [_ _]
-                  (when (zero? (swap! a unchecked-dec))
-                    (success'! d ::async)))
-                (onError [_ e]
-                  (md/error! d e)))]
-        (reduce #(listen'! %2 f) nil ds)
+            a (AtomicInteger. c)
+            fv (fn await-okk [_]
+                 (when (== 0 (.decrementAndGet a))
+                   (try
+                     (success'! d (f))
+                     (catch Throwable e (error'! d e)))))
+            fe (fn awaikt-err [e]
+                 (md/error! d e))]
+        (reduce #(md/on-realized %2 fv fe) nil ds)
         d))))
 
 
@@ -147,13 +145,13 @@
         ns (take n forms)
         rs (take r forms)
         ks (drop k forms)]
-      (if (seq ks)
-        `(~chain ~expr (fn [~x]
-                         ~(via-n chain n k r =>
-                                 `((~=> ~x ~@ns)
-                                   ~@rs
-                                   ~@ks))))
-        `(~chain (~=> ~expr ~@ns)))))
+    (if (seq ks)
+      `(~chain ~expr (fn [~x]
+                       ~(via-n chain n k r =>
+                               `((~=> ~x ~@ns)
+                                 ~@rs
+                                 ~@ks))))
+      `(~chain (~=> ~expr ~@ns)))))
 
 
 (defmacro via [chain [=> & forms]]

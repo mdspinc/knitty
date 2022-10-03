@@ -54,6 +54,7 @@
 
 (tieknot three abs-three)
 
+(yank {} [zero])
 ;; yank - ensure all keys are inside the map - finishs deferred
 @(yank {} [abs-three])
 @(yank {} [five])
@@ -79,12 +80,13 @@
   @(yank {} [::seven]))
 
 ;; recommended to insntall 'xdot' (via pkg manager or pip)
-(render-trace @(yank {} [five]), :format :raw)
+(render-trace @(yank {} [five]), :format :xdot)
+
 
 (view-trace
  (md/chain
   {}
-  #(yank % [six]) second))
+  #(yank % [six]) second), :format :png)
 
 ;; view all traces at once
 (view-trace

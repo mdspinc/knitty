@@ -2,13 +2,13 @@
   (:require [ag.knitty.deferred :as kd]
             [manifold.deferred :as md])
   (:import [java.util.concurrent ConcurrentHashMap]
-           [java.util.concurrent.atomic AtomicReference]))
+           [java.util.concurrent.atomic AtomicReference AtomicReferenceArray]))
 
 
 (set! *warn-on-reflection* true)
 
 
-(defonce ^:private keywords-int-ids (atom {:counter 0, :ids {}}))
+(defonce ^:private keywords-int-ids (atom [0 {}]))
 
 
 (defn keyword->intid
@@ -16,42 +16,51 @@
   {:pre [(keyword? k)]}
   (long
    (or
-    (-> keywords-int-ids deref :ids k)
+    (-> keywords-int-ids deref (nth 1) k)
     (->
      (swap! keywords-int-ids
-            #(-> %
-                 (update :ids assoc k (:counter %))
-                 (update :counter inc)))
-     :ids
+            (fn [[c m]]
+              [(inc c)
+               (assoc m k c)]))
+     (nth 1)
      k))))
 
 
-(defprotocol MutableDeferredMap
-  (mdm-fetch! [_ kkw kid] "get value or deferred")
-  (mdm-freeze! [_] "freeze map, deref all completed deferreds")
-  (mdm-cancel! [_] "freeze map, cancel all deferreds"))
+(definterface MutableDeferredMap
+  (mdmFetch  [^clojure.lang.Keyword kkw ^long kid] "get value or deferred")
+  (mdmFreeze [] "freeze map, deref all completed deferreds")
+  (mdmCancel [] "freeze map, cancel all deferreds"))
 
 
-(defn- unwrap-mdm-deferred
-  [d]
-  (let [d (md/unwrap' d)]
-    (cond
-      (identical? d ::nil) nil
-      (md/deferred? d)
-      (let [sv (md/success-value d ::none)]
-        (if (identical? ::none sv)
-          (do
-            (alter-meta! d assoc
-                         ::leakd true   ;; actual indicator of leaking
-                         :type ::leakd  ;; use custom print-method
-                         )
-            d)
-          sv))
-      :else d)))
+(definline mdm-fetch! [mdm kw kid]
+  `(.mdmFetch ~(with-meta mdm {:tag "ag.knitty.mdm.MutableDeferredMap"}) ~kw ~kid))
+
+(definline mdm-freeze! [mdm]
+  `(.mdmFreeze ~(with-meta mdm {:tag "ag.knitty.mdm.MutableDeferredMap"})))
+
+(definline mdm-cancel! [mdm]
+  `(.mdmCancel ~(with-meta mdm {:tag "ag.knitty.mdm.MutableDeferredMap"})))
 
 
-(defmacro none? [x]
+(defn- unwrap-mdm-deferred [x]
+  (if (md/deferred? x)
+    (let [val (md/success-value x ::none)]
+      (if (identical? val ::none)
+        (do
+          (alter-meta! x assoc
+                       ::leakd true   ;; actual indicator of leaking
+                       :type ::leakd  ;; use custom print-method
+                       )
+          x)
+        (recur val)))
+    x))
+
+
+(definline none? [x]
   `(identical? ::none ~x))
+
+
+(deftype KVCons [key val next])
 
 
 (deftype ConcurrentMapMDM [init
@@ -59,16 +68,16 @@
                            ^ConcurrentHashMap hm]
   MutableDeferredMap
 
-  (mdm-fetch!
-    [_ k _]
+  (mdmFetch
+    [_ k ki]
     (let [v (init k ::none)]
       (if-not (none? v)
-        [false v]             ;; from init
-        (let [v (.get hm k)]  ;; from hm or new
+        [false v]              ;; from init
+        (let [v (.get hm ki)]  ;; from hm or new
           (if (nil? v)
             ;; new
             (let [d (md/deferred nil)
-                  p (.putIfAbsent hm k d)
+                  p (.putIfAbsent hm ki d)
                   d (if (nil? p) d p)
                   kd [k d]]
               (when (nil? p)
@@ -80,20 +89,95 @@
             (let [v' (md/success-value v v)]
               [false v']))))))
 
-  (mdm-freeze!
+  (mdmFreeze
     [_]
     (let [a (.get added)]
-      (if (seq a)
+      (if a
         (into init
               (map (fn [[k d]] [k (unwrap-mdm-deferred d)]))
               a)
         init)))
 
-  (mdm-cancel!
+  (mdmCancel
     [_]
     (doseq [[_k d] (.get added)]
       (when-not (md/realized? d)
         (kd/cancel! d)))))
+
+
+(defmacro ^:private arr-set [a i v]
+  `(let [^AtomicReferenceArray a# ~a
+         i# ~i
+         v# ~v]
+     (when (.compareAndSet a# i# nil v#)
+       v#)))
+
+
+(defmacro ^:private arr-getset-lazy [a i v]
+  `(let [^AtomicReferenceArray a# ~a
+         i# ~i
+         x# (.get a# i#)]
+     (if x#
+       x#
+       (let [v# ~v]
+         (if (.compareAndSet a# i# nil v#)
+           v#
+           (.get a# i#))))))
+
+
+(deftype AtomicRefArrayMDM [init 
+                            ^long max-ki
+                            extra-mdm-delay
+                            ^AtomicReference added
+                            ^AtomicReferenceArray a0]
+  MutableDeferredMap
+
+  (mdmFetch
+   [_ k ki]
+   (if (> ki max-ki) 
+     (mdm-fetch! @extra-mdm-delay k ki)
+     (let [v (init k ::none)]
+       (if-not (none? v)
+         [false v]               ;; from init
+         (let [i0 (bit-shift-right ki 5)
+               i1 (bit-and ki 31)
+               a1 (arr-getset-lazy a0 i0 (AtomicReferenceArray. 32))
+               v  (.get ^AtomicReferenceArray a1 i1)]
+
+           (if (nil? v)
+            ;; new
+             (let [d (md/deferred nil)
+                   p (arr-set a1 i1 d)]
+               (when p
+                 (loop [g (.get added)]
+                   (when-not (.compareAndSet added g (KVCons. k d g))
+                     (recur (.get added)))))
+               [true d])
+            ;; from hm
+             (let [v' (md/success-value v v)]
+               [false v'])))))))
+
+  (mdmFreeze
+    [_]
+    (let [a (.get added)
+          init' (if (realized? extra-mdm-delay)
+                  (mdm-freeze! @extra-mdm-delay)
+                  init)]
+      (if a
+        (loop [^KVCons a a, m (transient init')]
+          (if a
+            (recur (.-next a)
+                   (assoc! m (.-key a) (unwrap-mdm-deferred (.-val a))))
+            (persistent! m)))
+        init)))
+
+  (mdmCancel
+   [_] 
+   (when (realized? extra-mdm-delay)
+     (mdm-cancel! @extra-mdm-delay))
+   (doseq [[_k d] (.get added)]
+     (when-not (md/realized? d)
+       (kd/cancel! d)))))
 
 
 (defmethod print-method ::leakd [y ^java.io.Writer w]
@@ -115,8 +199,23 @@
   (.write w "]"))
 
 
-(defn create-mdm [init size-hint]
-  (->ConcurrentMapMDM
+(defn create-mdm-chm [init size-hint]
+  (ConcurrentMapMDM.
    init
-   (AtomicReference. ())
+   (AtomicReference. nil)
    (ConcurrentHashMap. (int size-hint) 0.75 (int 2))))
+
+
+(defn create-mdm-arr [init size-hint]
+  (let [[mk] @keywords-int-ids
+        ^int n (inc (quot mk 32))]
+    (AtomicRefArrayMDM.
+     init
+     mk
+     (delay (create-mdm-chm init size-hint))
+     (AtomicReference. nil)
+     (AtomicReferenceArray. n))))
+
+
+(defn create-mdm [init size-hint]
+  (create-mdm-arr init size-hint))
