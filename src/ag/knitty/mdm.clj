@@ -26,6 +26,11 @@
      k))))
 
 
+(definterface FetchResult
+  ( mdmResult  [] "get deferred")
+  (^boolean mdmClaimed [] "true if caller should put value into deferred"))
+
+
 (definterface MutableDeferredMap
   (mdmFetch  [^clojure.lang.Keyword kkw ^long kid] "get value or deferred")
   (mdmFreeze [] "freeze map, deref all completed deferreds")
@@ -63,6 +68,18 @@
 (deftype KVCons [key val next])
 
 
+(deftype ETrue [v]
+  FetchResult
+  (mdmClaimed [_] true)
+  (mdmResult [_] v))
+
+
+(deftype EFalse [v]
+  FetchResult
+  (mdmClaimed [_] false)
+  (mdmResult [_] v))
+
+
 (deftype ConcurrentMapMDM [init
                            ^AtomicReference added
                            ^ConcurrentHashMap hm]
@@ -72,37 +89,41 @@
     [_ k ki]
     (let [v (init k ::none)]
       (if-not (none? v)
-        [false v]              ;; from init
+        (EFalse. v)    ;; from init
         (let [v (.get hm ki)]  ;; from hm or new
           (if (nil? v)
             ;; new
             (let [d (md/deferred nil)
                   p (.putIfAbsent hm ki d)
-                  d (if (nil? p) d p)
-                  kd [k d]]
+                  d (if (nil? p) d p)]
               (when (nil? p)
                 (loop [g (.get added)]
-                  (when-not (.compareAndSet added g (cons kd g))
+                  (when-not (.compareAndSet added g (KVCons. k d g))
                     (recur (.get added)))))
-              [true d])
+              (ETrue. d))
             ;; from hm
             (let [v' (md/success-value v v)]
-              [false v']))))))
+              (EFalse. v')))))))
 
   (mdmFreeze
     [_]
     (let [a (.get added)]
       (if a
-        (into init
-              (map (fn [[k d]] [k (unwrap-mdm-deferred d)]))
-              a)
+        (loop [^KVCons a a, m (transient init)]
+          (if a
+            (recur (.-next a)
+                   (assoc! m (.-key a) (unwrap-mdm-deferred (.-val a))))
+            (persistent! m)))
         init)))
 
   (mdmCancel
-    [_]
-    (doseq [[_k d] (.get added)]
-      (when-not (md/realized? d)
-        (kd/cancel! d)))))
+   [_]
+   (loop [^KVCons a (.get added)]
+     (when a
+       (let [d (.-val a)]
+         (when-not (md/realized? d)
+           (kd/cancel! d))))))
+  )
 
 
 (defmacro ^:private arr-set [a i v]
@@ -122,10 +143,10 @@
        (let [v# ~v]
          (if (.compareAndSet a# i# nil v#)
            v#
-           (.get a# i#))))))
+           (.get a# i#)))))) 
 
 
-(deftype AtomicRefArrayMDM [init 
+(deftype AtomicRefArrayMDM [init
                             ^long max-ki
                             extra-mdm-delay
                             ^AtomicReference added
@@ -133,29 +154,29 @@
   MutableDeferredMap
 
   (mdmFetch
-   [_ k ki]
-   (if (> ki max-ki) 
-     (mdm-fetch! @extra-mdm-delay k ki)
-     (let [v (init k ::none)]
-       (if-not (none? v)
-         [false v]               ;; from init
-         (let [i0 (bit-shift-right ki 5)
-               i1 (bit-and ki 31)
-               a1 (arr-getset-lazy a0 i0 (AtomicReferenceArray. 32))
-               v  (.get ^AtomicReferenceArray a1 i1)]
+    [_ k ki]
+    (if (> ki max-ki)
+      (mdm-fetch! @extra-mdm-delay k ki)
+      (let [v (init k ::none)]
+        (if-not (none? v)
+          (EFalse. v)               ;; from init
+          (let [i0 (bit-shift-right ki 5)
+                i1 (bit-and ki 31)
+                a1 (arr-getset-lazy a0 i0 (AtomicReferenceArray. 32))
+                v  (.get ^AtomicReferenceArray a1 i1)]
 
-           (if (nil? v)
-            ;; new
-             (let [d (md/deferred nil)
-                   p (arr-set a1 i1 d)]
-               (when p
-                 (loop [g (.get added)]
-                   (when-not (.compareAndSet added g (KVCons. k d g))
-                     (recur (.get added)))))
-               [true d])
-            ;; from hm
-             (let [v' (md/success-value v v)]
-               [false v'])))))))
+            (if (nil? v)
+             ;; new
+              (let [d (md/deferred nil)
+                    p (arr-set a1 i1 d)]
+                (when p
+                  (loop [g (.get added)]
+                    (when-not (.compareAndSet added g (KVCons. k d g))
+                      (recur (.get added)))))
+                (ETrue. d))
+             ;; from hm
+              (let [v' (md/success-value v v)]
+                (EFalse. v'))))))))
 
   (mdmFreeze
     [_]
@@ -172,13 +193,16 @@
         init)))
 
   (mdmCancel
-   [_] 
-   (when (realized? extra-mdm-delay)
-     (mdm-cancel! @extra-mdm-delay))
-   (doseq [[_k d] (.get added)]
-     (when-not (md/realized? d)
-       (kd/cancel! d)))))
-
+    [_]
+    (when (realized? extra-mdm-delay)
+      (mdm-cancel! @extra-mdm-delay))
+    (loop [^KVCons a (.get added)]
+      (when a
+        (let [d (.-val a)]
+          (when-not (md/realized? d)
+            (kd/cancel! d))))))
+  )
+ 
 
 (defmethod print-method ::leakd [y ^java.io.Writer w]
   (.write w "#ag.knitty/LeakD[")

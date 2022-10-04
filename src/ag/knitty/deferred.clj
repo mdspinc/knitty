@@ -18,24 +18,38 @@
   `(let [^IMutableDeferred d# ~d] (.error d# ~x)))
 
 
-(defn await' [vals f]
-  (let [ds (filterv #(and (md/deferred? %) (not (md/realized? %))) vals)
-        c (count ds)]
-    (case c
-      0 (f)
-      1 (md/chain' (nth ds 0) (fn [_] (f)))
-      2 (md/chain' (nth ds 0) (fn [_] (nth ds 1)) (fn [_] (f)))
-      (let [d (md/deferred nil)
-            a (AtomicInteger. c)
-            fv (fn await-okk [_]
-                 (when (== 0 (.decrementAndGet a))
-                   (try
-                     (success'! d (f))
-                     (catch Throwable e (error'! d e)))))
-            fe (fn awaikt-err [e]
-                 (md/error! d e))]
-        (reduce #(md/on-realized %2 fv fe) nil ds)
-        d))))
+(defn connect'' [d1 d2]
+  (if (md/deferred? d1)
+    (md/on-realized
+     d1
+     #(connect'' % d2)
+     #(error'! d2 %))
+    (success'! d2 d1)))
+
+
+(defn await'
+  ([^Iterable vs f]
+   (await' nil (.iterator vs) f))
+  ([d ^java.util.Iterator vsi f]
+   (if (not (.hasNext vsi))
+     (if d
+       (try
+         (connect'' (f) d)
+         (catch Throwable e (error'! d e)))
+       (f))
+     (let [v (.next vsi)]
+       (if (and (md/deferred? v)
+                (identical? ::none (md/success-value v ::none)))
+         (let [d (or d (md/deferred nil))]
+           (md/on-realized v
+                           (fn [_]
+                             (try
+                               (await' d vsi f)
+                               (catch Throwable e (error'! d e))))
+                           (fn [e]
+                             (error'! d e)))
+           d)
+         (recur d vsi f))))))
 
 
 (defmacro realize [binds & body]
@@ -78,15 +92,6 @@
 (defn revokation-exception? [e]
   (or (instance? CancellationException e)
       (instance? TimeoutException e)))
-
-
-(defn connect'' [d1 d2]
-  (if (md/deferred? d1)
-    (md/on-realized
-     d1
-     #(connect'' % d2)
-     #(error'! d2 %))
-    (success'! d2 d1)))
 
 
 (defn revoke' [^IDeferred d c]

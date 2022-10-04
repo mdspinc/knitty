@@ -5,7 +5,7 @@
             [manifold.deferred :as md]
             [manifold.executor]
             [manifold.utils])
-  (:import [ag.knitty.mdm MutableDeferredMap]))
+  (:import [ag.knitty.mdm MutableDeferredMap FetchResult]))
 
 
 (defprotocol IYarn
@@ -243,8 +243,9 @@
            ;; input - mdm and registry, called by `yank-snatch
            yget-fn#
            (fn ~(-> ykey name (str "--yarn") symbol) [~ctx ~tracer]
-             (let [[new# d#] (mdm-fetch! ~ctx ~ykey ~kid)]
-               (if-not new#
+             (let [kv# ^FetchResult (mdm-fetch! ~ctx ~ykey ~kid) 
+                   d# (.mdmResult kv#)]
+               (if-not (.mdmClaimed kv#)
                  ;; got item from mdm
                  d#
                  ;; calculate & provide to mdm
@@ -270,8 +271,9 @@
 (defn build-yarn-ref-gtr [ykey orig-ykey]
   (let [kid (mdm/keyword->intid ykey)]
     `(fn [ctx# tracer#]
-       (let [[new# d#] (mdm-fetch! ctx# ~ykey ~kid)]
-         (if-not new#
+       (let [kv# ^FetchResult (mdm-fetch! ctx# ~ykey ~kid)
+             d# (.mdmResult kv#)]
+         (if-not (.mdmClaimed kv#)
            d#
            (do
              (when tracer# (t/trace-start tracer# ~ykey :knot [[~orig-ykey :ref]]))
