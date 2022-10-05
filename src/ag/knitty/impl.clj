@@ -143,7 +143,7 @@
                         :knitty/fail-at   (java.util.Date.)
                         :knitty/failed-yarn k
                         :knitty/failed-yarn-chain [k]
-                        :knitty/java-cause (exception-java-cause ex))
+                        :knitty/root-cause (exception-java-cause ex))
                  ex)))))
 
 
@@ -312,7 +312,9 @@
         errh (fn [e]
                (throw (ex-info "failed to yank"
                                (cond->
-                                (assoc (dissoc (ex-data e) ::inyank)
+                                (assoc (dissoc (or (ex-data e)
+                                                   {:knitty/root-cause e})
+                                               ::inyank)
                                        :knitty/yanked-poy (hide poy)
                                        :knitty/failed-poy (hide (mdm-freeze! ctx))
                                        :knitty/yanked-yarns yarns)
