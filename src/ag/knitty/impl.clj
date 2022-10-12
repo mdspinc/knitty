@@ -1,15 +1,24 @@
 (ns ag.knitty.impl
   (:require [ag.knitty.deferred :as kd]
-            [ag.knitty.mdm :as mdm :refer [create-mdm mdm-cancel! mdm-fetch! mdm-freeze!]]
+            [ag.knitty.mdm :as mdm :refer [create-mdm mdm-cancel! mdm-fetch!
+                                           mdm-freeze! mdm-get!]]
             [ag.knitty.trace :as t :refer [capture-trace!]]
+            [clojure.string :as str]
+            [com.stuartsierra.dependency :as dependency]
             [manifold.deferred :as md]
             [manifold.executor]
             [manifold.utils])
-  (:import [ag.knitty.mdm MutableDeferredMap FetchResult]))
+  (:import [ag.knitty.mdm FetchResult MutableDeferredMap]
+           [java.util.concurrent ConcurrentLinkedDeque ConcurrentLinkedQueue]))
+
+
+(defprotocol RegistryEx
+  (yarns-topo-comparator [_]))
 
 
 (defprotocol IYarn
   (yarn-gtr [_] "get value or obligated deferred")
+  (yarn-deps [_] "get dependencies")
   (yarn-key* [_] "get yarn ykey"))
 
 
@@ -20,11 +29,12 @@
 
 
 (deftype YankCtx [^MutableDeferredMap mdm
-                  registry 
+                  registry
                   ^:volatile-mutable ^boolean cancelled]
 
   MutableDeferredMap
   (mdmFetch [_ k i] (.mdmFetch mdm k i))
+  (mdmGet [_ k i] (.mdmGet mdm k i))  
   (mdmFreeze [_] (.mdmFreeze mdm))
   (mdmCancel [_] (set! cancelled (boolean true)) (.mdmCancel mdm))
 
@@ -37,7 +47,8 @@
 (deftype Yarn [ykey deps yget]
   IYarn
   (yarn-gtr [_] yget)
-  (yarn-key* [_] ykey))
+  (yarn-key* [_] ykey)
+  (yarn-deps [_] deps))
 
 
 (defn yarn-key [k]
@@ -70,21 +81,35 @@
       :else :sync)))
 
 
+(defn unns-keyword [k]
+  (keyword nil (str (namespace k) "/" (name k))))
+
+
+(defn ns-keyword [k]
+  (if (namespace k)
+    k
+    (apply keyword (str/split (name k) #"/" 2))))
+
+
 (defmacro get-yank-fn [ctx ykey]
   `(yarn-gtr (~ykey (get-registry ~ctx))))
 
 
 (defmacro yarn-get-sync [yk ykey ctx tracer]
   `(do
-     (when ~tracer (t/trace-dep ~tracer ~yk ~ykey))
-     ((get-yank-fn ~ctx ~ykey) ~ctx ~tracer)))
+     (when ~tracer (t/trace-dep ~tracer ~yk ~ykey)) 
+     (or
+      (mdm-get! ~ctx ~ykey ~(mdm/keyword->intid ykey))
+      ((get-yank-fn ~ctx ~ykey) ~ctx ~tracer))))
 
 
 (defmacro yarn-get-defer [yk  ykey ctx tracer]
   `(do
      (when ~tracer (t/trace-dep ~tracer ~yk ~ykey))
-     (as-deferred
-      ((get-yank-fn ~ctx ~ykey) ~ctx ~tracer))))
+     (or
+      (mdm-get! ~ctx ~ykey ~(mdm/keyword->intid ykey))
+      (as-deferred
+       ((get-yank-fn ~ctx ~ykey) ~ctx ~tracer)))))
 
 
 (defmacro yarn-get-lazy [yk ykey ctx tracer]
@@ -143,7 +168,7 @@
                         :knitty/fail-at   (java.util.Date.)
                         :knitty/failed-yarn k
                         :knitty/failed-yarn-chain [k]
-                        :knitty/root-cause (exception-java-cause ex))
+                        :knitty/java-cause (exception-java-cause ex))
                  ex)))))
 
 
@@ -205,27 +230,46 @@
         tracer '_yank_tracer
         the-fnv (gensym "fn")
         reald  (gensym "real_deferred")
+        df-array (with-meta (gensym "arr_of_deferreds") {:tag "[Ljava.lang.Object;"})
         kid (mdm/keyword->intid ykey)
+        fnn #(-> ykey name (str %) symbol)
+        bind (sort-by #(mdm/keyword->intid (second %)) bind)
 
-        yank-all-deps
+        yank-async-deps
         (mapcat identity
-                (for [[ds dk] bind]
+                (for [[ds dk] bind
+                      :when (#{:defer :lazy} (bind-param-type ds))]
                   [ds
                    (case (bind-param-type ds)
                      :sync   `(yarn-get-sync  ~ykey ~dk ~ctx ~tracer)
                      :defer  `(yarn-get-defer ~ykey ~dk ~ctx ~tracer)
                      :lazy   `(yarn-get-lazy  ~ykey ~dk ~ctx ~tracer))]))
+        
+        yank-sync-deps
+        (mapcat identity
+                (for [[ds dk] bind
+                      :when (#{:sync} (bind-param-type ds))]
+                  [ds `(yarn-get-sync  ~ykey ~dk ~ctx ~tracer)]))
 
         sync-deps
         (for [[ds _dk] bind
               :when (#{:sync} (bind-param-type ds))]
           ds)
 
-        maybe-defers
+        some-syncs-unresolved (list* `or (for [d sync-deps] `(md/deferred? ~d)))
+
+        try-deref-syncs
+        (mapcat identity
+                (for [[ds _dk] bind
+                      :when (#{:sync} (bind-param-type ds))]
+                  [ds `(kd/unwrap1' ~ds)]))
+
+        deref-syncs
         (mapcat identity
                 (for [[ds _dk] bind
                       :when (#{:sync} (bind-param-type ds))]
                   [ds `(md/unwrap' ~ds)]))
+
 
         deps (keys bind)
         [deps1 deps2] (split-at 16 deps)
@@ -234,31 +278,40 @@
 
     `(let [;; input - vector. unwraps 'defers', called by yget-fn#
            ~the-fnv
-           (fn ~(-> ykey name symbol)
+           (fn ~(fnn "--body")
              ([~ctx ~tracer ~@deps1 ~@(when (seq deps2) ['& (vec deps2)])]
               (when-not (cancelled? ~ctx)
                 (when ~tracer (t/trace-call ~tracer ~ykey))
                 (coerce-deferred ~expr))))
 
-           ;; input - mdm and registry, called by `yank-snatch
            yget-fn#
-           (fn ~(-> ykey name (str "--yarn") symbol) [~ctx ~tracer]
-             (let [kv# ^FetchResult (mdm-fetch! ~ctx ~ykey ~kid) 
+           (fn ~(fnn "--yarn") [~ctx ~tracer]
+             (let [kv# ^FetchResult (mdm-fetch! ~ctx ~ykey ~kid)
                    d# (.mdmResult kv#)]
                (if-not (.mdmClaimed kv#)
                  ;; got item from mdm
                  d#
-                 ;; calculate & provide to mdm
-                 (maybe-future-with ~executor-var
+
+                 ;; calculate & provide new value to mdm
+                 (maybe-future-with
+                  ~executor-var
+
                   (when ~tracer (t/trace-start ~tracer ~ykey :yarn ~all-deps-tr))
                   (let [~reald (volatile! nil)]
                     (try ;; d# is alsways deffered
-                      (let [~@yank-all-deps]
-                        (let [x# (if ~(list* `or (for [d sync-deps] `(md/deferred? ~d)))
-                                   (kd/await'
-                                    [~@sync-deps]
+                      (let [~@yank-async-deps
+                            ~@yank-sync-deps
+                            ~@try-deref-syncs]
+                        (let [x# (if ~some-syncs-unresolved
+                                   (kd/await**
+                                    ~(count sync-deps)
+                                    nil
+                                    (let [~df-array (object-array ~(count sync-deps))]
+                                      ~@(for [[i d] (map vector (range) (reverse sync-deps))]
+                                          `(aset ~df-array ~i ~d))
+                                      ~df-array)
                                     (fn []
-                                      (let [~@maybe-defers]
+                                      (let [~@deref-syncs]
                                         (vreset! ~reald (~the-fnv ~ctx ~tracer ~@deps)))))
                                    (~the-fnv ~ctx ~tracer ~@deps))]
                           (connect-result-mdm ~ykey x# d# ~tracer ~reald)))
@@ -283,7 +336,6 @@
                  (connect-result-mdm ~ykey x# d# tracer# nil))
                (catch Throwable e#
                  (connect-error-mdm ~ykey e# d# tracer# nil)))))))))
-
 
 (defn gen-yarn
   [ykey bind expr]
@@ -312,9 +364,7 @@
         errh (fn [e]
                (throw (ex-info "failed to yank"
                                (cond->
-                                (assoc (dissoc (or (ex-data e)
-                                                   {:knitty/root-cause e})
-                                               ::inyank)
+                                (assoc (dissoc (ex-data e) ::inyank)
                                        :knitty/yanked-poy (hide poy)
                                        :knitty/failed-poy (hide (mdm-freeze! ctx))
                                        :knitty/yanked-yarns yarns)
@@ -325,6 +375,7 @@
                                             (-> poy meta :knitty/trace)
                                             (capture-trace! tracer)))))
                                e)))]
+ 
     (try
       (->
        (kd/await'
@@ -345,7 +396,7 @@
       (catch Throwable e (errh e)))))
 
 
-(deftype FastRegistry [asmap thunks-cache]
+(deftype Registry [asmap dgraph]
 
   clojure.lang.Seqable
   (seq [_] (seq asmap))
@@ -356,29 +407,23 @@
 
   clojure.lang.IKeywordLookup
   (getLookupThunk
-    [fr k]
-    (or
-     (k @thunks-cache)
-     (k (swap!
-         thunks-cache
-         (fn [thunks]
-           (if (contains? thunks k)
-             thunks
-             (assoc
-              thunks k
-              (let [v (k asmap)]
-                (reify clojure.lang.ILookupThunk
-                  (get [t fr']
-                    (if (identical? fr fr')
-                      v
-                      t)))))))))))
+    [fr k]  ;; FIXME: implement custom resolve for thunks
+    (let [v (asmap (ns-keyword k))]
+      (reify clojure.lang.ILookupThunk
+        (get [t fr']
+          (if (identical? fr fr')
+            v
+            t)))))
 
   clojure.lang.Associative
   (containsKey [_ k] (contains? asmap k))
   (entryAt [_ k] (find asmap k))
-  (empty [_] (FastRegistry. {} (atom {})))
-  (assoc [_ k v] (FastRegistry. (assoc asmap k v) (atom {}))))
+  (empty [_] (Registry. {} (dependency/graph)))
+  (assoc [_ k v] (Registry.
+                  (assoc asmap k v)
+                  nil #_(reduce #(dependency/depend %1 k %2) dgraph (yarn-deps v))
+                  )))
 
 
-(defn create-fast-registry []
-  (FastRegistry. {} (atom {})))
+(defn create-registry []
+  (Registry. {} (dependency/graph)))

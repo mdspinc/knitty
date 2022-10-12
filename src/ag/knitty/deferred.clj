@@ -1,55 +1,113 @@
 (ns ag.knitty.deferred
+  (:refer-clojure :exclude [await])
   (:require [clojure.tools.logging :as log]
             [manifold.deferred :as md])
   (:import [java.util.concurrent CancellationException TimeoutException]
-           [java.util.concurrent.atomic AtomicInteger]
-           [manifold.deferred IDeferred IMutableDeferred IDeferredListener]))
+           [manifold.deferred IDeferred IMutableDeferred]))
 
 (set! *warn-on-reflection* true)
 
 
-(definline success'!
-  [d x]
+(definline success'! [d x] 
   `(let [^IMutableDeferred d# ~d] (.success d# ~x)))
 
-
-(definline error'!
-  [d x]
+(definline error'! [d x] 
   `(let [^IMutableDeferred d# ~d] (.error d# ~x)))
 
+(definline unwrap1' [x]
+  `(let [x# ~x]
+     (if (md/deferred? x#)
+       (md/success-value x# x#)
+       x#)))
 
-(defn connect'' [d1 d2]
-  (if (md/deferred? d1)
-    (md/on-realized
-     d1
-     #(connect'' % d2)
-     #(error'! d2 %))
-    (success'! d2 d1)))
+
+(declare connect-d'')
+
+(definline connect'' [d1 d2]
+  `(let [d1# (unwrap1' ~d1)
+         d2# ~d2]
+     (if (md/deferred? d1#)
+       (connect-d'' d1# d2#)
+       (success'! d2# d1#))
+     d1#))
+
+
+(defn connect-d'' [d1 d2]
+  (if (instance? manifold.deferred.IMutableDeferred d1)
+
+    (.addListener
+     ^manifold.deferred.IMutableDeferred d1
+     (reify manifold.deferred.IDeferredListener
+       (onSuccess [_ x] (connect'' x d2))
+       (onError [_ e] (error'! d2 e))))
+    
+    (.onRealized
+     ^manifold.deferred.IDeferred d1
+     (fn conn-okk [x] (connect'' x d2))
+     (fn conn-err [e] (error'! d2 e)))
+  ))
+
+
+(defn await**
+  ([^objects da f]
+   (await** (alength da) nil da f))
+  ([^long i r ^objects da f]
+   (if (== 0 i)
+
+     (if r
+       (try
+         (connect'' (f) r)
+         (catch Throwable e (error'! r e)))
+       (f))
+
+     (let [i (unchecked-dec i)
+           v (aget da i)]
+       (cond
+         (not (md/deferred? v))
+         (recur i r da f)
+
+         (identical? ::none (md/success-value v ::none))
+         (let [r (or r (md/deferred nil))]
+           (if (instance? manifold.deferred.IMutableDeferred v)
+
+             (.addListener
+              ^manifold.deferred.IMutableDeferred v
+              (reify manifold.deferred.IDeferredListener
+                (onSuccess
+                  [_ _]
+                  (try
+                    (await** i r da f)
+                    (catch Throwable e (error'! r e))))
+                (onError [_ e] (error'! r e))))
+
+             (.onRealized
+              ^manifold.deferred.IDeferred v
+              (fn await-okk [_]
+                (try
+                  (await** i r da f)
+                  (catch Throwable e (error'! r e))))
+              (fn await-err [e]
+                (error'! r e))))
+           r)
+
+         :else
+         (recur i r da f))))))
 
 
 (defn await'
-  ([^Iterable vs f]
-   (await' nil (.iterator vs) f))
-  ([d ^java.util.Iterator vsi f]
-   (if (not (.hasNext vsi))
-     (if d
-       (try
-         (connect'' (f) d)
-         (catch Throwable e (error'! d e)))
-       (f))
-     (let [v (.next vsi)]
-       (if (and (md/deferred? v)
-                (identical? ::none (md/success-value v ::none)))
-         (let [d (or d (md/deferred nil))]
-           (md/on-realized v
-                           (fn [_]
-                             (try
-                               (await' d vsi f)
-                               (catch Throwable e (error'! d e))))
-                           (fn [e]
-                             (error'! d e)))
-           d)
-         (recur d vsi f))))))
+  ([vs]
+   (let [a (into-array java.lang.Object vs)] 
+     (await** (alength vs) nil a #(do true))))
+  ([vs f]
+   (let [a (into-array java.lang.Object vs)]
+     (await** (alength a) nil a f))))
+
+
+(defn await
+  ([vs]
+   (await vs #(do true)))
+  ([vs f]
+   (await' (eduction (map #(md/->deferred % %)) vs) f)))
 
 
 (defmacro realize [binds & body]
@@ -166,3 +224,10 @@
       (#{'cond-> 'cond->>} s)          (via-n chain 2 2 0 => forms)
       (#{'as->} s)                     (via-n chain 2 2 1 => forms)
       :else (throw (Exception. (str "unsupported arrow " =>))))))
+
+
+(definline maybe-deref [x]
+  `(when-some [x# ~x]
+     (if (realized? x#)
+       (deref x#)
+       x#)))

@@ -5,8 +5,8 @@
             [clojure.java.browse]
             [clojure.java.browse-ui]
             [clojure.java.shell]
-            [clojure.spec.alpha :as s]
-            [manifold.executor]))
+            [clojure.spec.alpha :as s] 
+            [manifold.deferred :as md]))
 
 ;; >> API
 (declare yank)        ;; func,  (yank <map> [yarn-keys]) => @<new-map>
@@ -16,7 +16,7 @@
 ;; << API
 
 ;; mapping {keyword => Yarn}
-(def ^:dynamic *registry* (atom (impl/create-fast-registry)))
+(def ^:dynamic *registry* (atom (impl/create-registry)))
 (def ^:dynamic *tracing* true)
 
 
@@ -96,17 +96,17 @@
      ~@body))
 
 
-(defmacro doyank
+(defmacro doyank!
   [poy binds & body]
   `(kd/chain-revoke'
     (yank ~poy ~(vec (vals binds)))
     (fn [[[~@(keys binds)] ctx#]]
-      ~@body
+      (let [b# (do ~@body)]
+        (assert (not (md/deferred? b#)) "doyank! called on deferred")) 
       ctx#)))
 
 
 ;; TODO: name?
 (defn tieknot [from dst]
-     ;; TODO: check (abstract? to)
   (register-yarn (eval (impl/gen-yarn-ref dst from)))
   from)

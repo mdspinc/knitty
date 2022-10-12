@@ -69,11 +69,17 @@
 
 (comment
   
+  (alter-var-root #'ag.knitty.core/*tracing* (constantly false))
   (time
      @(md/chain (yank {} target-keys) second count))
 
   (dobench)
   (dobench)
+
+  (prof/profile
+   (dotimes [_ 100000]
+     @(yank {} target-keys)
+     ))
 
   (prof/profile (dobench))
   (prof/serve-files 8080)

@@ -32,7 +32,8 @@
 
 
 (definterface MutableDeferredMap
-  (mdmFetch  [^clojure.lang.Keyword kkw ^long kid] "get value or deferred")
+  (mdmFetch  [^clojure.lang.Keyword kkw ^long kid] "get value or deferred") 
+  (mdmGet    [^clojure.lang.Keyword kkw ^long kid] "get value or nil")
   (mdmFreeze [] "freeze map, deref all completed deferreds")
   (mdmCancel [] "freeze map, cancel all deferreds"))
 
@@ -45,6 +46,9 @@
 
 (definline mdm-cancel! [mdm]
   `(.mdmCancel ~(with-meta mdm {:tag "ag.knitty.mdm.MutableDeferredMap"})))
+
+(definline mdm-get! [mdm kw kid]
+  `(.mdmGet ~(with-meta mdm {:tag "ag.knitty.mdm.MutableDeferredMap"}) ~kw ~kid))
 
 
 (defn- unwrap-mdm-deferred [x]
@@ -104,16 +108,25 @@
             ;; from hm
             (let [v' (md/success-value v v)]
               (EFalse. v')))))))
-
+  
+  (mdmGet
+   [_ k ki]
+   (let [v (init k ::none)]
+     (if (none? v)
+       (.get hm ki)
+       (md/success-deferred v nil))))
+  
   (mdmFreeze
     [_]
     (let [a (.get added)]
       (if a
-        (loop [^KVCons a a, m (transient init)]
-          (if a
-            (recur (.-next a)
-                   (assoc! m (.-key a) (unwrap-mdm-deferred (.-val a))))
-            (persistent! m)))
+        (with-meta
+          (loop [^KVCons a a, m (transient init)]
+            (if a
+              (recur (.-next a)
+                     (assoc! m (.-key a) (unwrap-mdm-deferred (.-val a))))
+              (persistent! m)))
+          (meta init))
         init)))
 
   (mdmCancel
@@ -177,6 +190,20 @@
              ;; from hm
               (let [v' (md/success-value v v)]
                 (EFalse. v'))))))))
+  
+  (mdmGet
+   [_ k ki]
+   (if (> ki max-ki)
+     (mdm-get! @extra-mdm-delay k ki)
+     (let [v (init k ::none)]
+       (if-not (none? v)
+         (md/success-deferred v nil)
+         (let [i0 (bit-shift-right ki 5) 
+               a1 (.get ^AtomicReferenceArray a0 i0)]
+           (when a1
+             (let [i1 (bit-and ki 31)
+                   v (.get ^AtomicReferenceArray a1 i1)]
+               v)))))))
 
   (mdmFreeze
     [_]
@@ -185,11 +212,13 @@
                   (mdm-freeze! @extra-mdm-delay)
                   init)]
       (if a
-        (loop [^KVCons a a, m (transient init')]
-          (if a
-            (recur (.-next a)
-                   (assoc! m (.-key a) (unwrap-mdm-deferred (.-val a))))
-            (persistent! m)))
+        (with-meta
+          (loop [^KVCons a a, m (transient init')]
+            (if a
+              (recur (.-next a)
+                     (assoc! m (.-key a) (unwrap-mdm-deferred (.-val a))))
+              (persistent! m)))
+          (meta init))
         init)))
 
   (mdmCancel
