@@ -357,7 +357,7 @@
   (delay d))
 
 
-(defn yank*
+(defn yank0
   [poy yarns registry tracer]
   (let [mdm (create-mdm poy (max 8 (* 2 (count yarns))))
         ctx (YankCtx. mdm registry false)
@@ -387,10 +387,9 @@
          yarns)
         (fn []
           (let [poy' (mdm-freeze! ctx)]
-            [(map (comp poy' yarn-key) yarns)
-             (if tracer
-               (vary-meta poy' update :knitty/trace conj (capture-trace! tracer))
-               poy')])))
+            (if tracer
+              (vary-meta poy' update :knitty/trace conj (capture-trace! tracer))
+              poy'))))
        (md/catch' errh)
        (kd/revoke' #(mdm-cancel! ctx)))
       (catch Throwable e (errh e)))))

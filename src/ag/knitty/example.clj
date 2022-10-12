@@ -1,6 +1,6 @@
 (ns ag.knitty.example
   (:require [ag.knitty.core :refer
-             [defyarn doyank tieknot with-yarns yank yarn]]
+             [defyarn doyank! tieknot with-yarns yank yarn]]
             [ag.knitty.traceviz :refer [render-trace view-trace]]
             [manifold.deferred :as md]))
 
@@ -42,7 +42,9 @@
 
 (defyarn five
   {x ::two, y abs-three}  ;; mixed approach
-  (+ x y))
+  (do
+    (println ">>>" x y)
+    (+ x y)))
 
 (defyarn six
   ^{:doc "doc string"}       ;; doc
@@ -104,7 +106,7 @@
 (render-trace (yank {} [six]), :format :dot)
 
 ;; yank & run code & return poy'
-@(doyank
+@(doyank!
   {one 10}
   {x six}
   (println "x =" x))

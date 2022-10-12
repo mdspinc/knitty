@@ -4,6 +4,8 @@
             [criterium.core :as cc]
             [clj-async-profiler.core :as prof]))
 
+(set! *warn-on-reflection* true)
+
 
 (defn sample-few-deps [c]
   (let [r (java.util.Random. (hash-ordered-coll c))
@@ -76,6 +78,11 @@
   (dobench)
   (dobench)
 
+  (prof/profile 1)
+  
+  (dotimes [_ 100000]
+    @(yank {} target-keys))
+  
   (prof/profile
    (dotimes [_ 100000]
      @(yank {} target-keys)

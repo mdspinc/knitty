@@ -96,10 +96,10 @@
 
 (defn await'
   ([vs]
-   (let [a (into-array java.lang.Object vs)] 
+   (let [^objects a (into-array java.lang.Object vs)] 
      (await** (alength vs) nil a #(do true))))
   ([vs f]
-   (let [a (into-array java.lang.Object vs)]
+   (let [^objects a (into-array java.lang.Object vs)]
      (await** (alength a) nil a f))))
 
 
@@ -231,3 +231,12 @@
      (if (realized? x#)
        (deref x#)
        x#)))
+
+
+(defn also
+  ([f] (fn [x] (f) x))
+  ([f a] (fn [x] (f a) x))
+  ([f a b] (fn [x] (f a b) x))
+  ([f a b c] (fn [x] (f a b c) x))
+  ([f a b c d] (fn [x] (f a b c d) x))
+  ([f a b c d & rs] (fn [x] (apply f a b c d rs) x)))

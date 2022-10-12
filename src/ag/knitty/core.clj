@@ -1,6 +1,6 @@
 (ns ag.knitty.core
   (:require [ag.knitty.deferred :as kd]
-            [ag.knitty.impl :as impl :refer [yank* yarn-key]]
+            [ag.knitty.impl :as impl]
             [ag.knitty.trace :refer [create-tracer]]
             [clojure.java.browse]
             [clojure.java.browse-ui]
@@ -21,7 +21,7 @@
 
 
 (defn register-yarn [yarn]
-  (let [k (yarn-key yarn)]
+  (let [k (impl/yarn-key yarn)]
     (when-not (qualified-keyword? k)
       (throw (ex-info "yarn must be a qualified keyword" {::yarn k})))
     (swap! *registry* assoc k yarn)))
@@ -88,7 +88,15 @@
   [poy yarns]
   (assert (map? poy) "poy should be a map")
   (assert (sequential? yarns) "yarns should be vector/sequence")
-  (yank* poy yarns @*registry* (when *tracing* (create-tracer poy yarns))))
+  (impl/yank0 poy yarns @*registry* (when *tracing* (create-tracer poy yarns))))
+
+
+(defn yank*
+  [poy yarns]
+  (kd/chain-revoke'
+   (yank poy yarns)
+   (fn [poy'] [(map (comp poy' impl/yarn-key) yarns) poy'])))
+
 
 
 (defmacro with-yarns [yarns & body]
