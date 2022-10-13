@@ -20,6 +20,9 @@
        (md/success-value x# x#)
        x#)))
 
+(definline successed [x] 
+  `(manifold.deferred.SuccessDeferred. (unwrap1' ~x) nil nil))
+
 
 (declare connect-d'')
 
@@ -30,7 +33,6 @@
        (connect-d'' d1# d2#)
        (success'! d2# d1#))
      d1#))
-
 
 (defn connect-d'' [d1 d2]
   (if (instance? manifold.deferred.IMutableDeferred d1)

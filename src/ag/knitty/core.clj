@@ -5,8 +5,7 @@
             [clojure.java.browse]
             [clojure.java.browse-ui]
             [clojure.java.shell]
-            [clojure.spec.alpha :as s] 
-            [manifold.deferred :as md]))
+            [clojure.spec.alpha :as s]))
 
 ;; >> API
 (declare yank)        ;; func,  (yank <map> [yarn-keys]) => @<new-map>
@@ -109,12 +108,9 @@
   `(kd/chain-revoke'
     (yank ~poy ~(vec (vals binds)))
     (fn [[[~@(keys binds)] ctx#]]
-      (let [b# (do ~@body)]
-        (assert (not (md/deferred? b#)) "doyank! called on deferred")) 
-      ctx#)))
+      (kd/chain-revoke' (do ~@body) (constantly ctx#)))))
 
 
-;; TODO: name?
 (defn tieknot [from dst]
   (register-yarn (eval (impl/gen-yarn-ref dst from)))
   from)

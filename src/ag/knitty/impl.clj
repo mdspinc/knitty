@@ -1,19 +1,13 @@
 (ns ag.knitty.impl
   (:require [ag.knitty.deferred :as kd]
-            [ag.knitty.mdm :as mdm :refer [create-mdm mdm-cancel! mdm-fetch!
-                                           mdm-freeze! mdm-get!]]
+            [ag.knitty.mdm :as mdm :refer [create-mdm mdm-cancel! mdm-fetch! mdm-freeze! mdm-get!]]
             [ag.knitty.trace :as t :refer [capture-trace!]]
             [clojure.string :as str]
             [com.stuartsierra.dependency :as dependency]
             [manifold.deferred :as md]
             [manifold.executor]
             [manifold.utils])
-  (:import [ag.knitty.mdm FetchResult MutableDeferredMap]
-           [java.util.concurrent ConcurrentLinkedDeque ConcurrentLinkedQueue]))
-
-
-(defprotocol RegistryEx
-  (yarns-topo-comparator [_]))
+  (:import [ag.knitty.mdm FetchResult MutableDeferredMap]))
 
 
 (defprotocol IYarn
@@ -97,7 +91,7 @@
 
 (defmacro yarn-get-sync [yk ykey ctx tracer]
   `(do
-     (when ~tracer (t/trace-dep ~tracer ~yk ~ykey)) 
+     (when ~tracer (t/trace-dep ~tracer ~yk ~ykey))
      (or
       (mdm-get! ~ctx ~ykey ~(mdm/keyword->intid ykey))
       ((get-yank-fn ~ctx ~ykey) ~ctx ~tracer))))
@@ -114,10 +108,11 @@
 
 (defmacro yarn-get-lazy [yk ykey ctx tracer]
   `(delay
-    (when ~tracer (t/trace-dep ~tracer ~yk ~ykey))
-    (as-deferred
-     ((get-yank-fn ~ctx ~ykey) ~ctx ~tracer)
-     )))
+     (when ~tracer (t/trace-dep ~tracer ~yk ~ykey))
+     (or
+      (mdm-get! ~ctx ~ykey ~(mdm/keyword->intid ykey))
+      (as-deferred
+       ((get-yank-fn ~ctx ~ykey) ~ctx ~tracer)))))
 
 
 (defn resolve-executor-var [e]
@@ -181,10 +176,10 @@
       (when maybe-real-result
         (md/on-realized
          mdm-deferred
-         #(when-let [d @maybe-real-result]
+         #(let [d @maybe-real-result]
             (when (instance? manifold.deferred.IMutableDeferred d)
               (kd/success'! d %)))
-         #(when-let [d @maybe-real-result]
+         #(let [d @maybe-real-result]
             (when (instance? manifold.deferred.IMutableDeferred d)
               (kd/error'! d %)))))
 
@@ -289,8 +284,9 @@
              (let [kv# ^FetchResult (mdm-fetch! ~ctx ~ykey ~kid)
                    d# (.mdmResult kv#)]
                (if-not (.mdmClaimed kv#)
+
                  ;; got item from mdm
-                 d#
+                 (kd/unwrap1' d#)
 
                  ;; calculate & provide new value to mdm
                  (maybe-future-with
@@ -313,7 +309,7 @@
                                     (fn []
                                       (let [~@deref-syncs]
                                         (vreset! ~reald (~the-fnv ~ctx ~tracer ~@deps)))))
-                                   (~the-fnv ~ctx ~tracer ~@deps))]
+                                   (vreset! ~reald (~the-fnv ~ctx ~tracer ~@deps)))]
                           (connect-result-mdm ~ykey x# d# ~tracer ~reald)))
                       (catch Throwable e#
                         (connect-error-mdm ~ykey e# d# ~tracer ~reald))))))))]
