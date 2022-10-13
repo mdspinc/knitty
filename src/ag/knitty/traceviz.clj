@@ -1,6 +1,7 @@
 (ns ag.knitty.traceviz
   (:require [ag.knitty.trace
              :refer [find-traces merge-parsed-traces parse-trace]]
+            [clojure.datafy :refer [datafy]]
             [clojure.java.browse :as browse]
             [clojure.java.io :as io]
             [clojure.java.shell :as shell]
@@ -183,7 +184,7 @@
                             "exception " (-> error class (.getName))
                             (ex-message error)]
 
-                           :else (short-string-multiline value))
+                           :else (short-string-multiline (datafy value)))
 
                          [:br {:align :left}]]]])
 
