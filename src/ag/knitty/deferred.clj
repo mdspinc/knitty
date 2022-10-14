@@ -228,11 +228,14 @@
       :else (throw (Exception. (str "unsupported arrow " =>))))))
 
 
-(definline maybe-deref [x]
-  `(when-some [x# ~x]
-     (if (realized? x#)
-       (deref x#)
-       x#)))
+(defn maybe-success-value 
+  ([x]
+   (maybe-success-value x nil))
+  ([x d]
+   (cond
+     (nil? x) d
+     (md/deferred? x) (md/success-value x d)
+     :else x)))
 
 
 (defn also
