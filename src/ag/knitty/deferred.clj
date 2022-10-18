@@ -99,7 +99,7 @@
 (defn await'
   ([vs]
    (let [^objects a (into-array java.lang.Object vs)] 
-     (await** (alength vs) nil a #(do true))))
+     (await** (alength a) nil a #(do true))))
   ([vs f]
    (let [^objects a (into-array java.lang.Object vs)]
      (await** (alength a) nil a f))))
@@ -205,27 +205,54 @@
   ([a b c d e & ds] (zip* (apply list* a b c d e ds))))
 
 
-(defn- via-n [chain n k r => [expr & forms]]
-  (let [x (gensym "x")
-        ns (take n forms)
-        rs (take r forms)
-        ks (drop k forms)]
-    (if (seq ks)
-      `(~chain ~expr (fn [~x]
-                       ~(via-n chain n k r =>
-                               `((~=> ~x ~@ns)
-                                 ~@rs
-                                 ~@ks))))
-      `(~chain (~=> ~expr ~@ns)))))
+(defmacro via [chain [=> expr & forms]]
+  (let [s (symbol (name =>))
+        [n r] (cond
+                (#{'-> '->> 'some-> 'some->>} s) [1 0]
+                (#{'cond-> 'cond->>} s)          [2 0]
+                (#{'as->} s)                     [1 1]
+                :else (throw (Exception. (str "unsupported arrow " =>))))
+        x (gensym)
+        e (take r forms)
+        fs (partition n (drop r forms))]
+    (list*
+     chain
+     expr
+     (for [a fs]
+       `(fn [~x] (~=> ~x ~@e ~@a))))))
 
 
-(defmacro via [chain [=> & forms]]
-  (let [s (symbol (name =>))]
-    (cond
-      (#{'-> '->> 'some-> 'some->>} s) (via-n chain 1 1 0 => forms)
-      (#{'cond-> 'cond->>} s)          (via-n chain 2 2 0 => forms)
-      (#{'as->} s)                     (via-n chain 2 2 1 => forms)
-      :else (throw (Exception. (str "unsupported arrow " =>))))))
+;; predefined popular varints of `via`
+(defmacro chain-> [expr & forms] `(via md/chain (-> ~expr ~@forms)))
+(defmacro chain->> [expr & forms] `(via md/chain (->> ~expr ~@forms)))
+(defmacro chain-as-> [expr name & forms] `(via md/chain (as-> ~expr ~name ~@forms)))
+
+(defmacro chain->' [expr & forms] `(via md/chain' (-> ~expr ~@forms)))
+(defmacro chain->>' [expr & forms] `(via md/chain' (->> ~expr ~@forms)))
+(defmacro chain-as->' [expr name & forms] `(via md/chain' (as-> ~expr ~name ~@forms)))
+
+
+(defmacro let-chain-via*
+  "simplified version of manifold.deferred/let-flow, resolve deferreds sequentially"
+  [chain [v d & rs :as binds] & body]
+  (if (empty? binds)
+    `(do ~@body)
+    `(let [~v ~d]
+       (~chain ~v
+               (fn [~v]
+                 (let-chain-via* ~chain ~rs ~@body))))))
+
+(defmacro let-chain [binds & body]
+  `(let-chain-via* md/chain ~binds ~@body))
+
+(defmacro let-chain' [binds & body]
+  `(let-chain-via* md/chain' ~binds ~@body))
+
+(defmacro let-chain-revoke [binds & body]
+  `(let-chain-via* chain-revoke ~binds ~@body))
+
+(defmacro let-chain-revoke' [binds & body]
+  `(let-chain-via* chain-revoke' ~binds ~@body))
 
 
 (defn maybe-success-value 
