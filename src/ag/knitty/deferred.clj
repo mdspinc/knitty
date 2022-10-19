@@ -205,6 +205,15 @@
   ([a b c d e & ds] (zip* (apply list* a b c d e ds))))
 
 
+(defn zip*'
+  ([ds] (apply md/zip' ds))
+  ([a ds] (apply md/zip' a ds))
+  ([a b ds] (apply md/zip' a b ds))
+  ([a b c ds] (apply md/zip' a b c ds))
+  ([a b c d ds] (apply md/zip' a b c d ds))
+  ([a b c d e & ds] (zip*' (apply list* a b c d e ds))))
+
+
 (defmacro via [chain [=> expr & forms]]
   (let [s (symbol (name =>))
         [n r] (cond
