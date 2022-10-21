@@ -263,6 +263,13 @@
 (defmacro chain-as->' [expr name & forms] `(via md/chain' (as-> ~expr ~name ~@forms)))
 
 
+(defmacro do-chain [& body]
+  (list* md/chain () (for [b body] `(fn [_#] ~b))))
+
+(defmacro do-chain' [& body]
+  (list* md/chain' () (for [b body] `(fn [_#] ~b))))
+
+
 (defmacro let-chain-via*
   "simplified version of manifold.deferred/let-flow, resolve deferreds sequentially"
   [chain [v d & rs :as binds] & body]
