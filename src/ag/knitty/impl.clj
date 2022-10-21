@@ -356,10 +356,6 @@
     ~(build-yarn-ref-gtr ykey from)))
 
 
-(defn- hide [d]
-  (delay d))
-
-
 (defn yank0
   [poy yarns registry tracer]
   (let [mdm (create-mdm poy (max 8 (* 2 (count yarns))))
@@ -368,8 +364,8 @@
                (throw (ex-info "failed to yank"
                                (cond->
                                 (assoc (dissoc (ex-data e) ::inyank)
-                                       :knitty/yanked-poy (hide poy)
-                                       :knitty/failed-poy (hide (mdm-freeze! ctx))
+                                       :knitty/yanked-poy poy
+                                       :knitty/failed-poy (mdm-freeze! ctx)
                                        :knitty/yanked-yarns yarns)
                                  tracer (assoc
                                          :knitty/trace
