@@ -370,22 +370,29 @@
                                            (conj
                                             (-> poy meta :knitty/trace)
                                             (capture-trace! tracer)))))
-                               e)))]
+                               e)))
+        n (count yarns)
+        yks (make-array Object n)
+        ]
  
     (try
+
+      (loop [i 0, ys yarns]
+          (when (seq ys)
+            (let [y (first ys)]
+              (aset yks i
+                    (if (keyword? y)
+                      ((get-yank-fn ctx y) ctx tracer)
+                      ((yarn-gtr y) ctx tracer))) 
+              (recur i (rest ys)))))
+
       (->
-       (kd/await'
-        (eduction
-         (map (fn [y]
-                (if (keyword? y)
-                  ((get-yank-fn ctx y) ctx tracer)
-                  ((yarn-gtr y) ctx tracer))))
-         yarns)
-        (fn []
-          (let [poy' (mdm-freeze! ctx)]
-            (if tracer
-              (vary-meta poy' update :knitty/trace conj (capture-trace! tracer))
-              poy'))))
+       (kd/await** yks
+                   (fn []
+                     (let [poy' (mdm-freeze! ctx)]
+                       (if tracer
+                         (vary-meta poy' update :knitty/trace conj (capture-trace! tracer))
+                         poy'))))
        (md/catch' errh)
        (kd/revoke' #(mdm-cancel! ctx)))
       (catch Throwable e (errh e)))))

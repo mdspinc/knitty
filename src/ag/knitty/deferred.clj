@@ -2,8 +2,9 @@
   (:refer-clojure :exclude [await])
   (:require [clojure.tools.logging :as log]
             [manifold.deferred :as md])
-  (:import [java.util.concurrent CancellationException TimeoutException]
-           [manifold.deferred IDeferred IMutableDeferred]))
+  (:import [java.util.concurrent CancellationException TimeoutException CountDownLatch]
+           [java.util.concurrent.atomic AtomicReference]
+           [manifold.deferred IDeferred IMutableDeferred IDeferredListener]))
 
 (set! *warn-on-reflection* true)
 
@@ -24,6 +25,17 @@
   `(manifold.deferred.SuccessDeferred. (unwrap1' ~x) nil nil))
 
 
+(definline listen'!
+  [d ls]
+  `(let [^IMutableDeferred d# ~d] (.addListener d# ~ls)))
+
+
+(deftype DeferredHookListener [^IDeferred d]
+  manifold.deferred.IDeferredListener
+  (onSuccess [_ x] (success'! d x))
+  (onError [_ e] (error'! d e)))
+
+
 (declare connect-d'')
 
 (definline connect'' [d1 d2]
@@ -34,15 +46,14 @@
        (success'! d2# d1#))
      d1#))
 
+
 (defn connect-d'' [d1 d2]
   (if (instance? manifold.deferred.IMutableDeferred d1)
 
-    (.addListener
-     ^manifold.deferred.IMutableDeferred d1
-     (reify manifold.deferred.IDeferredListener
-       (onSuccess [_ x] (connect'' x d2))
-       (onError [_ e] (error'! d2 e))))
-    
+    (if (instance? manifold.deferred.IDeferredListener d2)
+      (listen'! d1 d2)
+      (listen'! d1 (DeferredHookListener. d2)))
+
     (.onRealized
      ^manifold.deferred.IDeferred d1
      (fn conn-okk [x] (connect'' x d2))
@@ -274,10 +285,119 @@
      :else x)))
 
 
-(defn also
-  ([f] (fn [x] (f) x))
-  ([f a] (fn [x] (f a) x))
-  ([f a b] (fn [x] (f a b) x))
-  ([f a b c] (fn [x] (f a b c) x))
-  ([f a b c d] (fn [x] (f a b c d) x))
-  ([f a b c d & rs] (fn [x] (apply f a b c d rs) x)))
+;; >> Knitty-aware deferred
+;; slimmer version of manifold.deferred.IMutableDeferred
+;; produces smaller stacktraces (just a nice touch) & works a tiny bit faster
+;; also custom deferred class allows us to introduce any custom field for MDM
+
+(defmacro ^:private kd-deferred-deref
+  [this await-form recur-form]
+  `(let [x# ~'valokk]
+     (if-not (identical? ::none x#)
+       x#
+       (let [y# ~'valerr]
+         (if-not (identical? ::none y#)
+           (throw y#)
+           (let [cdl# (CountDownLatch. 1)
+                 f# (fn [_#] (.countDown cdl#))]
+             (.onRealized ~this f# f#)
+             (-> cdl# ~await-form)
+             ~recur-form))))))
+
+(defmacro ^:private kd-deferred-onrealized 
+  [_this on-okk on-err listener]
+  `(when-not
+    (loop [s# (.get ~'callbacks)]
+      (when s#
+        (or
+         (.compareAndSet ~'callbacks s# (cons ~listener s#))
+         (recur (.get ~'callbacks)))))
+     (loop []
+       (let [x# ~'valokk]
+         (if (identical? x# ::none)
+           (let [y# ~'valerr]
+             (if (identical? y# ::none)
+               (do
+                 (Thread/yield)
+                 (recur))
+               (->> y# ~on-err)))
+           (->> x# ~on-okk))))))
+
+(defmacro ^:private kd-deferred-succerr
+  [_this refield x ondo]
+  `(when-let [cs# (.getAndSet ~'callbacks nil)]
+     (set! ~refield ~x)
+     (doseq [^manifold.deferred.IDeferredListener c# cs#]
+       (try
+         (-> c# ~ondo)
+         (catch Throwable e#
+           (log/error e# "error in deferred handler"))))
+     true))
+
+(deftype KaDeferred
+         [^AtomicReference   callbacks
+          ^:volatile-mutable valokk
+          ^:volatile-mutable valerr
+          ^:volatile-mutable mta]
+
+  clojure.lang.IDeref
+  (deref [this] (kd-deferred-deref this (.await) (recur)))
+ 
+  clojure.lang.IBlockingDeref
+  (deref [this time timeout] (kd-deferred-deref this (.await time timeout) (recur time timeout)))
+
+  clojure.lang.IPending
+  (isRealized [_] (nil? (.get callbacks)))
+
+  clojure.lang.IReference
+  (meta [_] mta)
+  (resetMeta [_ m] (set! mta m))
+  (alterMeta [_ f args] (locking callbacks (set! mta (apply f mta args))))
+
+  manifold.deferred.IDeferred
+  (realized [_] (nil? (.get callbacks)))
+  (onRealized [this on-okk on-err] (kd-deferred-onrealized this on-okk on-err (md/listener on-okk on-err)))
+  (successValue [_ default] (let [x valokk] (if (identical? ::none x) default x)))
+  (errorValue [_ default] (let [x valerr] (if (identical? ::none x) default x)))
+
+  manifold.deferred.IDeferredListener
+  (onSuccess [this x] (kd-deferred-succerr this valokk x (.onSuccess x)))
+  (onError [this x]   (kd-deferred-succerr this valerr x (.onError x)))
+
+  manifold.deferred.IMutableDeferred
+  (addListener [this t] (kd-deferred-onrealized this (.onSuccess ^IDeferredListener t) (.onError ^IDeferredListener t) t))
+  (success [this x] (kd-deferred-succerr this valokk x (.onSuccess x)))
+  (error [this x]   (kd-deferred-succerr this valerr x (.onError x)))
+  (claim [_] nil)
+  (cancelListener [_ _l] (throw (UnsupportedOperationException.)))
+  (success [_ _x _token] (throw (UnsupportedOperationException.)))
+  (error [_ _x _token] (throw (UnsupportedOperationException.)))
+  
+  ;;
+  )
+
+(defn ka-deferred
+  "fast lock-free deferred (no executor/claim support)"
+  []
+  (KaDeferred. (AtomicReference. ()) ::none ::none nil))
+
+
+(defmethod print-method KaDeferred [y ^java.io.Writer w]
+  (.write w "#ag.knitty/Deferred[")
+  (let [error (md/error-value y nil)]
+    (cond
+      error
+      (do
+        (.write w ":error ")
+        (print-method (class error) w)
+        (.write w " ")
+        (print-method (ex-message error) w))
+      (md/realized? y)
+      (do
+        (.write w ":value ")
+        (print-method (successed y) w))
+      :else
+      (.write w "…")))
+  (.write w "]"))
+
+;; >> Knitty aware deferred

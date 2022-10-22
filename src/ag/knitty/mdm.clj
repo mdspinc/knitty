@@ -51,25 +51,13 @@
   `(.mdmGet ~(with-meta mdm {:tag "ag.knitty.mdm.MutableDeferredMap"}) ~kw ~kid))
 
 
-(defn- unwrap-mdm-deferred [x]
-  (if (md/deferred? x)
-    (let [val (md/success-value x ::none)]
-      (if (identical? val ::none)
-        (do
-          (alter-meta! x assoc
-                       ::leakd true   ;; actual indicator of leaking
-                       :type ::leakd  ;; use custom print-method
-                       )
-          x)
-        (recur val)))
-    x))
-
-
 (defmacro none? [x]
   `(identical? ::none ~x))
 
 
-(deftype KVCons [key val next])
+(deftype KVCons [^clojure.lang.Keyword key
+                 ^ag.knitty.deferred.KaDeferred val
+                 next])
 
 
 (deftype ETrue [v]
@@ -97,7 +85,7 @@
         (let [v (.get hm ki)]  ;; from hm or new
           (if (nil? v)
             ;; new
-            (let [d (md/deferred nil)
+            (let [d (kd/ka-deferred)
                   p (.putIfAbsent hm ki d)
                   d (if (nil? p) d p)]
               (when (nil? p)
@@ -124,7 +112,7 @@
           (loop [^KVCons a a, m (transient init)]
             (if a
               (recur (.-next a)
-                     (assoc! m (.-key a) (unwrap-mdm-deferred (.-val a))))
+                     (assoc! m (.-key a) (kd/unwrap1' (.-val a))))
               (persistent! m)))
           (meta init))
         init)))
@@ -171,7 +159,7 @@
           ;; probably mdmGet was not called... (or in-progress by other thread)
           (let [x (get init k ::none)]
             (if (none? x)
-              (let [d (md/deferred nil)
+              (let [d (kd/ka-deferred)
                     p (.compareAndSet a1 i1 nil d)]
                 (if p
                   (do
@@ -188,7 +176,7 @@
 
           (if (none? v)
             ;; new item, was prewarmed by calling mdmGet 
-            (let [d (md/deferred nil)
+            (let [d (kd/ka-deferred)
                   p (.compareAndSet a1 i1 ::none d)]
               (if p
                 (do
@@ -234,7 +222,7 @@
           (loop [^KVCons a a, m (transient init')]
             (if a
               (recur (.-next a)
-                     (assoc! m (.-key a) (unwrap-mdm-deferred (.-val a))))
+                     (assoc! m (.-key a) (kd/unwrap1' (.-val a))))
               (persistent! m)))
           (meta init))
         init)))
@@ -248,25 +236,6 @@
         (let [d (.-val a)]
           (when-not (md/realized? d)
             (kd/cancel! d)))))))
-
-
-(defmethod print-method ::leakd [y ^java.io.Writer w]
-  (.write w "#ag.knitty/LeakD[")
-  (let [error (md/error-value y nil)]
-    (cond
-      error
-      (do
-        (.write w ":error ")
-        (print-method (class error) w)
-        (.write w " ")
-        (print-method (ex-message error) w))
-      (md/realized? y)
-      (do
-        (.write w ":value ")
-        (print-method (kd/successed y) w))
-      :else
-      (.write w "…")))
-  (.write w "]"))
 
 
 (defn create-mdm-chm [init size-hint]
