@@ -28,7 +28,7 @@
 
   MutableDeferredMap
   (mdmFetch [_ k i] (.mdmFetch mdm k i))
-  (mdmGet [_ k i] (.mdmGet mdm k i))  
+  (mdmGet [_ k i] (.mdmGet mdm k i))
   (mdmFreeze [_] (.mdmFreeze mdm))
   (mdmCancel [_] (set! cancelled (boolean true)) (.mdmCancel mdm))
 
@@ -167,6 +167,29 @@
                  ex)))))
 
 
+(deftype RevokationListener [^clojure.lang.Volatile dref]
+  manifold.deferred.IDeferredListener
+  (onSuccess [_ x]
+    (let [d @dref]
+      (when (instance? manifold.deferred.IMutableDeferred d)
+        (kd/success'! d x))))
+  (onError [_ e]
+    (let [d @dref]
+      (when (instance? manifold.deferred.IMutableDeferred d)
+        (kd/error'! d e)))))
+
+
+(deftype TracedConnectListener [tracer ykey mdmd]
+  manifold.deferred.IDeferredListener
+  (onSuccess [_ x]
+    (when tracer (t/trace-finish tracer ykey x nil true))
+    (kd/success'! mdmd x))
+  (onError [_ x]
+    (let [ew (wrap-yarn-exception ykey x)]
+      (when tracer (t/trace-finish tracer ykey nil ew true))
+      (kd/error'! mdmd ew))))
+
+
 (defn connect-result-mdm [ykey result mdm-deferred tracer maybe-real-result]
 
   (if (md/deferred? result)
@@ -174,26 +197,17 @@
 
       ;; revokation mdm-deferred -> result
       (when maybe-real-result
-        (md/on-realized
-         mdm-deferred
-         #(let [d @maybe-real-result]
-            (when (instance? manifold.deferred.IMutableDeferred d)
-              (kd/success'! d %)))
-         #(let [d @maybe-real-result]
-            (when (instance? manifold.deferred.IMutableDeferred d)
-              (kd/error'! d %)))))
+        (let [mrr @maybe-real-result]
+          (if (identical? ::none mrr)
+            ;; not yet ready
+            (kd/listen! mdm-deferred (RevokationListener. maybe-real-result))
+            ;; ready - revoke only if it is IMutableDeferred
+            (when (instance? manifold.deferred.IMutableDeferred mrr)
+              (kd/connect'' mdm-deferred mrr)))))
 
       ;; connect result -> mdm-deferred
       (if tracer
-        (md/on-realized
-         result
-         (fn [xv]
-           (when tracer (t/trace-finish tracer ykey xv nil true))
-           (kd/success'! mdm-deferred xv))
-         (fn [e]
-           (let [ew (wrap-yarn-exception ykey e)]
-             (when tracer (t/trace-finish tracer ykey nil ew true))
-             (kd/error'! mdm-deferred ew))))
+        (kd/listen! result (TracedConnectListener. tracer ykey mdm-deferred))
         (kd/connect'' result mdm-deferred))
 
       mdm-deferred)
@@ -276,7 +290,7 @@
                 (coerce-deferred ~expr))))
 
            yget-fn#
-           (fn ~(fnn "--yarn") [~ctx ~tracer]
+           (fn ~(fnn "--yank") [~ctx ~tracer]
              (let [kv# ^FetchResult (mdm-fetch! ~ctx ~ykey ~kid)
                    d# (.mdmResult kv#)]
                (if-not (.mdmClaimed kv#)
@@ -289,14 +303,12 @@
                   ~executor-var
 
                   (when ~tracer (t/trace-start ~tracer ~ykey :yarn ~all-deps-tr))
-                  (let [~reald (volatile! nil)]
+                  (let [~reald (volatile! ::none)]
                     (try ;; d# is alsways deffered
                       (let [~@yank-deps
                             ~@try-deref-syncs]
                         (let [x# (if ~some-syncs-unresolved
-                                   (kd/await**
-                                    ~(count sync-deps)
-                                    nil
+                                   (kd/await*
                                     (let [~df-array (object-array ~(count sync-deps))]
                                       ~@(for [[i d] (map vector (range) (reverse sync-deps))]
                                           `(aset ~df-array ~i ~d))
@@ -367,22 +379,17 @@
                                             (capture-trace! tracer)))))
                                e)))
         n (count yarns)
-        yks (make-array Object n)
+        yks (java.util.ArrayList. n)
         ]
- 
+
     (try
-
-      (loop [i 0, ys yarns]
-          (when (seq ys)
-            (let [y (first ys)]
-              (aset yks i
-                    (if (keyword? y)
-                      ((get-yank-fn ctx y) ctx tracer)
-                      ((yarn-gtr y) ctx tracer))) 
-              (recur i (rest ys)))))
-
+      (doseq [y yarns]
+        (.add yks
+              (if (keyword? y)
+                ((get-yank-fn ctx y) ctx tracer)
+                ((yarn-gtr y) ctx tracer))))
       (->
-       (kd/await** yks
+       (kd/await* (.toArray yks)
                    (fn []
                      (let [poy' (mdm-freeze! ctx)]
                        (if tracer

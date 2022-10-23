@@ -9,10 +9,10 @@
 (set! *warn-on-reflection* true)
 
 
-(definline success'! [d x] 
+(definline success'! [d x]
   `(let [^IMutableDeferred d# ~d] (.success d# ~x)))
 
-(definline error'! [d x] 
+(definline error'! [d x]
   `(let [^IMutableDeferred d# ~d] (.error d# ~x)))
 
 (definline unwrap1' [x]
@@ -21,13 +21,22 @@
        (md/success-value x# x#)
        x#)))
 
-(definline successed [x] 
+(definline successed [x]
   `(manifold.deferred.SuccessDeferred. (unwrap1' ~x) nil nil))
-
 
 (definline listen'!
   [d ls]
   `(let [^IMutableDeferred d# ~d] (.addListener d# ~ls)))
+
+(definline listen!
+  [d ls]
+  `(let [d# ~d
+         ^IDeferredListener ls# ~ls]
+     (if (instance? IMutableDeferred d#)
+       (.addListener ^IMutableDeferred d# ls#)
+       (md/on-realized d#
+                       (fn ~'on-okk [x#] (.onSuccess ls# x#))
+                       (fn ~'on-err [e#] (.onError ls# e#))))))
 
 
 (deftype DeferredHookListener [^IDeferred d]
@@ -61,59 +70,55 @@
   ))
 
 
-(defn await**
-  ([^objects da f]
-   (await** (alength da) nil da f))
-  ([^long i r ^objects da f]
+(declare ka-deferred)
+
+
+;; sequentially attaches itself as a listener
+(deftype AwaiterListener [^:volatile-mutable ^long i
+                          ^objects da
+                          ^IMutableDeferred r
+                          callback]
+  
+  manifold.deferred.IDeferredListener
+  (onSuccess
+   [this _]
    (if (== 0 i)
+     (try
+       (connect'' (callback) r)
+       (catch Throwable e (error'! r e)))
+     (do
+       (set! i (unchecked-dec i))
+       (let [v (aget da i)]
+         (cond
 
-     (if r
-       (try
-         (connect'' (f) r)
-         (catch Throwable e (error'! r e)))
-       (f))
+           (not (md/deferred? v))
+           (recur nil)
 
-     (let [i (unchecked-dec i)
-           v (aget da i)]
-       (cond
-         (not (md/deferred? v))
-         (recur i r da f)
+           (identical? ::none (md/success-value v ::none))
+           (listen! v this)
 
-         (identical? ::none (md/success-value v ::none))
-         (let [r (or r (md/deferred nil))]
-           (if (instance? manifold.deferred.IMutableDeferred v)
+           :else
+           (recur nil))))))
+  (onError
+   [_ e]
+   (error'! r e)))
 
-             (.addListener
-              ^manifold.deferred.IMutableDeferred v
-              (reify manifold.deferred.IDeferredListener
-                (onSuccess
-                  [_ _]
-                  (try
-                    (await** i r da f)
-                    (catch Throwable e (error'! r e))))
-                (onError [_ e] (error'! r e))))
 
-             (.onRealized
-              ^manifold.deferred.IDeferred v
-              (fn await-okk [_]
-                (try
-                  (await** i r da f)
-                  (catch Throwable e (error'! r e))))
-              (fn await-err [e]
-                (error'! r e))))
-           r)
-
-         :else
-         (recur i r da f))))))
+(defn await*
+  [^objects ds f]
+  (let [r (ka-deferred)
+        a (AwaiterListener. (alength ds) ds r f)]
+    (.onSuccess a nil)
+    (unwrap1' r)))
 
 
 (defn await'
   ([vs]
-   (let [^objects a (into-array java.lang.Object vs)] 
-     (await** (alength a) nil a #(do true))))
+   (let [^objects a (into-array java.lang.Object vs)]
+     (await* a #(do true))))
   ([vs f]
    (let [^objects a (into-array java.lang.Object vs)]
-     (await** (alength a) nil a f))))
+     (await* a f))))
 
 
 (defn await
@@ -275,7 +280,7 @@
   `(let-chain-via* chain-revoke' ~binds ~@body))
 
 
-(defn maybe-success-value 
+(defn maybe-success-value
   ([x]
    (maybe-success-value x nil))
   ([x d]
@@ -304,7 +309,7 @@
              (-> cdl# ~await-form)
              ~recur-form))))))
 
-(defmacro ^:private kd-deferred-onrealized 
+(defmacro ^:private kd-deferred-onrealized
   [_this on-okk on-err listener]
   `(when-not
     (loop [s# (.get ~'callbacks)]
@@ -342,7 +347,7 @@
 
   clojure.lang.IDeref
   (deref [this] (kd-deferred-deref this (.await) (recur)))
- 
+
   clojure.lang.IBlockingDeref
   (deref [this time timeout] (kd-deferred-deref this (.await time timeout) (recur time timeout)))
 
@@ -372,7 +377,7 @@
   (cancelListener [_ _l] (throw (UnsupportedOperationException.)))
   (success [_ _x _token] (throw (UnsupportedOperationException.)))
   (error [_ _x _token] (throw (UnsupportedOperationException.)))
-  
+
   ;;
   )
 
