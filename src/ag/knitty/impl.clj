@@ -228,23 +228,19 @@
         df-array (with-meta (gensym "arr_of_deferreds") {:tag "[Ljava.lang.Object;"})
         kid (mdm/keyword->intid ykey)
         fnn #(-> ykey name (str %) symbol)
-        bind (sort-by #(mdm/keyword->intid (second %)) bind)
 
-        yank-async-deps
+        bind (if (:no-reorder-deps (meta bind) false)
+               bind
+               (sort-by #(mdm/keyword->intid (second %)) bind))
+
+        yank-deps
         (mapcat identity
-                (for [[ds dk] bind
-                      :when (#{:defer :lazy} (bind-param-type ds))]
+                (for [[ds dk] bind]
                   [ds
                    (case (bind-param-type ds)
                      :sync   `(yarn-get-sync  ~ykey ~dk ~ctx ~tracer)
                      :defer  `(yarn-get-defer ~ykey ~dk ~ctx ~tracer)
                      :lazy   `(yarn-get-lazy  ~ykey ~dk ~ctx ~tracer))]))
-        
-        yank-sync-deps
-        (mapcat identity
-                (for [[ds dk] bind
-                      :when (#{:sync} (bind-param-type ds))]
-                  [ds `(yarn-get-sync  ~ykey ~dk ~ctx ~tracer)]))
 
         sync-deps
         (for [[ds _dk] bind
@@ -295,8 +291,7 @@
                   (when ~tracer (t/trace-start ~tracer ~ykey :yarn ~all-deps-tr))
                   (let [~reald (volatile! nil)]
                     (try ;; d# is alsways deffered
-                      (let [~@yank-async-deps
-                            ~@yank-sync-deps
+                      (let [~@yank-deps
                             ~@try-deref-syncs]
                         (let [x# (if ~some-syncs-unresolved
                                    (kd/await**
