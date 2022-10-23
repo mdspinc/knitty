@@ -27,11 +27,11 @@
 
 
 (s/def ::yarn-binding (s/map-of symbol? ident?))
-(s/def ::bind-and-expr (s/? (s/cat :bind ::yarn-binding :expr any?)))
+(s/def ::bind-and-body (s/? (s/cat :bind ::yarn-binding :body (s/* any?))))
 
 (s/def ::yarn (s/cat
                :name qualified-keyword?
-               :bind-and-expr ::bind-and-expr))
+               :bind-and-body ::bind-and-body))
 
 (defmacro yarn
   [k & exprs]
@@ -39,13 +39,13 @@
         cf (s/conform ::yarn bd)]
     (when (s/invalid? cf)
       (throw (Exception. (s/explain-str ::yarn bd))))
-    (let [{{:keys [bind expr]} :bind-and-expr} cf
+    (let [{{:keys [bind body]} :bind-and-body} cf
           bind (or bind {})
           bind (update-vals bind #(if (keyword? %) % @(resolve &env %)))
-          expr (or expr `(throw (java.lang.UnsupportedOperationException. ~(str "input-only yarn " k))))]
+          body (if (seq body) body `((throw (java.lang.UnsupportedOperationException. ~(str "input-only yarn " k)))))]
       (when-not (every? qualified-keyword? (vals bind))
         (throw (Exception. "yarn bindings must be qualified keywords")))
-      (impl/gen-yarn k bind expr))))
+      (impl/gen-yarn k bind `(do ~@body)))))
 
 
 (defn- pick-yarn-meta [obj ex-meta doc]
@@ -59,7 +59,7 @@
 (s/def ::defyarn (s/cat
                   :name symbol?
                   :doc (s/? string?)
-                  :bind-and-expr ::bind-and-expr))
+                  :bind-and-body ::bind-and-body))
 (defmacro defyarn
   [nm & body]
   (let [bd (cons nm body)
@@ -69,17 +69,16 @@
       (throw (Exception. (s/explain-str ::defyarn bd))))
 
     (let [k (keyword (-> *ns* ns-name name) (name nm))
-          {doc :doc, {:keys [bind expr]} :bind-and-expr} cf
+          {doc :doc, {:keys [bind body]} :bind-and-body} cf
           bind (or bind {})
           [nm m] (pick-yarn-meta nm (meta bind) doc)
-          expr (or expr `(throw (java.lang.UnsupportedOperationException. ~(str "input-only yarn " k))))
           spec (:spec m)
           bind (with-meta bind m)]
 
       (list
        `do
        (when spec `(s/def ~k ~spec))
-       `(register-yarn (yarn ~k ~bind ~expr))
+       `(register-yarn (yarn ~k ~bind ~@body))
        `(def ~nm ~k)))))
 
 

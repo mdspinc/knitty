@@ -7,7 +7,7 @@
    #(if (odd? %1) (f %2) %2) c))
 
 
-(defn yarn* [[key bmap expr]]
+(defn yarn* [[key bmap & body]]
 
   (cond
 
@@ -42,7 +42,7 @@
                 :type :knitty/yarn-binding)))))
 
   (api/list-node
-    [;; (let
+    (list* ;; (let
      (api/token-node `let)
      ;; [ ~@bmap ]
      (api/vector-node
@@ -50,14 +50,14 @@
        #(api/list-node [(api/token-node `deref) %])
        (:children bmap)))
      ;; ~expr
-     expr
+     body
      ;; )
-     ]))
+     )))
 
 
 (defn yarn [{:keys [node]}]
-  (let [[_ key bmap expr] (:children node)]
-    {:node (yarn* [key bmap expr])}))
+  (let [[_ key bmap & body] (:children node)]
+    {:node (yarn* (list* key bmap body))}))
 
 
 (defn- skip-second [[x _ & xs]]
@@ -67,9 +67,9 @@
 (defn defyarn [{:keys [node]}]
 
   (let [node-child (rest (:children node))
-        [name bmap expr] (if (-> node-child second string?)
-                           (skip-second node-child)
-                           node-child)
+        [name bmap & body] (if (-> node-child second string?)
+                             (skip-second node-child)
+                             node-child)
 
         almeta (concat (:meta name) (:meta bmap))
         spec (first (for [m almeta
@@ -101,8 +101,8 @@
                  :message "name must be a symbol"
                  :type :knitty/defyarn-name)))
 
-       ;; (yarn ::~name ~bmap ~expr)
-       (yarn* [name-kv bmap expr])
+       ;; (yarn ::~name ~bmap ~body)
+       (yarn* (list* name-kv bmap body))
 
        ;; )
        ])

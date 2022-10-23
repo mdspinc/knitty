@@ -42,17 +42,15 @@
 
 (defyarn five
   {x ::two, y abs-three}  ;; mixed approach
-  (do
-    (println ">>>" x y)
-    (+ x y)))
+  (println ">>>" x y)
+  (+ x y))
 
 (defyarn six
   ^{:doc "doc string"}       ;; doc
   ^{:spec number?}           ;; spec
   {y ::three x ::two}
-  (do                        ;; explicit do
-    (println "debug print")
-    (* x y)))
+  (println "debug print")
+  (* x y))
 
 (tieknot three abs-three)
 
