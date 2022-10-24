@@ -313,7 +313,7 @@
                                       ~@(for [[i d] (map vector (range) (reverse sync-deps))]
                                           `(aset ~df-array ~i ~d))
                                       ~df-array)
-                                    (fn []
+                                    (fn ~(fnn "--async") []
                                       (let [~@deref-syncs]
                                         (vreset! ~reald (~the-fnv ~ctx ~tracer ~@deps)))))
                                    (vreset! ~reald (~the-fnv ~ctx ~tracer ~@deps)))]

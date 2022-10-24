@@ -24,7 +24,7 @@
 (defn mod-or-future [x y]
   (let [m (mod x y)]
     (if (zero? m) 
-      (future m)
+      (md/future m)
       m)))
 
 

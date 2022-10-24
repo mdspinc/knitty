@@ -98,7 +98,7 @@
 
 
 (defmacro with-yarns [yarns & body]
-  `(binding [*registry* (atom (reduce #(assoc %1 (yarn-key %2) %2) @*registry* ~yarns))]
+  `(binding [*registry* (atom (reduce #(assoc %1 (impl/yarn-key %2) %2) @*registry* ~yarns))]
      ~@body))
 
 
