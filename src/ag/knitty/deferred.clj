@@ -170,14 +170,20 @@
       (instance? TimeoutException e)))
 
 
+(deftype RevokeListener 
+  [^IDeferred deferred
+   ^clojure.lang.IFn canceller]
+  
+  manifold.deferred.IDeferredListener
+  (onSuccess [_ _] (when-not (md/realized? deferred) (canceller)))
+  (onError [_ _] (when-not (md/realized? deferred) (canceller)))
+)
+
+
 (defn revoke' [^IDeferred d c]
-  (let [e (.executor d)
-        d' (md/deferred e)
-        cc (fn [_] (when-not
-                    (md/realized? d)
-                     (c)))]
+  (let [d' (ka-deferred)]
     (connect'' d d')
-    (md/on-realized d' cc cc)
+    (md/add-listener! d' (RevokeListener. d c))
     d'))
 
 
@@ -295,6 +301,9 @@
 ;; produces smaller stacktraces (just a nice touch) & works a tiny bit faster
 ;; also custom deferred class allows us to introduce any custom field for MDM
 
+(deftype ListenerCons [listener next])
+(def ^:const empty-listener-cons (ListenerCons. nil nil))
+
 (defmacro ^:private kd-deferred-deref
   [this await-form recur-form]
   `(let [x# ~'valokk]
@@ -315,7 +324,7 @@
     (loop [s# (.get ~'callbacks)]
       (when s#
         (or
-         (.compareAndSet ~'callbacks s# (cons ~listener s#))
+         (.compareAndSet ~'callbacks s# (ListenerCons. ~listener s#))
          (recur (.get ~'callbacks)))))
      (loop []
        (let [x# ~'valokk]
@@ -332,11 +341,14 @@
   [_this refield x ondo]
   `(when-let [cs# (.getAndSet ~'callbacks nil)]
      (set! ~refield ~x)
-     (doseq [^manifold.deferred.IDeferredListener c# cs#]
-       (try
-         (-> c# ~ondo)
-         (catch Throwable e#
-           (log/error e# "error in deferred handler"))))
+     (loop [^ListenerCons cs# cs#]
+       (let [^IDeferredListener c# (.-listener cs#)]
+         (when c#
+           (try
+             (-> c# ~ondo)
+             (catch Throwable e#
+               (log/error e# "error in deferred handler")))
+           (recur (.-next cs#)))))
      true))
 
 (deftype KaDeferred
@@ -384,7 +396,7 @@
 (defn ka-deferred
   "fast lock-free deferred (no executor/claim support)"
   []
-  (KaDeferred. (AtomicReference. ()) ::none ::none nil))
+  (KaDeferred. (AtomicReference. empty-listener-cons) ::none ::none nil))
 
 
 (defmethod print-method KaDeferred [y ^java.io.Writer w]

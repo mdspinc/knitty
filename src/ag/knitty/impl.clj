@@ -307,7 +307,7 @@
                     (try ;; d# is alsways deffered
                       (let [~@yank-deps
                             ~@try-deref-syncs]
-                        (let [x# (if ~some-syncs-unresolved
+                      (let [x# (if ~some-syncs-unresolved
                                    (kd/await*
                                     (let [~df-array (object-array ~(count sync-deps))]
                                       ~@(for [[i d] (map vector (range) (reverse sync-deps))]

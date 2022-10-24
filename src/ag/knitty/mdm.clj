@@ -6,6 +6,7 @@
 
 
 (set! *warn-on-reflection* true)
+(set! *unchecked-math* :warn-on-boxed)
 
 
 (defonce ^:private keywords-int-ids (atom [0 {}]))
@@ -19,7 +20,7 @@
     (-> keywords-int-ids deref (nth 1) k)
     (->
      (swap! keywords-int-ids
-            (fn [[c m]]
+            (fn [[^long c m]]
               [(inc c)
                (assoc m k c)]))
      (nth 1)
@@ -153,11 +154,11 @@
       (let [i0 (bit-shift-right ki 5)
             i1 (bit-and ki 31) 
             ^AtomicReferenceArray a1 (arr-getset-lazy a0 i0 (AtomicReferenceArray. 32))
-            v  (.get ^AtomicReferenceArray a1 i1)]
+            v (.get a1 i1)]
         (if (nil? v)
 
           ;; probably mdmGet was not called... (or in-progress by other thread)
-          (let [x (get init k ::none)]
+          (let [x (init k ::none)]
             (if (none? x)
               (let [d (kd/ka-deferred)
                     p (.compareAndSet a1 i1 nil d)]
@@ -171,7 +172,7 @@
                   ))
               (let [d (kd/successed x)]
                 ;; copy from 'init'
-                (.lazySet a1 i1 d)
+                (.set a1 i1 d)
                 (EFalse. d))))
 
           (if (none? v)
@@ -198,7 +199,7 @@
             ^AtomicReferenceArray a1 (arr-getset-lazy a0 i0 (AtomicReferenceArray. 32))
             v (.get a1 i1)]
         (if (nil? v)
-          (let [v (get init k ::none)]
+          (let [v (init k ::none)]
             (if (none? v)
               (do
                 ;; maybe put ::none, so mdmFetch don't need to check 'init' again
@@ -206,7 +207,7 @@
                 nil)
               (let [d (kd/successed v)]
                 ;; copy from 'init'
-                (.lazySet a1 i1 d)
+                (.set a1 i1 d)
                 d)))
           (when-not (none? v)
             v)))))
@@ -246,8 +247,8 @@
 
 
 (defn create-mdm-arr [init size-hint]
-  (let [[mk] @keywords-int-ids
-        ^int n (quot (+ 31 mk) 32)]
+  (let [mk (first @keywords-int-ids)
+        n (int (quot (+ 31 (int mk)) 32))]
     (AtomicRefArrayMDM.
      init
      mk
