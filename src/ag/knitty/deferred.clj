@@ -264,10 +264,10 @@
 
 
 (defmacro do-chain [& body]
-  (list* md/chain () (for [b body] `(fn [_#] ~b))))
+  (list* `md/chain () (for [b body] `(fn [_#] ~b))))
 
 (defmacro do-chain' [& body]
-  (list* md/chain' () (for [b body] `(fn [_#] ~b))))
+  (list* `md/chain' () (for [b body] `(fn [_#] ~b))))
 
 
 (defmacro let-chain-via*
