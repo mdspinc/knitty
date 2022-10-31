@@ -1,6 +1,6 @@
 (ns ag.knitty.knitty-test 
   (:require [ag.knitty.core :as knitty 
-             :refer [defyarn doyank! with-yarns yank yank* yarn]]
+             :refer [defyarn doyank with-yarns yank yank* yarn]]
             [clojure.spec.alpha :as s]
             [clojure.test :as t :refer [deftest is testing]]
             [manifold.deferred :as md]
@@ -248,7 +248,7 @@
      (is (= 3 (-> (yank {cnt a} [count3]) deref cnt deref))))
 
    (let [a (atom 0)]
-     (is (= ::t @(-> (doyank! {cnt a} {x count3} x) (md/timeout! 15 ::t))))
+     (is (= ::t @(-> (doyank {cnt a} {x count3} x) (md/timeout! 15 ::t))))
      (is (= 1 @a))))
 
   )

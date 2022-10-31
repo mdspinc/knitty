@@ -102,12 +102,10 @@
      ~@body))
 
 
-(defmacro doyank!
-  [poy binds & body]
-  `(kd/chain-revoke'
-    (yank ~poy ~(vec (vals binds)))
-    (fn [[[~@(keys binds)] ctx#]]
-      (kd/chain-revoke' (do ~@body) (constantly ctx#)))))
+(defmacro doyank
+  [poy binds & body] 
+  (let [k (keyword (-> *ns* ns-name name) (name (gensym "doyank")))]
+    `(yank ~poy [(yarn ~k ~binds (do ~@body))])))
 
 
 (defn tieknot [from dst]

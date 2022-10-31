@@ -109,7 +109,7 @@
      }))
 
 
-(defn doyank! [{:keys [node]}]
+(defn doyank [{:keys [node]}]
   (let [[_ poy bmap & body] (:children node)]
     ;; (doyank x {} body) => (do (yarn ::fake {} body) x)
     {:node
