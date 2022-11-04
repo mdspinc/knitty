@@ -1,6 +1,6 @@
 (ns ag.knitty.knitty-test 
   (:require [ag.knitty.core :as knitty 
-             :refer [defyarn doyank with-yarns yank yank* yarn]]
+             :refer [defyarn doyank! yank yarn]]
             [clojure.spec.alpha :as s]
             [clojure.test :as t :refer [deftest is testing]]
             [manifold.deferred :as md]
@@ -31,11 +31,11 @@
 
    (testing "trace enabled"
      (binding [knitty/*tracing* true]
-       (is (= [4 6] @(md/chain (yank* {} [four six]) first)))))
+       (is (= [4 6] @(md/chain (yank {} [four six]) (juxt four six))))))
 
    (testing "trace disabled"
      (binding [knitty/*tracing* false]
-       (is (= [4 6] @(md/chain (yank* {} [four six]) first))))))
+       (is (= [4 6] @(md/chain (yank {} [four six]) (juxt four six)))))))
   )
   
 
@@ -219,10 +219,7 @@
      (is (= [6 12 18]
             (for [i [1 2 3]]
               @(md/chain (yank {} [(yarn ::six {x2 y2, x3 y3} (* x2 x3 i))]) ::six)))))
-   
-   (testing "override yanks from registry"
-     (with-yarns [(yarn ::y1 {} 101)]
-       (is (= 303 @(md/chain (yank {} [y3]) y3)))))))
+  ))
 
 
 (deftest cancellation-test
@@ -248,7 +245,7 @@
      (is (= 3 (-> (yank {cnt a} [count3]) deref cnt deref))))
 
    (let [a (atom 0)]
-     (is (= ::t @(-> (doyank {cnt a} {x count3} x) (md/timeout! 15 ::t))))
+     (is (= ::t @(-> (doyank! {cnt a} {x count3} x) (md/timeout! 15 ::t))))
      (is (= 1 @a))))
 
   )

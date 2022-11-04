@@ -1,6 +1,5 @@
 (ns ag.knitty.example
-  (:require [ag.knitty.core :refer
-             [defyarn doyank tieknot with-yarns yank yarn]]
+  (:require [ag.knitty.core :refer [defyarn doyank tieknot yank yarn]]
             [ag.knitty.traceviz :refer [render-trace view-trace]]
             [manifold.deferred :as md]))
 
@@ -68,17 +67,6 @@
 ;; dynamically create 'yarn & capture locals
 (for [i (range 1 4)]
   @(yank {} [(yarn ::seven {s ::six} (* i s))]))
-
-;; redefine (aka mock) yarns in registry
-(with-yarns [(yarn ::three {} (rand-int 1000))
-             (yarn ::four {} (assert false))]
-  @(yank {} [::six]))
-
-;; or dynamically switch yarns
-(with-yarns [(rand-nth
-              [(yarn ::seven {s ::six} (float (+ s 1)))
-               (yarn ::seven {s ::six} (long (+ s 1)))])]
-  @(yank {} [::seven]))
 
 ;; recommended to insntall 'xdot' (via pkg manager or pip)
 (render-trace @(yank {} [five]), :format :xdot)

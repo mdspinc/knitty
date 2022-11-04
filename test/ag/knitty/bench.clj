@@ -73,7 +73,7 @@
   
   (alter-var-root #'ag.knitty.core/*tracing* (constantly false))
   (time
-     @(md/chain (yank {} target-keys) second count))
+     @(md/chain (yank {} target-keys) count))
 
   (dobench)
   (dobench)

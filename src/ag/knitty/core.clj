@@ -11,11 +11,12 @@
 (declare yank)        ;; func,  (yank <map> [yarn-keys]) => @<new-map>
 (declare yarn)        ;; macro, (yarn keyword { (bind-symbol keyword)* } expr)
 (declare defyarn)     ;; macro, (defyarn name doc? spec? { (bind-symbol keyword)* } <expr>)
-(declare with-yarns)  ;; macro, (with-yarns [<yarns>+] <body ...>)
+(declare doyank)      ;; macro, (doyank <map> { (bind-symbol keyword)* } <expr>)
+(declare doyank!)     ;; macro, (doyank <map> { (bind-symbol keyword)* } <expr>)
 ;; << API
 
 ;; mapping {keyword => Yarn}
-(def ^:dynamic *registry* (atom (impl/create-registry)))
+(def ^:dynamic *registry* (impl/create-registry))
 (def ^:dynamic *tracing* true)
 
 
@@ -23,7 +24,7 @@
   (let [k (impl/yarn-key yarn)]
     (when-not (qualified-keyword? k)
       (throw (ex-info "yarn must be a qualified keyword" {::yarn k})))
-    (swap! *registry* assoc k yarn)))
+    (alter-var-root #'*registry* assoc k yarn)))
 
 
 (s/def ::yarn-binding (s/map-of symbol? ident?))
@@ -86,23 +87,18 @@
   [poy yarns]
   (assert (map? poy) "poy should be a map")
   (assert (sequential? yarns) "yarns should be vector/sequence")
-  (impl/yank0 poy yarns @*registry* (when *tracing* (create-tracer poy yarns))))
-
-
-(defn yank*
-  [poy yarns]
-  (kd/chain-revoke'
-   (yank poy yarns)
-   (fn [poy'] [(map (comp poy' impl/yarn-key) yarns) poy'])))
-
-
-
-(defmacro with-yarns [yarns & body]
-  `(binding [*registry* (atom (reduce #(assoc %1 (impl/yarn-key %2) %2) @*registry* ~yarns))]
-     ~@body))
+  (impl/yank0 poy yarns *registry* (when *tracing* (create-tracer poy yarns))))
 
 
 (defmacro doyank
+  [poy binds & body]
+  (let [k (keyword (-> *ns* ns-name name) (name (gensym "doyank")))]
+    `(kd/chain-revoke'
+      (yank ~poy [(yarn ~k ~binds (do ~@body))])
+      (juxt ~k identity))))
+
+
+(defmacro doyank!
   [poy binds & body] 
   (let [k (keyword (-> *ns* ns-name name) (name (gensym "doyank")))]
     `(yank ~poy [(yarn ~k ~binds (do ~@body))])))
