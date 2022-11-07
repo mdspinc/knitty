@@ -292,9 +292,9 @@
   `(let-chain-via* chain-revoke' ~binds ~@body))
 
 
-(defn maybe-success-value
+(defn ?value
   ([x]
-   (maybe-success-value x nil))
+   (?value x nil))
   ([x d]
    (cond
      (nil? x) d
