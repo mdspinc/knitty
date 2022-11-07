@@ -44,7 +44,7 @@
      (do-defs
       (defyarn test-yarn)
       (is (= test-yarn ::test-yarn))
-      (is (some? (get @knitty/*registry* test-yarn)))))
+      (is (some? (get knitty/*registry* test-yarn)))))
 
    (testing "define yarn without args but meta"
      (do-defs
@@ -54,7 +54,7 @@
           :spec ::the-spec}
         test-yarn)
 
-      (is (some? (get @knitty/*registry* test-yarn)))
+      (is (some? (get knitty/*registry* test-yarn)))
       (is (= "some doc" (-> #'test-yarn meta :doc)))
       (is (= `string? (s/form (get (s/registry) test-yarn))))))
 

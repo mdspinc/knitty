@@ -4,9 +4,10 @@
             [manifold.deferred :as md])
   (:import [java.util.concurrent CancellationException TimeoutException CountDownLatch]
            [java.util.concurrent.atomic AtomicReference]
-           [manifold.deferred IDeferred IMutableDeferred IDeferredListener]))
+           [manifold.deferred IDeferred IMutableDeferred IDeferredListener Listener]))
 
 (set! *warn-on-reflection* true)
+(set! *unchecked-math* :warn-on-boxed)
 
 
 (definline success'! [d x]
@@ -47,7 +48,7 @@
 
 (declare connect-d'')
 
-(definline connect'' [d1 d2]
+(defmacro connect'' [d1 d2]
   `(let [d1# (unwrap1' ~d1)
          d2# ~d2]
      (if (md/deferred? d1#)
@@ -74,31 +75,29 @@
 
 
 ;; sequentially attaches itself as a listener
-(deftype AwaiterListener [^:volatile-mutable ^long i
+(deftype AwaiterListener [^:volatile-mutable ^int i
                           ^objects da
                           ^IMutableDeferred r
-                          callback]
+                          ^clojure.lang.IFn callback]
   
   manifold.deferred.IDeferredListener
   (onSuccess
    [this _]
-   (if (== 0 i)
-     (try
-       (connect'' (callback) r)
-       (catch Throwable e (error'! r e)))
-     (do
-       (set! i (unchecked-dec i))
-       (let [v (aget da i)]
-         (cond
-
-           (not (md/deferred? v))
-           (recur nil)
-
-           (identical? ::none (md/success-value v ::none))
-           (listen! v this)
-
-           :else
-           (recur nil))))))
+   (loop [ii (int i)]  ;; desc order on purpose
+     (if (== ii 0)
+       (try
+         (connect'' (callback) r)
+         (catch Throwable e (error'! r e)))
+       (let [ii' (unchecked-dec-int ii)
+             v (md/unwrap' (aget da ii'))]
+         (if (md/deferred? v)
+           (do
+             (aset da ii' v)
+             (set! i ii')
+             (listen! v this))
+           (do
+             (aset da ii' nil)
+             (recur ii')))))))
   (onError
    [_ e]
    (error'! r e)))
@@ -311,19 +310,29 @@
 (deftype ListenerCons [listener next])
 (def ^:const empty-listener-cons (ListenerCons. nil nil))
 
+(deftype CountDownListener [^CountDownLatch cdl]
+  manifold.deferred.IDeferredListener
+  (onSuccess [_ _] (.countDown cdl))
+  (onError [_ _] (.countDown cdl)))
+
+(deftype KaListener [on-success on-error]
+  IDeferredListener
+  (onSuccess [_ x] (on-success x))
+  (onError [_ e] (on-error e)))
+
 (defmacro ^:private kd-deferred-deref
-  [this await-form recur-form]
-  `(let [x# ~'valokk]
-     (if-not (identical? ::none x#)
-       x#
-       (let [y# ~'valerr]
-         (if-not (identical? ::none y#)
-           (throw y#)
-           (let [cdl# (CountDownLatch. 1)
-                 f# (fn [_#] (.countDown cdl#))]
-             (.onRealized ~this f# f#)
-             (-> cdl# ~await-form)
-             ~recur-form))))))
+  [this await-form]
+  `(let [s# ~'state]
+     (if (== s# 1)
+       ~'val
+       (if (== s# 2)
+         (throw ~'val)
+         (let [cdl# (CountDownLatch. 1)]
+           (.addListener ~this (CountDownListener. cdl#))
+           (-> cdl# ~await-form)
+           (if (== ~'state 1)
+             ~'val
+             (throw ~'val)))))))
 
 (defmacro ^:private kd-deferred-onrealized
   [_this on-okk on-err listener]
@@ -333,65 +342,65 @@
         (or
          (.compareAndSet ~'callbacks s# (ListenerCons. ~listener s#))
          (recur (.get ~'callbacks)))))
-     (loop []
-       (let [x# ~'valokk]
-         (if (identical? x# ::none)
-           (let [y# ~'valerr]
-             (if (identical? y# ::none)
-               (do
-                 (Thread/yield)
-                 (recur))
-               (->> y# ~on-err)))
-           (->> x# ~on-okk))))))
+       (loop [] 
+         (let [s# ~'state] 
+           (if (== s# 1) 
+             (->> ~'val ~on-okk)
+             (if (== s# 2)
+               (->> ~'val ~on-err)
+               (recur)))))))
 
 (defmacro ^:private kd-deferred-succerr
-  [_this refield x ondo]
-  `(when-let [cs# (.getAndSet ~'callbacks nil)]
-     (set! ~refield ~x)
-     (loop [^ListenerCons cs# cs#]
-       (let [^IDeferredListener c# (.-listener cs#)]
-         (when c#
+  [_this x ondo state]
+  `(when-let [css# (.getAndSet ~'callbacks nil)]
+     (set! ~'val ~x)
+     (set! ~'state (int ~state))
+     (loop [cs# css#]
+       (let [^IDeferredListener c# (.-listener ^ListenerCons cs#)]
+         (when-not (nil? c#)
            (try
              (-> c# ~ondo)
-             (catch Throwable e#
-               (log/error e# "error in deferred handler")))
-           (recur (.-next cs#)))))
+             (catch Throwable e# (log/error e# "error in deferred handler")))
+           (recur (.-next ^ListenerCons cs#)))))
      true))
 
 (deftype KaDeferred
-         [^AtomicReference   callbacks
-          ^:volatile-mutable valokk
-          ^:volatile-mutable valerr
+         [^AtomicReference callbacks       ;; nil - deferred is semi-realized
+          ^:volatile-mutable ^int state    ;; 1 ok, 2 err, 0 unrealized
+          ^:unsynchronized-mutable val
           ^:volatile-mutable mta]
 
   clojure.lang.IDeref
-  (deref [this] (kd-deferred-deref this (.await) (recur)))
+  (deref [this] (kd-deferred-deref this (.await)))
 
   clojure.lang.IBlockingDeref
-  (deref [this time timeout] (kd-deferred-deref this (.await time timeout) (recur time timeout)))
+  (deref [this time timeout] (kd-deferred-deref this (.await time timeout)))
 
   clojure.lang.IPending
-  (isRealized [_] (nil? (.get callbacks)))
+  (isRealized [_] (not (== 0 state)))
+
+  clojure.lang.IFn
+  (invoke [this x] (when (if (instance? Throwable x) (.onError this x) (.onSuccess this x)) this))
 
   clojure.lang.IReference
   (meta [_] mta)
-  (resetMeta [_ m] (set! mta m))
+  (resetMeta [_ m] (locking (set! mta m)))
   (alterMeta [_ f args] (locking callbacks (set! mta (apply f mta args))))
 
   manifold.deferred.IDeferred
-  (realized [_] (nil? (.get callbacks)))
-  (onRealized [this on-okk on-err] (kd-deferred-onrealized this on-okk on-err (md/listener on-okk on-err)))
-  (successValue [_ default] (let [x valokk] (if (identical? ::none x) default x)))
-  (errorValue [_ default] (let [x valerr] (if (identical? ::none x) default x)))
+  (realized [_] (not (== 0 state)))
+  (onRealized [this on-okk on-err] (kd-deferred-onrealized this on-okk on-err (KaListener. on-okk on-err)))
+  (successValue [_ default] (if (== state 1) val default))
+  (errorValue [_ default] (if (== state 2) val default))
 
   manifold.deferred.IDeferredListener
-  (onSuccess [this x] (kd-deferred-succerr this valokk x (.onSuccess x)))
-  (onError [this x]   (kd-deferred-succerr this valerr x (.onError x)))
+  (onSuccess [this x] (kd-deferred-succerr this x (.onSuccess x) 1))
+  (onError [this x]   (kd-deferred-succerr this x (.onError x) 2))
 
   manifold.deferred.IMutableDeferred
-  (addListener [this t] (kd-deferred-onrealized this (.onSuccess ^IDeferredListener t) (.onError ^IDeferredListener t) t))
-  (success [this x] (kd-deferred-succerr this valokk x (.onSuccess x)))
-  (error [this x]   (kd-deferred-succerr this valerr x (.onError x)))
+  (addListener [this t] (let [^IDeferredListener t t] (kd-deferred-onrealized this (.onSuccess t) (.onError t) t)))
+  (success [this x] (kd-deferred-succerr this x (.onSuccess x) 1))
+  (error [this x]   (kd-deferred-succerr this x (.onError x) 2))
   (claim [_] nil)
   (cancelListener [_ _l] (throw (UnsupportedOperationException.)))
   (success [_ _x _token] (throw (UnsupportedOperationException.)))
@@ -403,23 +412,24 @@
 (defn ka-deferred
   "fast lock-free deferred (no executor/claim support)"
   []
-  (KaDeferred. (AtomicReference. empty-listener-cons) ::none ::none nil))
+  (KaDeferred. (AtomicReference. empty-listener-cons) (int 0) nil nil))
 
 
 (defmethod print-method KaDeferred [y ^java.io.Writer w]
   (.write w "#ag.knitty/Deferred[")
-  (let [error (md/error-value y nil)]
+  (let [error (md/error-value y ::none)
+        value (md/success-value y ::none)]
     (cond
-      error
+      (not (identical? error ::none))
       (do
         (.write w ":error ")
         (print-method (class error) w)
         (.write w " ")
         (print-method (ex-message error) w))
-      (md/realized? y)
+      (not (identical? value ::none))
       (do
         (.write w ":value ")
-        (print-method (successed y) w))
+        (print-method value w))
       :else
       (.write w "…")))
   (.write w "]"))
