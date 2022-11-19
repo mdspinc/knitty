@@ -308,14 +308,15 @@
                       (let [~@yank-deps
                             ~@try-deref-syncs]
                       (let [x# (if ~some-syncs-unresolved
-                                   (kd/await*
-                                    (let [~df-array (object-array ~(count sync-deps))]
-                                      ~@(for [[i d] (map vector (range) (reverse sync-deps))]
-                                          `(aset ~df-array ~i ~d))
-                                      ~df-array)
-                                    (fn ~(fnn "--async") []
-                                      (let [~@deref-syncs]
-                                        (vreset! ~reald (~the-fnv ~ctx ~tracer ~@deps)))))
+                                 (kd/unwrap1'
+                                  (kd/await*
+                                   (let [~df-array (object-array ~(count sync-deps))]
+                                     ~@(for [[i d] (map vector (range) (reverse sync-deps))]
+                                         `(aset ~df-array ~i ~d))
+                                     ~df-array)
+                                   (fn ~(fnn "--async") []
+                                     (let [~@deref-syncs]
+                                       (vreset! ~reald (~the-fnv ~ctx ~tracer ~@deps))))))
                                    (vreset! ~reald (~the-fnv ~ctx ~tracer ~@deps)))]
                           (connect-result-mdm ~ykey x# d# ~tracer ~reald)))
                       (catch Throwable e#

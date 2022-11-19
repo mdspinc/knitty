@@ -108,8 +108,7 @@
   (let [r (ka-deferred)
         a (AwaiterListener. (alength ds) ds r f)]
     (.onSuccess a nil)
-    (unwrap1' r)))
-
+    r))
 
 (defn await'
   ([vs]
