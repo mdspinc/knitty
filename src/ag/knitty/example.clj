@@ -8,6 +8,8 @@
   {}         ;; no inputs
   0)         ;; value, use explicit `do when needed
 
+@(yank {} [zero])
+
 (defyarn one
   {_ zero}   ;; wait for zero, but don't use it
   1)         ;; any manifold-like deferred can be finished
@@ -68,6 +70,8 @@
 ;; dynamically create 'yarn & capture locals
 (for [i (range 1 4)]
   @(yank {} [(yarn ::eight {s ::four} (* i s))]))
+
+(alter-var-root #'ag.knitty.core/*tracing* (constantly true))
 
 (print-trace (yank {} [six]))
 

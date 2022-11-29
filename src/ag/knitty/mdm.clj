@@ -11,6 +11,8 @@
 
 (defonce ^:private keywords-int-ids (atom [0 {}]))
 
+(defn max-initd []
+  (first @keywords-int-ids))
 
 (defn keyword->intid
   ^long [k]
@@ -236,7 +238,8 @@
       (when a
         (let [d (.-val a)]
           (when-not (md/realized? d)
-            (kd/cancel! d)))))))
+            (kd/cancel! d)))
+        (recur (next a))))))
 
 
 (defn create-mdm-chm [init size-hint]
