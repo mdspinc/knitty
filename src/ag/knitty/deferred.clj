@@ -273,8 +273,8 @@
   [chain [v d & rs :as binds] & body]
   (if (empty? binds)
     `(do ~@body)
-    `(let [~v ~d]
-       (~chain ~v
+    `(let [v# ~d]
+       (~chain v#
                (fn [~v]
                  (let-chain-via* ~chain ~rs ~@body))))))
 
@@ -318,6 +318,7 @@
   IDeferredListener
   (onSuccess [_ x] (on-success x))
   (onError [_ e] (on-error e)))
+
 
 (defmacro ^:private kd-deferred-deref
   [this await-form]
