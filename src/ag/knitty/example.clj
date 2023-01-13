@@ -1,5 +1,6 @@
 (ns ag.knitty.example
-  (:require [ag.knitty.core :refer [defyarn doyank tieknot yank yarn]]
+  (:require [ag.knitty.core :refer [defyarn doyank! tieknot yank yarn]]
+            [ag.knitty.tracetxt :refer [print-trace]]
             [ag.knitty.traceviz :refer [render-trace view-trace]]
             [manifold.deferred :as md]))
 
@@ -13,7 +14,7 @@
 
 (defyarn one-slooow
   {}
-  (future (Thread/sleep (rand-int 20)) 1))
+  (future (Thread/sleep (long (rand-int 20))) 1))
 
 (defyarn two
   {^:defer x one
@@ -22,11 +23,11 @@
 
 (defyarn three-fast {x one, y two}
   (future
-    (Thread/sleep (rand-int 5)) (+ x y)))
+    (Thread/sleep (long (rand-int 5))) (+ x y)))
 
 (defyarn three-slow {x one, y two}
   (future
-    (Thread/sleep (rand-int 10)) (+ x y)))
+    (Thread/sleep (long (rand-int 10))) (+ x y)))
 
 (defyarn three        ;; put deferred into delay, enables branching
   {^:lazy f three-fast
@@ -66,25 +67,21 @@
 
 ;; dynamically create 'yarn & capture locals
 (for [i (range 1 4)]
-  @(yank {} [(yarn ::seven {s ::six} (* i s))]))
+  @(yank {} [(yarn ::eight {s ::four} (* i s))]))
 
-;; recommended to insntall 'xdot' (via pkg manager or pip)
-(render-trace @(yank {} [five]), :format :xdot)
+(print-trace (yank {} [six]))
 
-
-(view-trace
- (md/chain
-  {}
-  #(yank % [six]) second), :format :png)
+;; recommended to insntall 'xdot' (via pkg maager or pip)
+(view-trace (yank {} [six]))
 
 ;; view all traces at once
 (view-trace
  (md/chain
   {}
-  #(yank % [two]) second
-  #(yank % [five]) second
+  #(yank % [two])
+  #(yank % [five])
   #(assoc % ::two 222222)
-  #(yank % [six]) second))
+  #(yank % [six])))
 
 ;; get raw format
 (render-trace (yank {} [six]), :format :raw)
@@ -93,7 +90,7 @@
 (render-trace (yank {} [six]), :format :dot)
 
 ;; yank & run code & return poy'
-@(doyank
+@(doyank!
   {one 10}
   {x six}
   (println "x =" x))
