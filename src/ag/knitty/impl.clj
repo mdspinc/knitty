@@ -179,14 +179,23 @@
         (kd/error'! d e)))))
 
 
-(deftype TracedConnectListener [tracer ykey mdmd]
+(deftype TracedConnectListener [tracer ykey ^manifold.deferred.IMutableDeferred mdmd]
   manifold.deferred.IDeferredListener
   (onSuccess [_ x]
-    (when tracer (t/trace-finish tracer ykey x nil true))
+    (t/trace-finish tracer ykey x nil true)
     (kd/success'! mdmd x))
   (onError [_ x]
     (let [ew (wrap-yarn-exception ykey x)]
-      (when tracer (t/trace-finish tracer ykey nil ew true))
+      (t/trace-finish tracer ykey nil ew true)
+      (kd/error'! mdmd ew))))
+
+
+(deftype ConnectListener [ykey ^manifold.deferred.IMutableDeferred mdmd]
+  manifold.deferred.IDeferredListener
+  (onSuccess [_ x]
+    (kd/success'! mdmd x))
+  (onError [_ x]
+    (let [ew (wrap-yarn-exception ykey x)]
       (kd/error'! mdmd ew))))
 
 
@@ -208,7 +217,7 @@
       ;; connect result -> mdm-deferred
       (if tracer
         (kd/listen! result (TracedConnectListener. tracer ykey mdm-deferred))
-        (kd/connect'' result mdm-deferred))
+        (kd/listen! result (ConnectListener. ykey mdm-deferred)))
 
       mdm-deferred)
 
