@@ -154,7 +154,6 @@
       (if (::inyank d)
         (ex-info "yarn failure"
                  (assoc d
-                        :knitty/failed-yarn k
                         :knitty/failed-yarn-chain (conj (:knitty/failed-yarn-chain d) k))
                  (ex-cause ex))
         (ex-info "yarn failure"
@@ -379,10 +378,9 @@
                                        :knitty/yanked-yarns yarns)
                                  tracer (assoc
                                          :knitty/trace
-                                         (when tracer
-                                           (conj
-                                            (-> poy meta :knitty/trace)
-                                            (capture-trace! tracer)))))
+                                         (conj
+                                          (-> poy meta :knitty/trace)
+                                          (capture-trace! tracer))))
                                e)))
         n (count yarns)
         yks (java.util.ArrayList. n)

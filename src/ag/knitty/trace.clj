@@ -268,7 +268,8 @@
     poy
 
     (map? poy)
-    (-> poy meta :knitty/trace)
+    (or (-> poy meta :knitty/trace)
+        (-> poy :knitty/trace))
 
     (vector? poy)
     (-> poy second meta :knitty/trace)
