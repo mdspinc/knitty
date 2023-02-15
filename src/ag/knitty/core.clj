@@ -116,6 +116,10 @@
       (juxt ~k identity))))
 
 
+(defn yank-error? [ex]
+  (boolean (:knitty/yanked-yarns (ex-data ex))))
+
+
 (defmacro doyank!
   [poy binds & body] 
   (let [k (keyword (-> *ns* ns-name name) (name (gensym "doyank")))]
