@@ -16,7 +16,7 @@
 
 (defyarn one-slooow
   {}
-  (future (Thread/sleep (long (rand-int 20))) 1))
+  (md/future (Thread/sleep (long (rand-int 20))) 1))
 
 (defyarn two
   {^:defer x one
@@ -24,11 +24,11 @@
   (md/chain' (md/alt x y) inc))
 
 (defyarn three-fast {x one, y two}
-  (future
+  (md/future
     (Thread/sleep (long (rand-int 5))) (+ x y)))
 
 (defyarn three-slow {x one, y two}
-  (future
+  (md/future
     (Thread/sleep (long (rand-int 10))) (+ x y)))
 
 (defyarn three        ;; put deferred into delay, enables branching
@@ -38,7 +38,7 @@
 
 (defyarn four
   {x ::one, y ::three};; use raw keywords (not recommended)
-  (future (+ x y)))
+  (md/future (+ x y)))
 
 (defyarn abs-three)
 
@@ -56,7 +56,7 @@
 
 (tieknot three abs-three)
 
-(yank {} [zero])
+(yank {} [three])
 ;; yank - ensure all keys are inside the map - finishs deferred
 @(yank {} [abs-three])
 @(yank {} [five])

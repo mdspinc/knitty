@@ -6,10 +6,9 @@
             [com.stuartsierra.dependency :as dependency]
             [manifold.deferred :as md]
             [manifold.executor]
-            [manifold.utils]
-            [iapetos.registry :as registry]
-            [clojure.pprint :as pprint])
-  (:import [ag.knitty.mdm FetchResult MutableDeferredMap]))
+            [manifold.utils])
+  (:import [ag.knitty.mdm FetchResult MutableDeferredMap]
+           [java.util.concurrent.atomic AtomicReference]))
 
 
 (defprotocol IYarn
@@ -63,11 +62,6 @@
   (.write w (str (yarn-key y))))
 
 
-(defn coerce-deferred [v]
-  (let [v (force v)]
-    (md/->deferred v v)))
-
-
 (defn as-deferred [v]
   (if (md/deferred? v)
     v
@@ -105,7 +99,7 @@
       ((get-yank-fn ~ctx ~ykey) ~ctx ~tracer))))
 
 
-(defmacro yarn-get-defer [yk  ykey ctx tracer]
+(defmacro yarn-get-defer [yk ykey ctx tracer]
   `(do
      (when ~tracer (t/trace-dep ~tracer ~yk ~ykey))
      (or
@@ -114,13 +108,53 @@
        ((get-yank-fn ~ctx ~ykey) ~ctx ~tracer)))))
 
 
+
+(deftype Lazy
+         [^AtomicReference value
+          ctx
+          tracer 
+          yk 
+          ykey
+          ^int ykeyi
+          yank-fn]
+  
+  clojure.lang.IDeref
+  (deref [_]
+    (if-let [v (.get value)]
+      v
+      (let [v (kd/ka-deferred)]
+        (if (.compareAndSet value nil v)
+          (do
+            (try
+              (when tracer (t/trace-dep tracer yk ykey))
+              (kd/connect'' (or
+                             (mdm-get! ctx ykey ykeyi)
+                             (as-deferred (yank-fn ctx tracer))) 
+                            v)
+              (catch Throwable t (kd/error'! v t)))
+            v)
+          (.get value)))))
+  
+  Object
+  (toString [_] (str "#ag.knitty/Lazy[" ykey "]"))
+  )
+
+
 (defmacro yarn-get-lazy [yk ykey ctx tracer]
-  `(delay
-     (when ~tracer (t/trace-dep ~tracer ~yk ~ykey))
-     (or
-      (mdm-get! ~ctx ~ykey ~(mdm/keyword->intid ykey))
-      (as-deferred
-       ((get-yank-fn ~ctx ~ykey) ~ctx ~tracer)))))
+  `(Lazy.
+    (AtomicReference.)
+    ~ctx
+    ~tracer
+    ~yk
+    ~ykey
+    ~(mdm/keyword->intid ykey)
+    (get-yank-fn ~ctx ~ykey)))
+
+
+(defn force-lazy-result [v]
+  (if (instance? Lazy v)
+    @v
+    v))
 
 
 (defn resolve-executor-var [e]
@@ -257,10 +291,6 @@
 
         ctx (with-meta '_yank_ctx {:tag (str `YankCtx)})
 
-        coerce-deferred (if sync-result
-                          identity
-                          coerce-deferred)
-
         bind (if (or keep-deps-order (nil? registry))
                bind
                (sort-by second (yarns-comparator registry) bind))
@@ -285,6 +315,12 @@
         (for [[ds _dk] bind
               :when (#{:sync} (bind-param-type ds))]
           ds)
+        
+        param-types (set (for [[ds _dk] bind] (bind-param-type ds)))
+
+        coerce-deferred (if (param-types :lazy)
+                          force-lazy-result
+                          identity)
 
         some-syncs-unresolved (list* `or (for [d sync-deps] `(md/deferred? ~d)))
 
@@ -325,7 +361,7 @@
                     (let [x# (if ~some-syncs-unresolved
 
                                (kd/unwrap1'
-                                (kd/await*'
+                                (kd/await*
 
                                  (let [~df-array (object-array ~(count sync-deps))]
                                    ~@(for [[i d] (map vector (range) (reverse sync-deps))]
