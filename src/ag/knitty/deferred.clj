@@ -4,7 +4,7 @@
             [manifold.deferred :as md])
   (:import [java.util.concurrent CancellationException TimeoutException CountDownLatch]
            [java.util.concurrent.atomic AtomicReference]
-           [manifold.deferred IDeferred IMutableDeferred IDeferredListener Listener]))
+           [manifold.deferred IDeferred IMutableDeferred IDeferredListener]))
 
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* :warn-on-boxed)
@@ -46,18 +46,18 @@
   (onError [_ e] (error'! d e)))
 
 
-(declare connect-d'')
+(declare connect-deferreds'')
 
 (defmacro connect'' [d1 d2]
   `(let [d1# (unwrap1' ~d1)
          d2# ~d2]
      (if (md/deferred? d1#)
-       (connect-d'' d1# d2#)
+       (connect-deferreds'' d1# d2#)
        (success'! d2# d1#))
      d1#))
 
 
-(defn connect-d'' [d1 d2]
+(defn connect-deferreds'' [^IDeferred d1 ^IDeferred d2]
   (if (instance? manifold.deferred.IMutableDeferred d1)
 
     (if (instance? manifold.deferred.IDeferredListener d2)
@@ -65,7 +65,7 @@
       (listen'! d1 (DeferredHookListener. d2)))
 
     (.onRealized
-     ^manifold.deferred.IDeferred d1
+      d1
      (fn conn-okk [x] (connect'' x d2))
      (fn conn-err [e] (error'! d2 e)))
   ))
