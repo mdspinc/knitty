@@ -20,33 +20,47 @@
 (def ^:dynamic *tracing* false)
 
 
-(defn register-yarn [yarn]
+(defn register-yarn
+  ([yarn]
+   (register-yarn yarn false))
+  ([yarn no-override]
   (let [k (impl/yarn-key yarn)]
     (when-not (qualified-keyword? k)
       (throw (ex-info "yarn must be a qualified keyword" {::yarn k})))
-    (alter-var-root #'*registry* assoc k yarn)))
+    (if no-override
+      (alter-var-root #'*registry* update k #(or % yarn))
+      (alter-var-root #'*registry* assoc k yarn)))))
 
 
 (s/def ::yarn-binding (s/map-of symbol? ident?))
-(s/def ::bind-and-body (s/? (s/cat :bind ::yarn-binding :body (s/* any?))))
+(s/def ::bind-and-body (s/? (s/cat :bind ::yarn-binding :body (s/+ any?))))
 
 (s/def ::yarn (s/cat
                :name qualified-keyword?
                :bind-and-body ::bind-and-body))
 
+
+(defmacro declare-yarn [nm]
+  {:pre [(ident? nm)]}
+  (let [k (keyword (-> *ns* ns-name name) (name nm))]
+     `(do (register-yarn (impl/fail-always-yarn ~k ~(str "declared-only yarn " k)) true)
+          ~k)))
+
+
 (defmacro yarn
   [k & exprs]
-  (let [bd (cons k exprs)
-        cf (s/conform ::yarn bd)]
-    (when (s/invalid? cf)
-      (throw (Exception. (s/explain-str ::yarn bd))))
-    (let [{{:keys [bind body]} :bind-and-body} cf
-          bind (or bind {})
-          bind (update-vals bind #(if (keyword? %) % @(resolve &env %)))
-          body (if (seq body) body `((throw (java.lang.UnsupportedOperationException. ~(str "input-only yarn " k)))))]
-      (when-not (every? qualified-keyword? (vals bind))
-        (throw (Exception. "yarn bindings must be qualified keywords")))
-      (impl/gen-yarn k bind `(do ~@body)))))
+  (if (empty? exprs)
+    `(impl/fail-always-yarn ~k ~(str "input-only yarn " k))
+    (let [bd (cons k exprs)
+          cf (s/conform ::yarn bd)]
+      (when (s/invalid? cf)
+        (throw (Exception. (s/explain-str ::yarn bd))))
+      (let [{{:keys [bind body]} :bind-and-body} cf
+            bind (or bind {})
+            bind (update-vals bind #(if (keyword? %) % @(resolve &env %)))]
+        (when-not (every? qualified-keyword? (vals bind))
+          (throw (Exception. "yarn bindings must be qualified keywords")))
+        (impl/gen-yarn k bind `(do ~@body))))))
 
 
 (defn- pick-yarn-meta [obj ex-meta doc]
@@ -64,22 +78,24 @@
 (defmacro defyarn
   [nm & body]
   (let [bd (cons nm body)
-        cf (s/conform ::defyarn bd)]
+        cf (s/conform ::defyarn bd)
+        k (keyword (-> *ns* ns-name name) (name nm))]
 
     (when (s/invalid? cf)
       (throw (Exception. (s/explain-str ::defyarn bd))))
 
-    (let [k (keyword (-> *ns* ns-name name) (name nm))
-          {doc :doc, {:keys [bind body]} :bind-and-body} cf
+    (let [{doc :doc, {:keys [bind body]} :bind-and-body} cf
           bind (or bind {})
           [nm m] (pick-yarn-meta nm (meta bind) doc)
           spec (:spec m)
-          bind (with-meta bind m)]
-
+          bind (with-meta bind m)
+          y (if (empty? body)
+              `(impl/fail-always-yarn ~k ~(str "input-only yarn " k))
+              `(yarn ~k ~bind ~@body))]
       (list
        `do
        (when spec `(s/def ~k ~spec))
-       `(register-yarn (yarn ~k ~bind ~@body))
+       `(register-yarn ~y)
        `(def ~nm ~k)))))
 
 

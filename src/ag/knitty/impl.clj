@@ -2,11 +2,12 @@
   (:require [ag.knitty.deferred :as kd]
             [ag.knitty.mdm :as mdm :refer [create-mdm mdm-cancel! mdm-fetch!
                                            mdm-freeze! mdm-get!]]
-            [ag.knitty.trace :as t :refer [capture-trace! Tracer]]
-            [com.stuartsierra.dependency :as dependency]
+            [ag.knitty.trace :as t :refer [capture-trace!]]
             [manifold.deferred :as md]
             [manifold.executor]
-            [manifold.utils])
+            [manifold.utils]
+            [clojure.set :as set]
+            [iapetos.registry :as registry])
   (:import [ag.knitty.mdm FetchResult MutableDeferredMap]
            [java.util.concurrent.atomic AtomicReference]))
 
@@ -14,11 +15,18 @@
 (set! *warn-on-reflection* true)
 
 (defprotocol IYarn
-  (yarn-gtr [_ registry] "get or build yarn getter")
+  (yarn-gtr [_] "get or build yarn getter")
   (yarn-deps [_] "get dependencies")
   (yarn-key [_] "get yarn ykey"))
 
 
+(deftype Yarn [gtr key deps]
+  IYarn
+  (yarn-gtr [_] gtr)
+  (yarn-deps [_] deps)
+  (yarn-key [_] key))
+
+  
 (definterface IRegistry
   (^clojure.lang.IFn resolveYarnGtr [^clojure.lang.Keyword kkw ^int kid])
   (yarnsComparator []))
@@ -256,16 +264,11 @@
     mdm-deferred))
 
 
-(defn build-yank-fns
-  [registry ykey bind body-fn]
-  (let [{:keys [keep-deps-order executor norevoke]} (meta bind)
-        deps (keys bind)
-        bind (if (or keep-deps-order (nil? registry))
-               bind
-               (sort-by second (.yarnsComparator ^IRegistry registry) bind))
-
+(defn emit-yank-fns-impl
+  [the-fnv ykey bind deps yarn-meta]
+  (let [{:keys [executor norevoke]} yarn-meta
+        
         ctx (with-meta '_yank_ctx {:tag (str `YankCtx)})
-        the-fnv (gensym "fn")
         reald  (gensym "rd")
         df-array (with-meta (gensym "dfs") {:tag "[Ljava.lang.Object;"})
         kid (mdm/keyword->intid ykey)
@@ -305,55 +308,63 @@
                       :when (#{:sync} (bind-param-type ds))]
                   [ds `(md/unwrap' ~ds)]))
 
-        all-deps-tr (vec (for [[ds dk] bind] [dk (bind-param-type ds)]))
-        ]
+        all-deps-tr (vec (for [[ds dk] bind] [dk (bind-param-type ds)]))]
 
-    `(let [~the-fnv ~body-fn]
-       (fn ~(fnn "--yank") [~ctx]
-         (let [kv# ^FetchResult (mdm-fetch! ~ctx ~ykey ~kid)
-               d# (.mdmResult kv#)]
-           (if-not (.mdmClaimed kv#)
+    `(fn ~(fnn "--yank") [~ctx]
+       (let [kv# ^FetchResult (mdm-fetch! ~ctx ~ykey ~kid)
+             d# (.mdmResult kv#)]
+         (if-not (.mdmClaimed kv#)
 
                  ;; got item from mdm
-             (kd/unwrap1' d#)
+           (kd/unwrap1' d#)
 
                  ;; calculate & provide new value to mdm
-             (maybe-future-with
-              ~executor
+           (maybe-future-with
+            ~executor
 
-              (ctx-tracer-> ~ctx t/trace-start  ~ykey :yarn ~all-deps-tr)
-              (let [~@(if norevoke [] [reald `(volatile! ::none)])]
-                (try ;; d# is alsways deffered
-                  (let [~@yank-deps
-                        ~@try-deref-syncs]
-                    (let [x# (if ~some-syncs-unresolved
+            (ctx-tracer-> ~ctx t/trace-start  ~ykey :yarn ~all-deps-tr)
+            (let [~@(if norevoke [] [reald `(volatile! ::none)])]
+              (try ;; d# is alsways deffered
+                (let [~@yank-deps
+                      ~@try-deref-syncs]
+                  (let [x# (if ~some-syncs-unresolved
 
-                               (kd/unwrap1'
-                                (kd/await*
+                             (kd/unwrap1'
+                              (kd/await*
 
-                                 (let [~df-array (object-array ~(count sync-deps))]
-                                   ~@(for [[i d] (map vector (range) (reverse sync-deps))]
-                                       `(aset ~df-array ~i ~d))
-                                   ~df-array)
+                               (let [~df-array (object-array ~(count sync-deps))]
+                                 ~@(for [[i d] (map vector (range) (reverse sync-deps))]
+                                     `(aset ~df-array ~i ~d))
+                                 ~df-array)
 
-                                 (fn ~(fnn "--async") []
-                                   (let [~@deref-syncs]
-                                     (~@(if norevoke `[do] [`vreset! reald])
-                                      (do
-                                        (ctx-tracer-> ~ctx t/trace-call ~ykey)
-                                        (~coerce-deferred (~the-fnv ~@deps))))))))
+                               (fn ~(fnn "--async") []
+                                 (let [~@deref-syncs]
+                                   (~@(if norevoke `[do] [`vreset! reald])
+                                    (do
+                                      (ctx-tracer-> ~ctx t/trace-call ~ykey)
+                                      (~coerce-deferred (~the-fnv ~@deps))))))))
 
-                               (~@(if norevoke `[do] [`vreset! reald])
-                                (do
-                                  (ctx-tracer-> ~ctx t/trace-call ~ykey)
-                                  (~coerce-deferred (~the-fnv ~@deps)))))]
+                             (~@(if norevoke `[do] [`vreset! reald])
+                              (do
+                                (ctx-tracer-> ~ctx t/trace-call ~ykey)
+                                (~coerce-deferred (~the-fnv ~@deps)))))]
 
-                      (connect-result-mdm ~ctx ~ykey x# d# ~reald)))
-                  (catch Throwable e#
-                    (connect-error-mdm ~ctx ~ykey e# d# ~reald)))))))))))
+                    (connect-result-mdm ~ctx ~ykey x# d# ~reald)))
+                (catch Throwable e#
+                  (connect-error-mdm ~ctx ~ykey e# d# ~reald))))))))))
 
 
-(defn build-yarn-ref-gtr [ykey orig-ykey]
+(defn emit-yank-fns [thefn registry ykey bind]
+  (let [yarn-meta (meta bind)
+        deps (map first bind)
+        {:keys [keep-deps-order]} yarn-meta
+        bind (if (or keep-deps-order (nil? registry))
+               bind
+               (sort-by second mdm/keyword->intid bind))]
+    (emit-yank-fns-impl thefn ykey bind deps yarn-meta)))
+
+
+(defn emit-yarn-ref-gtr [ykey orig-ykey]
   (let [kid (mdm/keyword->intid ykey)]
     `(fn [ctx#]
        (let [kv# ^FetchResult (mdm-fetch! ctx# ~ykey ~kid)
@@ -369,37 +380,27 @@
                (catch Throwable e#
                  (connect-error-mdm ctx# ~ykey e# d# nil)))))))))
 
-;; variable used to pass current yarn-body-fn into `eval
-(def ^:dynamic *evaluated-yarn-fn*)
-
 (defn gen-yarn
   [ykey bind expr]
-  (let [[deps1 deps2] (split-at 16 (keys bind))]
-    `(let [b# '~bind
-           f# (fn ~(-> ykey name symbol) [~@deps1 & [~@deps2]] ~expr)
-           d# (delay
-                (binding [*evaluated-yarn-fn* f#]
-                  (eval
-                   (build-yank-fns nil ~ykey b# `*evaluated-yarn-fn*))))]
-       (reify IYarn
-         (yarn-gtr [_ r#]
-           ;; lazily eval 'gtr' side function when registry is avaliable
-           (if (nil? r#)
-             (force d#)
-             (binding [*evaluated-yarn-fn* f#]
-               (eval
-                (build-yank-fns r# ~ykey b# `*evaluated-yarn-fn*)))))
-         (yarn-key [_] ~ykey)
-         (yarn-deps [_] ~(vec (vals bind)))))))
+  (let [deps (set (map second bind))
+        ff (gensym)
+        fargs (if (> (count bind) 20)
+                (let [[args1 args2] (split-at 20 (map first bind))]
+                  (vec (concat args1 ['& (vec args2)])))
+                (mapv first bind))]
+    `(let [~ff (fn ~(-> ykey name symbol) [~@fargs] ~expr)
+           gtr# ~(emit-yank-fns ff nil ykey bind)]
+       (Yarn. gtr# ~ykey '~deps))))
 
 
 (defn gen-yarn-ref
   [ykey from]
-  `(let [d# ~(build-yarn-ref-gtr ykey from)]
-     (reify IYarn
-       (yarn-gtr [_ r#] d#)
-       (yarn-key [_] ~ykey)
-       (yarn-deps [_] [~from]))))
+  `(let [d# ~(emit-yarn-ref-gtr ykey from)]
+     (Yarn. d# ~ykey #{~from})))
+
+
+(defn fail-always-yarn [ykey msg]
+  (Yarn. (fn [_] (throw (java.lang.UnsupportedOperationException. (str msg)))) ykey #{}))
 
 
 (defn yank0
@@ -428,7 +429,11 @@
         (.add yks
               (if (keyword? y)
                 ((.resolveYarnGtr ctx y (mdm/keyword->intid y)) ctx)
-                ((yarn-gtr y nil) ctx))))
+                (do
+                  (when (contains? registry (yarn-key y))
+                    (throw (ex-info "dynamic yarn is already in registry"
+                                    {:knitty/yarn (yarn-key y)})))
+                  ((yarn-gtr y) ctx)))))
       (->
        (kd/await* (.toArray yks)
                    (fn []
@@ -441,18 +446,31 @@
       (catch Throwable e (errh e)))))
 
 
-(deftype Registry [^objects ygets asmap dgraph]
+(defn- check-no-cycle
+  [root n path yarns]
+  (if (= root n)
+    (throw (ex-info "detected yarns cycle"
+                    {:knitty/yarns-cycle (vec (cons root (reverse (cons root path))))}))
+    (doseq [p (yarn-deps (yarns n))]
+      (check-no-cycle root p (cons p path) yarns))))
+
+
+(deftype Registry [^objects ygets asmap]
 
   IRegistry
   (resolveYarnGtr
-   [this kkw kid]
-   (or (aget ygets kid)
-       (locking ygets
-         (aset ygets kid (yarn-gtr (get asmap kkw) this)))))
-
-  (yarnsComparator
-   [_]
-   (dependency/topo-comparator dgraph))
+    [_ kkw kid]
+    (let [y (aget ygets kid)]
+      (if (some? y)
+        y
+        (locking ygets
+          (let [y (aget ygets kid)]
+            (if (nil? y)
+              (let [yarn (asmap kkw)
+                    yd (yarn-gtr yarn)]
+                (aset ygets kid yd)
+                yd)
+              y))))))
 
   clojure.lang.Seqable
   (seq [_] (seq asmap))
@@ -464,14 +482,25 @@
   clojure.lang.Associative
   (containsKey [_ k] (contains? asmap k))
   (entryAt [_ k] (find asmap k))
-  (empty [_] (Registry. nil {} (dependency/graph)))
+  (empty [_] (Registry. nil {}))
+
   (assoc [_ k v]
-         (mdm/keyword->intid k)
-         (Registry.
-          (object-array (inc (mdm/max-initd)))
-          (assoc asmap k v)
-          (reduce #(dependency/depend %1 k %2) dgraph (yarn-deps v)))))
+
+    (doseq [p (yarn-deps v)]
+      (when-not (contains? asmap p)
+        (throw (ex-info "yarn has unknown dependency" {:knitty/yarn k, :knitty/dependency p}))))
+
+    (let [m (assoc asmap k v)]
+      
+      (when-let [y' (asmap k)]
+        ;; when new yarn has some new dependencies - it may create a cycle
+        (doseq [dep (set/difference (yarn-deps y') (yarn-deps v))]
+          (check-no-cycle k dep nil asmap)))
+
+      (Registry.
+       (object-array (inc (mdm/max-initd)))
+       m))))
 
 
 (defn create-registry []
-  (Registry. nil {} (dependency/graph)))
+  (Registry. nil {}))
