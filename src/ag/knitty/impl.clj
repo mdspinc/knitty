@@ -405,7 +405,7 @@
 
 (defn yank0
   [poy yarns registry tracer]
-  (let [mdm (create-mdm poy (max 8 (* 2 (count yarns))))
+  (let [mdm (create-mdm poy)
         ctx (YankCtx. mdm registry false tracer)
         errh (fn [e]
                (throw (ex-info "failed to yank"

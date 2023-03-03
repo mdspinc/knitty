@@ -129,7 +129,8 @@
        (let [d (.-val a)]
          (when-not (md/realized? d)
            (kd/cancel! d)))
-       (recur (.-next a)))))
+       (recur (.-next a))
+       )))
   )
 
 
@@ -146,86 +147,77 @@
 
 
 (deftype AtomicRefArrayMDM [init
-                            ^long max-ki
-                            extra-mdm-delay
                             ^AtomicReference added
                             ^AtomicReferenceArray a0]
   MutableDeferredMap
 
   (mdmFetch
     [_ k ki]
-    (if (> ki max-ki)
-      (mdm-fetch! @extra-mdm-delay k ki)
-      (let [i0 (bit-shift-right ki 5)
-            i1 (bit-and ki 31) 
-            ^AtomicReferenceArray a1 (arr-getset-lazy a0 i0 (AtomicReferenceArray. 32))
-            v (.get a1 i1)]
-        (if (nil? v)
+    (let [i0 (bit-shift-right ki 5)
+          i1 (bit-and ki 31)
+          ^AtomicReferenceArray a1 (arr-getset-lazy a0 i0 (AtomicReferenceArray. 32))
+          v (.get a1 i1)]
+      (if (nil? v)
 
           ;; probably mdmGet was not called... (or in-progress by other thread)
-          (let [x (init k ::none)]
-            (if (none? x)
-              (let [d (kd/ka-deferred)
-                    p (.compareAndSet a1 i1 nil d)]
-                (if p
-                  (do
-                    (loop [g (.get added)]
-                      (when-not (.compareAndSet added g (KVCons. k d g))
-                        (recur (.get added))))
-                    (ETrue. d))
-                  (recur k ki)  ;; interrupted by another mdmFetch or mdmGet
-                  ))
-              (let [d (kd/successed x)]
-                ;; copy from 'init'
-                (.set a1 i1 d)
-                (EFalse. d))))
-
-          (if (none? v)
-            ;; new item, was prewarmed by calling mdmGet 
+        (let [x (init k ::none)]
+          (if (none? x)
             (let [d (kd/ka-deferred)
-                  p (.compareAndSet a1 i1 ::none d)]
+                  p (.compareAndSet a1 i1 nil d)]
               (if p
                 (do
                   (loop [g (.get added)]
                     (when-not (.compareAndSet added g (KVCons. k d g))
                       (recur (.get added))))
                   (ETrue. d))
-                (do
+                (recur k ki)  ;; interrupted by another mdmFetch or mdmGet
+                ))
+            (let [d (kd/successed x)]
+                ;; copy from 'init'
+              (.set a1 i1 d)
+              (EFalse. d))))
+
+        (if (none? v)
+            ;; new item, was prewarmed by calling mdmGet 
+          (let [d (kd/ka-deferred)
+                p (.compareAndSet a1 i1 ::none d)]
+            (if p
+              (do
+                (loop [g (.get added)]
+                  (when-not (.compareAndSet added g (KVCons. k d g))
+                    (recur (.get added))))
+                (ETrue. d))
+              (do
                   ;; ::none may change only to claimed deferred - no need to retry mdmFetch
-                  (EFalse. (.get a1 i1)))))
-            (EFalse. v))))))
+                (EFalse. (.get a1 i1)))))
+          (EFalse. v)))))
 
   (mdmGet
     [_ k ki]
-    (if (> ki max-ki)
-      (mdm-get! @extra-mdm-delay k ki)
-      (let [i0 (bit-shift-right ki 5)
-            i1 (bit-and ki 31) 
-            ^AtomicReferenceArray a1 (arr-getset-lazy a0 i0 (AtomicReferenceArray. 32))
-            v (.get a1 i1)]
-        (if (nil? v)
-          (let [v (init k ::none)]
-            (if (none? v)
-              (do
+    (let [i0 (bit-shift-right ki 5)
+          i1 (bit-and ki 31)
+          ^AtomicReferenceArray a1 (arr-getset-lazy a0 i0 (AtomicReferenceArray. 32))
+          v (.get a1 i1)]
+      (if (nil? v)
+        (let [v (init k ::none)]
+          (if (none? v)
+            (do
                 ;; maybe put ::none, so mdmFetch don't need to check 'init' again
-                (.compareAndSet a1 i1 nil ::none)
-                nil)
-              (let [d (kd/successed v)]
+              (.compareAndSet a1 i1 nil ::none)
+              nil)
+            (let [d (kd/successed v)]
                 ;; copy from 'init'
-                (.set a1 i1 d)
-                d)))
-          (when-not (none? v)
-            v)))))
+              (.set a1 i1 d)
+              d)))
+        (when-not (none? v)
+          v))))
 
   (mdmFreeze
     [_]
-    (let [a (.get added)
-          init' (if (realized? extra-mdm-delay)
-                  (mdm-freeze! @extra-mdm-delay)
-                  init)]
+    (let [a (.get added)]
       (if a
         (with-meta
-          (loop [^KVCons a a, m (transient init')]
+          (loop [^KVCons a a, m (transient init)]
             (if a
               (recur (.-next a)
                      (assoc! m (.-key a) (kd/unwrap1' (.-val a))))
@@ -235,8 +227,6 @@
 
   (mdmCancel
     [_]
-    (when (realized? extra-mdm-delay)
-      (mdm-cancel! @extra-mdm-delay))
     (loop [^KVCons a (.get added)]
       (when a
         (let [d (.-val a)]
@@ -245,23 +235,22 @@
         (recur (next a))))))
 
 
-(defn create-mdm-chm [init size-hint]
+(defn create-mdm-chm [init]
   (ConcurrentMapMDM.
    init
    (AtomicReference. nil)
-   (ConcurrentHashMap. (int size-hint) 0.75 (int 2))))
+   (ConcurrentHashMap.)))
 
 
-(defn create-mdm-arr [init size-hint]
-  (let [mk (max-initd)
-        n (int (quot (+ 31 (int mk)) 32))]
+(defn create-mdm-arr [init ^long mk]
+  (let [n (bit-shift-right (+ 31 mk) 5)]
     (AtomicRefArrayMDM.
      init
-     mk
-     (delay (create-mdm-chm init size-hint))
      (AtomicReference. nil)
      (AtomicReferenceArray. n))))
 
-
-(defn create-mdm [init size-hint]
-  (create-mdm-arr init size-hint))
+(defn create-mdm [init]
+  (let [mk (max-initd)]
+    (if (> mk 2048)
+      (create-mdm-chm init)
+      (create-mdm-arr init mk))))
