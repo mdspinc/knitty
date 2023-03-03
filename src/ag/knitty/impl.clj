@@ -450,12 +450,13 @@
   [root n path yarns]
   (if (= root n)
     (throw (ex-info "detected yarns cycle"
-                    {:knitty/yarns-cycle (vec (cons root (reverse (cons root path))))}))
+                    {:knitty/yarns-cycle (vec (reverse path))
+                     :knitty/yarn root}))
     (doseq [p (yarn-deps (yarns n))]
       (check-no-cycle root p (cons p path) yarns))))
 
 
-(deftype Registry [^objects ygets asmap]
+(deftype Registry [^objects ygets asmap all-deps]
 
   IRegistry
   (resolveYarnGtr
@@ -482,7 +483,7 @@
   clojure.lang.Associative
   (containsKey [_ k] (contains? asmap k))
   (entryAt [_ k] (find asmap k))
-  (empty [_] (Registry. nil {}))
+  (empty [_] (Registry. nil {} {}))
 
   (assoc [_ k v]
 
@@ -490,17 +491,19 @@
       (when-not (contains? asmap p)
         (throw (ex-info "yarn has unknown dependency" {:knitty/yarn k, :knitty/dependency p}))))
 
-    (let [m (assoc asmap k v)]
-      
-      (when-let [y' (asmap k)]
-        ;; when new yarn has some new dependencies - it may create a cycle
-        (doseq [dep (set/difference (yarn-deps y') (yarn-deps v))]
-          (check-no-cycle k dep nil asmap)))
+    (let [deps (yarn-deps v)
+          all-deps' (assoc all-deps k (apply set/union deps (map all-deps deps)))]
+
+      (when (contains? (all-deps' k) k)
+        ;; node depends on itself
+        (doseq [d deps]
+          (check-no-cycle k d [k] asmap)))
 
       (Registry.
        (object-array (inc (mdm/max-initd)))
-       m))))
+       (assoc asmap k v)
+       all-deps'))))
 
 
 (defn create-registry []
-  (Registry. nil {}))
+  (Registry. nil {} {}))
