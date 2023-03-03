@@ -9,24 +9,26 @@
 (set! *unchecked-math* :warn-on-boxed)
 
 
-(defonce ^:private keywords-int-ids (atom [0 {}]))
+(defonce ^:private keyword-int-mapping (ref {}))
+(defonce ^:private keyword-int-counter (ref 0))
 
-(defn max-initd []
-  (first @keywords-int-ids))
+(defn max-initd 
+  ^long []
+  @keyword-int-counter)
 
 (defn keyword->intid
   ^long [k]
-  {:pre [(keyword? k)]}
-  (long
-   (or
-    (-> keywords-int-ids deref (nth 1) k)
-    (->
-     (swap! keywords-int-ids
-            (fn [[^long c m]]
-              [(inc c)
-               (assoc m k c)]))
-     (nth 1)
-     k))))
+  (let [^java.lang.Long c
+        (or
+         (@keyword-int-mapping k)
+         (dosync
+           (when-not (qualified-keyword? k)
+             (throw (java.lang.IllegalArgumentException. "yarn key must be a qualified keyword")))
+           (let [c (long @keyword-int-counter)]
+             (alter keyword-int-counter inc)
+             (alter keyword-int-mapping assoc k c)
+             c)))]
+    (.longValue c)))
 
 
 (definterface FetchResult
@@ -126,7 +128,8 @@
      (when a
        (let [d (.-val a)]
          (when-not (md/realized? d)
-           (kd/cancel! d))))))
+           (kd/cancel! d)))
+       (recur (.-next a)))))
   )
 
 
@@ -250,7 +253,7 @@
 
 
 (defn create-mdm-arr [init size-hint]
-  (let [mk (first @keywords-int-ids)
+  (let [mk (max-initd)
         n (int (quot (+ 31 (int mk)) 32))]
     (AtomicRefArrayMDM.
      init
