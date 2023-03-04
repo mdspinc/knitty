@@ -1,7 +1,8 @@
 (ns ag.knitty.mdm
   (:require [ag.knitty.deferred :as kd]
             [manifold.deferred :as md])
-  (:import [java.util.concurrent ConcurrentHashMap]
+  (:import [clojure.lang Associative]
+           [java.util.concurrent ConcurrentHashMap]
            [java.util.concurrent.atomic AtomicReference AtomicReferenceArray]))
 
 
@@ -31,29 +32,34 @@
     (.longValue c)))
 
 
-(definterface FetchResult
-  ( mdmResult  [] "get deferred")
-  (^boolean mdmClaimed [] "true if caller should put value into deferred"))
+(deftype FetchResult [^boolean claimed 
+                      ^Object value])
 
 
-(definterface MutableDeferredMap
-  (mdmGet    [^clojure.lang.Keyword kkw ^long kid] "get value or nil")
-  (mdmFetch  [^clojure.lang.Keyword kkw ^long kid] "get or claim deferred")
+(definterface IMutableDeferredMap
+  (mdmGet    [^clojure.lang.Keyword kkw ^long kid] "get value or ::none")
+  (mdmFetch  [^clojure.lang.Keyword kkw ^long kid] "get or claim a deferred")
   (mdmFreeze [] "freeze map, deref all completed deferreds")
   (mdmCancel [] "freeze map, cancel all deferreds"))
 
 
-(definline mdm-fetch! [mdm kw kid]
-  `(.mdmFetch ~(with-meta mdm {:tag "ag.knitty.mdm.MutableDeferredMap"}) ~kw ~kid))
+(defmacro mdm-fetch! [mdm kw kid]
+  (list '.mdmFetch (with-meta mdm {:tag "ag.knitty.mdm.IMutableDeferredMap"}) kw kid))
 
-(definline mdm-freeze! [mdm]
-  `(.mdmFreeze ~(with-meta mdm {:tag "ag.knitty.mdm.MutableDeferredMap"})))
+(defmacro mdm-freeze! [mdm]
+  (list '.mdmFreeze (with-meta mdm {:tag "ag.knitty.mdm.IMutableDeferredMap"})))
 
-(definline mdm-cancel! [mdm]
-  `(.mdmCancel ~(with-meta mdm {:tag "ag.knitty.mdm.MutableDeferredMap"})))
+(defmacro mdm-cancel! [mdm]
+  (list '.mdmCancel (with-meta mdm {:tag "ag.knitty.mdm.IMutableDeferredMap"})))
 
-(definline mdm-get! [mdm kw kid]
-  `(.mdmGet ~(with-meta mdm {:tag "ag.knitty.mdm.MutableDeferredMap"}) ~kw ~kid))
+(defmacro mdm-get! [mdm kw kid]
+  (list '.mdmGet (with-meta mdm {:tag "ag.knitty.mdm.IMutableDeferredMap"}) kw kid))
+
+(defmacro fetch-result-claimed? [r]
+  (list '.-claimed (with-meta r {:tag "ag.knitty.mdm.FetchResult"})))
+
+(defmacro fetch-result-value [r]
+  (list '.-value (with-meta r {:tag "ag.knitty.mdm.FetchResult"})))
 
 
 (defmacro none? [x]
@@ -65,28 +71,16 @@
                  next])
 
 
-(deftype ETrue [v]
-  FetchResult
-  (mdmClaimed [_] true)
-  (mdmResult [_] v))
-
-
-(deftype EFalse [v]
-  FetchResult
-  (mdmClaimed [_] false)
-  (mdmResult [_] v))
-
-
-(deftype ConcurrentMapMDM [init
+(deftype ConcurrentMapMDM [^Associative init
                            ^AtomicReference added
                            ^ConcurrentHashMap hm]
-  MutableDeferredMap
+  IMutableDeferredMap
 
   (mdmFetch
     [_ k ki]
-    (let [v (init k ::none)]
+    (let [v (.valAt init k ::none)]
       (if-not (none? v)
-        (EFalse. v)    ;; from init
+        (FetchResult. false v) ;; from init
         (let [v (.get hm ki)]  ;; from hm or new
           (if (nil? v)
             ;; new
@@ -97,28 +91,34 @@
                 (loop [g (.get added)]
                   (when-not (.compareAndSet added g (KVCons. k d g))
                     (recur (.get added)))))
-              (ETrue. d))
+              (FetchResult. true d))
             ;; from hm
             (let [v' (md/success-value v v)]
-              (EFalse. v')))))))
+              (FetchResult. false v')))))))
 
   (mdmGet
    [_ k ki]
-   (let [v (init k ::none)]
+   (let [v (.valAt init k ::none)]
      (if (none? v)
        (.get hm ki)
-       (kd/successed v))))
+       v)))
 
   (mdmFreeze
     [_]
     (let [a (.get added)]
       (if a
         (with-meta
-          (loop [^KVCons a a, m (transient init)]
-            (if a
-              (recur (.-next a)
-                     (assoc! m (.-key a) (kd/unwrap1' (.-val a))))
-              (persistent! m)))
+          (if (instance? clojure.lang.IEditableCollection init)
+            (loop [^KVCons a a, m (transient init)]
+              (if a
+                (recur (.-next a)
+                       (assoc! m (.-key a) (kd/unwrap1' (.-val a))))
+                (persistent! m)))
+            (loop [^KVCons a a, m init]
+              (if a
+                (recur (.-next a)
+                       (assoc m (.-key a) (kd/unwrap1' (.-val a))))
+                m)))
           (meta init))
         init)))
 
@@ -146,10 +146,10 @@
            (.get a# i#))))))
 
 
-(deftype AtomicRefArrayMDM [init
+(deftype AtomicRefArrayMDM [^Associative init
                             ^AtomicReference added
                             ^AtomicReferenceArray a0]
-  MutableDeferredMap
+  IMutableDeferredMap
 
   (mdmFetch
     [_ k ki]
@@ -160,7 +160,7 @@
       (if (nil? v)
 
           ;; probably mdmGet was not called... (or in-progress by other thread)
-        (let [x (init k ::none)]
+        (let [x (.valAt init k ::none)]
           (if (none? x)
             (let [d (kd/ka-deferred)
                   p (.compareAndSet a1 i1 nil d)]
@@ -169,13 +169,13 @@
                   (loop [g (.get added)]
                     (when-not (.compareAndSet added g (KVCons. k d g))
                       (recur (.get added))))
-                  (ETrue. d))
+                  (FetchResult. true d))
                 (recur k ki)  ;; interrupted by another mdmFetch or mdmGet
                 ))
             (let [d (kd/successed x)]
-                ;; copy from 'init'
+              ;; copy from 'init'
               (.set a1 i1 d)
-              (EFalse. d))))
+              (FetchResult. false d))))
 
         (if (none? v)
             ;; new item, was prewarmed by calling mdmGet 
@@ -186,11 +186,11 @@
                 (loop [g (.get added)]
                   (when-not (.compareAndSet added g (KVCons. k d g))
                     (recur (.get added))))
-                (ETrue. d))
+                (FetchResult. true d))
               (do
                   ;; ::none may change only to claimed deferred - no need to retry mdmFetch
-                (EFalse. (.get a1 i1)))))
-          (EFalse. v)))))
+                (FetchResult. false (.get a1 i1)))))
+          (FetchResult. false v)))))
 
   (mdmGet
     [_ k ki]
@@ -199,29 +199,34 @@
           ^AtomicReferenceArray a1 (arr-getset-lazy a0 i0 (AtomicReferenceArray. 32))
           v (.get a1 i1)]
       (if (nil? v)
-        (let [v (init k ::none)]
+        (let [v (.valAt init k ::none)]
           (if (none? v)
             (do
                 ;; maybe put ::none, so mdmFetch don't need to check 'init' again
               (.compareAndSet a1 i1 nil ::none)
-              nil)
+              v)
             (let [d (kd/successed v)]
                 ;; copy from 'init'
               (.set a1 i1 d)
-              d)))
-        (when-not (none? v)
-          v))))
+              v)))
+        v)))
 
   (mdmFreeze
     [_]
     (let [a (.get added)]
       (if a
         (with-meta
-          (loop [^KVCons a a, m (transient init)]
-            (if a
-              (recur (.-next a)
-                     (assoc! m (.-key a) (kd/unwrap1' (.-val a))))
-              (persistent! m)))
+          (if (instance? clojure.lang.IEditableCollection init)
+            (loop [^KVCons a a, m (transient init)]
+              (if a
+                (recur (.-next a)
+                       (assoc! m (.-key a) (kd/unwrap1' (.-val a))))
+                (persistent! m)))
+            (loop [^KVCons a a, m init]
+              (if a
+                (recur (.-next a)
+                       (assoc m (.-key a) (kd/unwrap1' (.-val a))))
+                m)))
           (meta init))
         init)))
 
@@ -236,6 +241,7 @@
 
 
 (defn create-mdm-chm [init]
+  {:pre [(associative? init)]}
   (ConcurrentMapMDM.
    init
    (AtomicReference. nil)
@@ -243,11 +249,13 @@
 
 
 (defn create-mdm-arr [init ^long mk]
+  {:pre [(associative? init)]}
   (let [n (bit-shift-right (+ 31 mk) 5)]
     (AtomicRefArrayMDM.
      init
      (AtomicReference. nil)
      (AtomicReferenceArray. n))))
+
 
 (defn create-mdm [init]
   (let [mk (max-initd)]
