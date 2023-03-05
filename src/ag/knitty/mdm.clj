@@ -33,7 +33,7 @@
 
 
 (deftype FetchResult [^boolean claimed 
-                      ^Object value])
+                      ^manifold.deferred.IMutableDeferred value])
 
 
 (definterface IMutableDeferredMap
@@ -60,7 +60,6 @@
 
 (defmacro fetch-result-value [r]
   (list '.-value (with-meta r {:tag "ag.knitty.mdm.FetchResult"})))
-
 
 (defmacro none? [x]
   `(identical? ::none ~x))
@@ -93,15 +92,14 @@
                     (recur (.get added)))))
               (FetchResult. true d))
             ;; from hm
-            (let [v' (md/success-value v v)]
-              (FetchResult. false v')))))))
+            (FetchResult. false v))))))
 
   (mdmGet
    [_ k ki]
    (let [v (.valAt init k ::none)]
      (if (none? v)
        (.get hm ki)
-       v)))
+       (kd/unwrap1' v))))
 
   (mdmFreeze
     [_]
@@ -138,10 +136,10 @@
   `(let [^AtomicReferenceArray a# ~a
          i# ~i
          x# (.get a# i#)]
-     (if x#
+     (if (some? x#)
        x#
        (let [v# ~v]
-         (if (.compareAndSet a# ~i nil v#)
+         (if (.compareAndSet a# i# nil v#)
            v#
            (.get a# i#))))))
 
@@ -172,7 +170,7 @@
                   (FetchResult. true d))
                 (recur k ki)  ;; interrupted by another mdmFetch or mdmGet
                 ))
-            (let [d (kd/successed x)]
+            (let [d (if (md/deferred? x) x (kd/successed x))]
               ;; copy from 'init'
               (.set a1 i1 d)
               (FetchResult. false d))))
@@ -188,7 +186,7 @@
                     (recur (.get added))))
                 (FetchResult. true d))
               (do
-                  ;; ::none may change only to claimed deferred - no need to retry mdmFetch
+                  ;; ::none may change only to claimed deferred or value
                 (FetchResult. false (.get a1 i1)))))
           (FetchResult. false v)))))
 
@@ -202,14 +200,14 @@
         (let [v (.valAt init k ::none)]
           (if (none? v)
             (do
-                ;; maybe put ::none, so mdmFetch don't need to check 'init' again
+              ;; maybe put ::none, so mdmFetch don't need to check 'init' again
               (.compareAndSet a1 i1 nil ::none)
               v)
-            (let [d (kd/successed v)]
+            (let [d (if (md/deferred? v) v (kd/successed v))]
                 ;; copy from 'init'
               (.set a1 i1 d)
               v)))
-        v)))
+        (kd/unwrap1' v))))
 
   (mdmFreeze
     [_]

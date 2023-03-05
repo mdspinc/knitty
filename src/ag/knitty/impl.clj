@@ -6,7 +6,7 @@
             [manifold.deferred :as md]
             [manifold.executor]
             [manifold.utils]
-            [clojure.core.async :as a])
+            [iapetos.registry :as registry])
   (:import [java.util.concurrent.atomic AtomicReference]))
 
 
@@ -24,32 +24,85 @@
   (yarn-deps [_] deps)
   (yarn-key [_] key))
 
-  
-(definterface IRegistry
-  (^clojure.lang.IFn yankfn [^clojure.lang.Keyword kkw ^long kid]))
 
 
-(definterface IYankCtx
-  (^ag.knitty.impl.IRegistry          registry [])
-  (^ag.knitty.mdm.IMutableDeferredMap mdm [])
-  (^boolean                           cancelled [])
-  (tracer [])
-  (^clojure.lang.IFn yankfn [^clojure.lang.Keyword kkw ^long kid])
-  )
+(defn- check-no-cycle
+  [root n path yarns]
+  (if (= root n)
+    (throw (ex-info "detected yarns cycle"
+                    {:knitty/yarns-cycle (vec (reverse path))
+                     :knitty/yarn root}))
+    (doseq [p (yarn-deps (yarns n))]
+      (check-no-cycle root p (cons p path) yarns))))
 
 
-(deftype YankCtx [^ag.knitty.mdm.IMutableDeferredMap mdm
-                  ^ag.knitty.impl.IRegistry registry
-                  ^:volatile-mutable ^boolean cancelled
-                  tracer]
+(deftype Registry [^objects ygets asmap all-deps]
 
-  IYankCtx
-  (mdm [_] mdm)
-  (^boolean cancelled [_] cancelled)
-  (registry [_] registry)
-  (tracer [_] (when-not cancelled tracer))
-  (yankfn [_ kkw kid] (.yankfn registry kkw kid))
-  )
+  clojure.lang.Seqable
+  (seq [_] (seq asmap))
+
+  clojure.lang.ILookup
+  (valAt [_ k] (asmap k))
+  (valAt [_ k d] (asmap k d))
+
+  clojure.lang.Associative
+  (containsKey [_ k] (contains? asmap k))
+  (entryAt [_ k] (find asmap k))
+  (empty [_] (Registry. nil {} {}))
+
+  (assoc [_ k v]
+
+    (doseq [p (yarn-deps v)]
+      (when-not (contains? asmap p)
+        (throw (ex-info "yarn has unknown dependency" {:knitty/yarn k, :knitty/dependency p}))))
+
+    (let [deps (yarn-deps v)
+          all-deps' (assoc all-deps k (apply set/union deps (map all-deps deps)))]
+
+      (when (contains? (all-deps' k) k)
+        ;; node depends on itself
+        (doseq [d deps]
+          (check-no-cycle k d [k] asmap)))
+
+      (Registry.
+       (object-array (inc (mdm/max-initd)))
+       (assoc asmap k v)
+       all-deps'))))
+
+
+(defn create-registry []
+  (Registry. nil {} {}))
+
+
+(defn registry-yankfn
+  [^Registry registry
+   ^clojure.lang.Keyword kkw
+   ^long kid]
+  (let [^objects ygets (.-ygets registry)
+        y (aget ygets kid)]
+    (if (some? y)
+      y
+      (locking ygets
+        (let [y (aget ygets kid)]
+          (if (nil? y)
+            (let [yarn ((.-asmap registry) kkw)
+                  yd (yarn-yankfn yarn)]
+              (aset ygets kid yd)
+              yd)
+            y))))))
+
+
+(defmacro registry-yankfn' [registry kkw kid]
+  `(let [^ag.knitty.impl.Registry r# ~registry]
+     (if-some [y# (aget ^"[Ljava.lang.Object;" (.-ygets r#) ~kid)]
+       y#
+       (registry-yankfn r# ~kkw ~kid))))
+
+
+(deftype YankCtx
+         [^ag.knitty.mdm.IMutableDeferredMap mdm
+          ^ag.knitty.impl.Registry registry
+          ^ag.knitty.trace.Tracer tracer])
 
 
 (defn as-deferred [v]
@@ -68,17 +121,17 @@
 
 (defmacro get-yank-fn [ctx ykey]
   (let [k (mdm/keyword->intid ykey)]
-    `(let [^IRegistry r# (.registry ~ctx)] (.yankfn r# ~ykey ~k))))
+    `(registry-yankfn' (.-registry ~ctx) ~ykey ~k)))
 
 
 (defmacro ctx-tracer-> [ctx fn & args]
-  `(when-let [t# (.tracer ~ctx)] (~fn t# ~@args)))
+  `(when-let [t# (.-tracer ~ctx)] (~fn t# ~@args)))
 
 
 (defmacro yarn-get-sync [yk ykey ctx]
   `(do
      (ctx-tracer-> ~ctx t/trace-dep ~yk ~ykey)
-     (let [v# (mdm/mdm-get! (.mdm ~ctx) ~ykey ~(mdm/keyword->intid ykey))]
+     (let [v# (mdm/mdm-get! (.-mdm ~ctx) ~ykey ~(mdm/keyword->intid ykey))]
        (if (mdm/none? v#)
          ((get-yank-fn ~ctx ~ykey) ~ctx)
          v#)
@@ -89,7 +142,7 @@
   `(do
      (ctx-tracer-> ~ctx t/trace-dep ~yk ~ykey)
      (as-deferred
-      (let [v# (mdm/mdm-get! (.mdm ~ctx) ~ykey ~(mdm/keyword->intid ykey))]
+      (let [v# (mdm/mdm-get! (.-mdm ~ctx) ~ykey ~(mdm/keyword->intid ykey))]
         (if (mdm/none? v#)
           ((get-yank-fn ~ctx ~ykey) ~ctx)
           v#)))))
@@ -97,7 +150,7 @@
 
 (deftype Lazy
          [^AtomicReference value
-          ^IYankCtx ctx
+          ^YankCtx ctx
           yk 
           ykey
           ^int ykeyi
@@ -112,7 +165,7 @@
           (do
             (try
               (ctx-tracer-> ctx t/trace-dep yk ykey)
-              (kd/connect'' (let [r (mdm/mdm-get! (.mdm ctx) ykey ykeyi)]
+              (kd/connect'' (let [r (mdm/mdm-get! (.-mdm ctx) ykey ykeyi)]
                               (if (mdm/none? r)
                                 (yank-fn ctx)
                                 r))
@@ -205,7 +258,7 @@
         (kd/error'! d e)))))
 
 
-(deftype ConnectListener [^IYankCtx ctx
+(deftype ConnectListener [^YankCtx ctx
                           ykey
                           ^manifold.deferred.IMutableDeferred mdmd]
   manifold.deferred.IDeferredListener
@@ -218,7 +271,7 @@
       (kd/error'! mdmd ew))))
 
 
-(defn connect-result-mdm [^IYankCtx ctx ykey result mdm-deferred maybe-real-result]
+(defn connect-result-mdm [^YankCtx ctx ykey result mdm-deferred maybe-real-result]
 
   (if (md/deferred? result)
     (do
@@ -245,7 +298,7 @@
       result)))
 
 
-(defn connect-error-mdm [^IYankCtx ctx ykey error mdm-deferred maybe-real-result]
+(defn connect-error-mdm [^YankCtx ctx ykey error mdm-deferred maybe-real-result]
   (let [ew (wrap-yarn-exception ykey error)]
 
     ;; try to revoke
@@ -263,7 +316,7 @@
 (defn emit-yank-fns-impl
   [the-fnv ykey bind deps yarn-meta]
   (let [{:keys [executor norevoke]} yarn-meta
-        
+
         ctx (with-meta '_yank_ctx {:tag (str `YankCtx)})
         reald  (gensym "rd")
         df-array (with-meta (gensym "dfs") {:tag "[Ljava.lang.Object;"})
@@ -292,12 +345,6 @@
 
         some-syncs-unresolved (list* `or (for [d sync-deps] `(md/deferred? ~d)))
 
-        try-deref-syncs
-        (mapcat identity
-                (for [[ds _dk] bind
-                      :when (#{:sync} (bind-param-type ds))]
-                  [ds `(kd/unwrap1' ~ds)]))
-
         deref-syncs
         (mapcat identity
                 (for [[ds _dk] bind
@@ -307,7 +354,7 @@
         all-deps-tr (vec (for [[ds dk] bind] [dk (bind-param-type ds)]))]
 
     `(fn ~(fnn "--yank") [~ctx]
-       (let [kv# (mdm/mdm-fetch! (.mdm ~ctx) ~ykey ~kid)
+       (let [kv# (mdm/mdm-fetch! (.-mdm ~ctx) ~ykey ~kid)
              d# (mdm/fetch-result-value kv#)]
          (if-not (mdm/fetch-result-claimed? kv#)
 
@@ -321,24 +368,22 @@
             (ctx-tracer-> ~ctx t/trace-start  ~ykey :yarn ~all-deps-tr)
             (let [~@(if norevoke [] [reald `(volatile! ::none)])]
               (try ;; d# is alsways deffered
-                (let [~@yank-deps
-                      ~@try-deref-syncs]
+                (let [~@yank-deps]
                   (let [x# (if ~some-syncs-unresolved
 
-                             (kd/unwrap1'
-                              (kd/await*
+                             (kd/await*
 
-                               (let [~df-array (object-array ~(count sync-deps))]
-                                 ~@(for [[i d] (map vector (range) (reverse sync-deps))]
-                                     `(aset ~df-array ~i ~d))
-                                 ~df-array)
+                              (let [~df-array (object-array ~(count sync-deps))]
+                                ~@(for [[i d] (map vector (range) (reverse sync-deps))]
+                                    `(aset ~df-array ~i ~d))
+                                ~df-array)
 
-                               (fn ~(fnn "--async") []
-                                 (let [~@deref-syncs]
-                                   (~@(if norevoke `[do] [`vreset! reald])
-                                    (do
-                                      (ctx-tracer-> ~ctx t/trace-call ~ykey)
-                                      (~coerce-deferred (~the-fnv ~@deps))))))))
+                              (fn ~(fnn "--async") []
+                                (let [~@deref-syncs]
+                                  (~@(if norevoke `[do] [`vreset! reald])
+                                   (do
+                                     (ctx-tracer-> ~ctx t/trace-call ~ykey)
+                                     (~coerce-deferred (~the-fnv ~@deps)))))))
 
                              (~@(if norevoke `[do] [`vreset! reald])
                               (do
@@ -363,10 +408,10 @@
 (defn emit-yarn-ref-gtr [ykey orig-ykey]
   (let [kid (mdm/keyword->intid ykey)]
     `(fn [ctx#]
-       (let [kv# (mdm/mdm-fetch! (.mdm ctx#) ~ykey ~kid)
+       (let [kv# (mdm/mdm-fetch! (.-mdm ctx#) ~ykey ~kid)
              d# (mdm/fetch-result-value kv#)]
          (if-not (mdm/fetch-result-claimed? kv#)
-           d#
+           (kd/unwrap1' d#)
            (do
              (ctx-tracer-> ctx# t/trace-start ~ykey :knot [[~orig-ykey :ref]])
              (try
@@ -400,9 +445,9 @@
 
 
 (defn yank0
-  [poy yarns registry tracer]
+  [poy yarns ^Registry registry tracer]
   (let [mdm (mdm/create-mdm poy)
-        ctx (YankCtx. mdm registry false tracer)
+        ctx (YankCtx. mdm registry tracer)
         errh (fn [e]
                (throw (ex-info "failed to yank"
                                (cond->
@@ -424,7 +469,7 @@
       (doseq [y yarns]
         (.add yks
               (if (keyword? y)
-                ((.yankfn ctx y (mdm/keyword->intid y)) ctx)
+                ((registry-yankfn registry y (mdm/keyword->intid y)) ctx)
                 (do
                   (when (contains? registry (yarn-key y))
                     (throw (ex-info "dynamic yarn is already in registry"
@@ -432,74 +477,11 @@
                   ((yarn-yankfn y) ctx)))))
       (->
        (kd/await* (.toArray yks)
-                   (fn []
+                   (fn fisnih-yarn []
                      (let [poy' (mdm/mdm-freeze! mdm)]
                        (if tracer
                          (vary-meta poy' update :knitty/trace conj (capture-trace! tracer))
                          poy'))))
        (md/catch' errh)
-       (kd/revoke' #(mdm/mdm-cancel! ctx)))
+       (kd/revoke' (fn cancel-mdm [] (mdm/mdm-cancel! mdm))))
       (catch Throwable e (errh e)))))
-
-
-(defn- check-no-cycle
-  [root n path yarns]
-  (if (= root n)
-    (throw (ex-info "detected yarns cycle"
-                    {:knitty/yarns-cycle (vec (reverse path))
-                     :knitty/yarn root}))
-    (doseq [p (yarn-deps (yarns n))]
-      (check-no-cycle root p (cons p path) yarns))))
-
-
-(deftype Registry [^objects ygets asmap all-deps]
-
-  IRegistry
-  (yankfn
-    [_ kkw kid]
-    (let [y (aget ygets kid)]
-      (if (some? y)
-        y
-        (locking ygets
-          (let [y (aget ygets kid)]
-            (if (nil? y)
-              (let [yarn (asmap kkw)
-                    yd (yarn-yankfn yarn)]
-                (aset ygets kid yd)
-                yd)
-              y))))))
-
-  clojure.lang.Seqable
-  (seq [_] (seq asmap))
-
-  clojure.lang.ILookup
-  (valAt [_ k] (asmap k))
-  (valAt [_ k d] (asmap k d))
-
-  clojure.lang.Associative
-  (containsKey [_ k] (contains? asmap k))
-  (entryAt [_ k] (find asmap k))
-  (empty [_] (Registry. nil {} {}))
-
-  (assoc [_ k v]
-
-    (doseq [p (yarn-deps v)]
-      (when-not (contains? asmap p)
-        (throw (ex-info "yarn has unknown dependency" {:knitty/yarn k, :knitty/dependency p}))))
-
-    (let [deps (yarn-deps v)
-          all-deps' (assoc all-deps k (apply set/union deps (map all-deps deps)))]
-
-      (when (contains? (all-deps' k) k)
-        ;; node depends on itself
-        (doseq [d deps]
-          (check-no-cycle k d [k] asmap)))
-
-      (Registry.
-       (object-array (inc (mdm/max-initd)))
-       (assoc asmap k v)
-       all-deps'))))
-
-
-(defn create-registry []
-  (Registry. nil {} {}))
