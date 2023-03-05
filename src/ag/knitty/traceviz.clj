@@ -234,8 +234,7 @@
                     (= :ref type)            "none"
                     (= :sync type)           "none"
                     (= :defer type)          "odot"
-                    (= :lazy-sync type)      "diamond"
-                    (= :lazy-defer type)     "odiamond"
+                    (= :lazy type)           "odiamond"
                     (= :changed-input type)  "none"
                     :else                    "none")
        :constraint  (not= type :changed-input)
