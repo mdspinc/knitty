@@ -132,11 +132,14 @@
   )
 
 
+(def ^:private nil-deferred (kd/successed nil))
+
+
 (defmacro ^:private arr-getset-lazy [a i v]
   `(let [^AtomicReferenceArray a# ~a
          i# ~i
          x# (.get a# i#)]
-     (if (some? x#)
+     (if x#
        x#
        (let [v# ~v]
          (if (.compareAndSet a# i# nil v#)
@@ -170,7 +173,7 @@
                   (FetchResult. true d))
                 (recur k ki)  ;; interrupted by another mdmFetch or mdmGet
                 ))
-            (let [d (if (md/deferred? x) x (kd/successed x))]
+            (let [d (if (nil? x) nil-deferred x)]
               ;; copy from 'init'
               (.set a1 i1 d)
               (FetchResult. false d))))
@@ -196,18 +199,18 @@
           i1 (bit-and ki 31)
           ^AtomicReferenceArray a1 (arr-getset-lazy a0 i0 (AtomicReferenceArray. 32))
           v (.get a1 i1)]
-      (if (nil? v)
+      (if-not (nil? v)
+        (kd/unwrap1' v)
         (let [v (.valAt init k ::none)]
           (if (none? v)
             (do
               ;; maybe put ::none, so mdmFetch don't need to check 'init' again
               (.compareAndSet a1 i1 nil ::none)
               v)
-            (let [d (if (md/deferred? v) v (kd/successed v))]
+            (let [d (if (nil? v) nil-deferred v)]
                 ;; copy from 'init'
               (.set a1 i1 d)
-              v)))
-        (kd/unwrap1' v))))
+              v))))))
 
   (mdmFreeze
     [_]
@@ -233,7 +236,7 @@
     (loop [^KVCons a (.get added)]
       (when a
         (let [d (.-val a)]
-          (when-not (md/realized? d)
+          (when (and (md/deferred? d) (not (md/realized? d)))
             (kd/cancel! d)))
         (recur (next a))))))
 
