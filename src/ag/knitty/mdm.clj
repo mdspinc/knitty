@@ -238,7 +238,7 @@
         (let [d (.-val a)]
           (when (and (md/deferred? d) (not (md/realized? d)))
             (kd/cancel! d)))
-        (recur (next a))))))
+        (recur (.-next a))))))
 
 
 (defn create-mdm-chm [init]

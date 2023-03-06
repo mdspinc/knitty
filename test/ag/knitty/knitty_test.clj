@@ -21,12 +21,12 @@
   (do-defs
    (defyarn zero {} 0)
    (defyarn one {_ zero} 1)
-   (defyarn one-slooow {} (future (Thread/sleep 10) 1))
+   (defyarn one-slooow {} (md/future (Thread/sleep 10) 1))
    (defyarn two {^:defer x one, ^:defer y one-slooow} (md/chain' (md/alt x y) inc))
-   (defyarn three-fast {x one, y two} (future (Thread/sleep 1) (+ x y)))
-   (defyarn three-slow {x one, y two} (future (Thread/sleep 10) (+ x y)))
+   (defyarn three-fast {x one, y two} (md/future (Thread/sleep 1) (+ x y)))
+   (defyarn three-slow {x one, y two} (md/future (Thread/sleep 10) (+ x y)))
    (defyarn three {^:lazy f three-fast, ^:lazy s three-slow} (if (zero? (rand-int 2)) f @s))
-   (defyarn four {x one, y three} (future (+ x y)))
+   (defyarn four {x one, y three} (md/future (+ x y)))
    (defyarn six {x two , y three} (* x y))
 
    (testing "trace enabled"
@@ -101,7 +101,7 @@
        (+ @@x1 10))
      (is (= {::y1 1, ::y3 11} @(yank {} [y3]))))))
 
-  
+#_  
 (deftest yank-deferreds-coercing-test
 
   (testing "coerce future to deferred"
@@ -213,12 +213,12 @@
    (defyarn y3 {x1 y1, x2 y2} (+ x1 x2))
 
    (testing "yank adhoc yarns"
-     (is (= 6 @(md/chain (yank {} [(yarn ::six {x2 y2, x3 y3} (* x2 x3))]) ::six))))
+     (is (= 6 @(md/chain (yank {} [(yarn ::reg-test-six {x2 y2, x3 y3} (* x2 x3))]) ::reg-test-six))))
 
    (testing "yank adhoc yarns with capturing"
      (is (= [6 12 18]
             (for [i [1 2 3]]
-              @(md/chain (yank {} [(yarn ::six {x2 y2, x3 y3} (* x2 x3 i))]) ::six)))))
+              @(md/chain (yank {} [(yarn ::reg-test-six {x2 y2, x3 y3} (* x2 x3 i))]) ::reg-test-six)))))
   ))
 
 

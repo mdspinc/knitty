@@ -5,8 +5,7 @@
             [clojure.set :as set]
             [manifold.deferred :as md]
             [manifold.executor]
-            [manifold.utils]
-            [iapetos.registry :as registry])
+            [manifold.utils])
   (:import [java.util.concurrent.atomic AtomicReference]))
 
 
@@ -126,6 +125,14 @@
 
 (defmacro ctx-tracer-> [ctx fn & args]
   `(when-let [t# (.-tracer ~ctx)] (~fn t# ~@args)))
+
+
+(defn yarn-get [^YankCtx ctx ^clojure.lang.Keyword ykey]
+  (let [kid (mdm/keyword->intid ykey)
+        v (mdm/mdm-get! (.mdm ctx) ykey kid)]
+    (if (mdm/none? v)
+      ((registry-yankfn' (.-registry ctx) ykey kid) ctx)
+      v)))
 
 
 (defmacro yarn-get-sync [yk ykey ctx]
@@ -341,7 +348,7 @@
 
         coerce-deferred (if (param-types :lazy)
                           force-lazy-result
-                          identity)
+                          'do)
 
         some-syncs-unresolved (list* `or (for [d sync-deps] `(md/deferred? ~d)))
 
@@ -469,7 +476,7 @@
       (doseq [y yarns]
         (.add yks
               (if (keyword? y)
-                ((registry-yankfn registry y (mdm/keyword->intid y)) ctx)
+                (yarn-get ctx y)
                 (do
                   (when (contains? registry (yarn-key y))
                     (throw (ex-info "dynamic yarn is already in registry"
@@ -484,4 +491,5 @@
                          poy'))))
        (md/catch' errh)
        (kd/revoke' (fn cancel-mdm [] (mdm/mdm-cancel! mdm))))
-      (catch Throwable e (errh e)))))
+      (catch Throwable e
+        (errh e)))))
