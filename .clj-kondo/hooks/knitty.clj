@@ -15,31 +15,44 @@
     (api/reg-finding!
      (assoc (meta key)
             :message "yarn key must be a ::keyword"
-            :type :knitty/yarn-key))
+            :type :knitty/invalid-yarn-key))
 
     (not (or (:namespaced? key) (qualified-keyword? (:k key))))
     (api/reg-finding!
      (assoc (meta key)
-            :message "yarn key must be a qualified :ns/keyword"
-            :type :knitty/yarn-key))
+            :message "yarn key must be a qualified ::keyword"
+            :type :knitty/invalid-yarn-key))
 
     (not (:namespaced? key))
     (api/reg-finding!
      (assoc (meta key)
             :message "yarn key should be an auto-resolved ::keyword"
-            :type :knitty/yarn-key-autons)))
+            :type :knitty/explicit-ns-in-yarn-key)))
 
   (if-not (api/map-node? bmap)
+
     (api/reg-finding!
      (assoc (meta bmap)
             :message "yarn bindings must be a map"
-            :type :knitty/yarn-binding))
-    (doseq [[s _v] (partition-all 2 (:children bmap))]
-      (when-not (api/token-node? s)
+            :type :knitty/invlid-yarn-binding))
+
+    (doseq [[s v] (partition-all 2 (:children bmap))]
+
+      (when-not (and (api/token-node? s) (simple-symbol? (:value s)))
         (api/reg-finding!
          (assoc (meta s)
-                :message "destructuring is not allowed in yarn bindings"
-                :type :knitty/yarn-binding)))))
+                :message "binding must be an unqualified symbol"
+                :type :knitty/invalid-yarn-binding)))
+
+      (when-not 
+       (or 
+        (and (api/token-node? v) (ident? (:value v)))
+        (and (api/keyword-node? v) (or (:namespaced? v) (qualified-keyword? (:k v)))))
+        (api/reg-finding!
+         (assoc (meta v)
+                :message "yarn dependency must be a symbol or qualified keyword"
+                :type :knitty/invalid-yarn-binding))))
+    )
 
   (api/list-node
     (list* ;; (let
@@ -99,7 +112,7 @@
          (api/reg-finding!
           (assoc (meta name)
                  :message "name must be a symbol"
-                 :type :knitty/defyarn-name)))
+                 :type :knitty/invalid-defyarn-name)))
 
        ;; (yarn ::~name ~bmap ~body)
        (yarn* (list* name-kv bmap body))
