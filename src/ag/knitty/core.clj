@@ -28,7 +28,7 @@
     (when-not (qualified-keyword? k)
       (throw (ex-info "yarn must be a qualified keyword" {::yarn k})))
     (if no-override
-      (alter-var-root #'*registry* update k #(or % yarn))
+      (alter-var-root #'*registry* #(if (contains? % k) % (assoc % k yarn)))
       (alter-var-root #'*registry* assoc k yarn)))))
 
 
@@ -42,7 +42,9 @@
 
 (defmacro declare-yarn [nm]
   {:pre [(ident? nm)]}
-  (let [k (keyword (-> *ns* ns-name name) (name nm))]
+  (let [k (keyword (or (namespace nm)
+                       (-> *ns* ns-name name))
+                   (name nm))]
      `(do (register-yarn (impl/fail-always-yarn ~k ~(str "declared-only yarn " k)) true)
           ~k)))
 
