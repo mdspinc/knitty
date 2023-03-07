@@ -132,7 +132,7 @@
   )
 
 
-(def ^:private nil-deferred (kd/successed nil))
+(def ^:private nil-deferred (md/success-deferred nil nil))
 
 
 (defmacro ^:private arr-getset-lazy [a i v]

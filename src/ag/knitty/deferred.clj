@@ -1,7 +1,8 @@
 (ns ag.knitty.deferred
   (:refer-clojure :exclude [await])
   (:require [clojure.tools.logging :as log]
-            [manifold.deferred :as md])
+            [manifold.deferred :as md]
+            [ag.knitty.deferred :as kd])
   (:import [java.util.concurrent CancellationException TimeoutException CountDownLatch]
            [java.util.concurrent.atomic AtomicReference]
            [manifold.deferred IDeferred IMutableDeferred IDeferredListener]))
@@ -22,9 +23,6 @@
        (md/success-value x# x#)
        x#)))
 
-(definline successed [x]
-  `(manifold.deferred.SuccessDeferred. (unwrap1' ~x) nil nil))
-
 (definline listen'!
   [d ls]
   `(let [^IMutableDeferred d# ~d] (.addListener d# ~ls)))
@@ -40,35 +38,12 @@
                        (fn ~'on-err [e#] (.onError ls# e#))))))
 
 
-(deftype DeferredHookListener [^IDeferred d]
-  manifold.deferred.IDeferredListener
-  (onSuccess [_ x] (success'! d x))
-  (onError [_ e] (error'! d e)))
-
-
-(declare connect-deferreds'')
-
-(defmacro connect'' [d1 d2]
-  `(let [d1# (unwrap1' ~d1)
-         d2# ~d2]
+(defmacro connect-to-ka-deferred [v ka-deferred]
+  `(let [d1# ~v
+         d2# ~ka-deferred]
      (if (md/deferred? d1#)
-       (connect-deferreds'' d1# d2#)
-       (success'! d2# d1#))
-     d1#))
-
-
-(defn connect-deferreds'' [^IDeferred d1 ^IDeferred d2]
-  (if (instance? manifold.deferred.IMutableDeferred d1)
-
-    (if (instance? manifold.deferred.IDeferredListener d2)
-      (listen'! d1 d2)
-      (listen'! d1 (DeferredHookListener. d2)))
-
-    (.onRealized
-      d1
-     (fn conn-okk [x] (connect'' x d2))
-     (fn conn-err [e] (error'! d2 e)))
-  ))
+       (listen'! d1# d2#)
+       (success'! d2# d1#))))
 
 
 (declare ka-deferred)
@@ -86,7 +61,7 @@
    (loop [ii (int i)]  ;; desc order on purpose
      (if (== ii 0)
        (try
-         (connect'' (callback) r)
+         (connect-to-ka-deferred (callback) r)
          (catch Throwable e (error'! r e)))
        (let [ii' (unchecked-dec-int ii)
              v (md/unwrap' (aget da ii'))]
@@ -180,7 +155,7 @@
 
 (defn revoke' [^IDeferred d c]
   (let [d' (ka-deferred)]
-    (connect'' d d')
+    (connect-to-ka-deferred d d')
     (md/add-listener! d' (RevokeListener. d c))
     d'))
 
@@ -394,8 +369,8 @@
   (errorValue [_ default] (if (== state 2) val default))
 
   manifold.deferred.IDeferredListener
-  (onSuccess [this x] (kd-deferred-succerr this x (.onSuccess x) 1))
-  (onError [this x]   (kd-deferred-succerr this x (.onError x) 2))
+  (onSuccess [this x] (.success this x))
+  (onError [this x]  (.error this x))
 
   manifold.deferred.IMutableDeferred
   (addListener [this t] (let [^IDeferredListener t t] (kd-deferred-onrealized this (.onSuccess t) (.onError t) t)))
@@ -409,10 +384,10 @@
   ;;
   )
 
-(defn ka-deferred
+(definline ka-deferred
   "fast lock-free deferred (no executor/claim support)"
   []
-  (KaDeferred. (AtomicReference. empty-listener-cons) (int 0) nil nil))
+  `(KaDeferred. (AtomicReference. empty-listener-cons) nil nil))
 
 
 (defmethod print-method KaDeferred [y ^java.io.Writer w]
@@ -435,3 +410,15 @@
   (.write w "]"))
 
 ;; >> Knitty aware deferred
+
+(deftype DeferredHookListener [^IMutableDeferred d]
+  manifold.deferred.IDeferredListener
+  (onSuccess [_ x] (success'! d x))
+  (onError [_ e] (error'! d e)))
+
+
+(defn connect-two-deferreds [^IDeferred d1 ^IDeferred d2]
+  (if (instance? KaDeferred d2)
+    (listen'! d1 d2)
+    (listen'! d1 (DeferredHookListener. d2))))
+

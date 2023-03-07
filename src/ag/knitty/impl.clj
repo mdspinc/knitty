@@ -10,6 +10,7 @@
 
 
 (set! *warn-on-reflection* true)
+(set! *unchecked-math* :warn-on-boxed)
 
 (defprotocol IYarn
   (yarn-yankfn [_] "get or build yank fn [IYankCtx => result]")
@@ -158,10 +159,9 @@
 (deftype Lazy
          [^AtomicReference value
           ^YankCtx ctx
-          yk 
-          ykey
-          ^int ykeyi
-          yank-fn]
+          ^clojure.lang.Keyword yk 
+          ^clojure.lang.Keyword ykey
+          ^long ykeyi]
   
   clojure.lang.IDeref
   (deref [_]
@@ -172,10 +172,10 @@
           (do
             (try
               (ctx-tracer-> ctx t/trace-dep yk ykey)
-              (kd/connect'' (let [r (mdm/mdm-get! (.-mdm ctx) ykey ykeyi)]
-                              (if (mdm/none? r)
-                                (yank-fn ctx)
-                                r))
+              (kd/connect-to-ka-deferred (let [r (mdm/mdm-get! (.-mdm ctx) ykey ykeyi)]
+                                           (if (mdm/none? r)
+                                             ((registry-yankfn' (.-registry ctx) ykey ykeyi) ctx)
+                                             r))
                             v)
               (catch Throwable t (kd/error'! v t)))
             v)
@@ -192,8 +192,7 @@
     ~ctx
     ~yk
     ~ykey
-    ~(mdm/keyword->intid ykey)
-    (get-yank-fn ~ctx ~ykey)))
+    ~(mdm/keyword->intid ykey)))
 
 
 (defn force-lazy-result [v]
@@ -209,12 +208,12 @@
 
 
 (defn run-future [executor-var thefn]
-  (let [d (md/deferred)]
+  (let [d (kd/ka-deferred)]
     (manifold.utils/future-with
      (resolve-executor-var executor-var)
      (try
-       (let [v (md/unwrap' (thefn))]
-         (kd/connect'' v d))
+       (let [v (thefn)]
+         (kd/connect-to-ka-deferred v d))
        (catch Throwable e
          (kd/error'! d e))))
     d))
@@ -291,7 +290,7 @@
             (kd/listen! mdm-deferred (RevokationListener. maybe-real-result))
             ;; ready - revoke only if result if revokable deferred
             (when (instance? manifold.deferred.IMutableDeferred mrr)
-              (kd/connect-deferreds'' mdm-deferred mrr)))))
+              (kd/connect-two-deferreds mdm-deferred mrr)))))
 
       ;; connect result -> mdm-deferred
       (kd/listen! result (ConnectListener. ctx ykey mdm-deferred))
