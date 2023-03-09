@@ -387,7 +387,7 @@
 (definline ka-deferred
   "fast lock-free deferred (no executor/claim support)"
   []
-  `(KaDeferred. (AtomicReference. empty-listener-cons) nil nil))
+  `(KaDeferred. (AtomicReference. empty-listener-cons) 0 nil nil))
 
 
 (defmethod print-method KaDeferred [y ^java.io.Writer w]

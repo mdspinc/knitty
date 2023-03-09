@@ -356,6 +356,11 @@
                 (for [[ds _dk] bind
                       :when (#{:sync} (bind-param-type ds))]
                   [ds `(md/unwrap' ~ds)]))
+        
+        fn-args (if (> (count deps) 18)
+                  (let [[a b] (split-at 18 deps)]
+                    (conj (vec a) (vec b)))
+                  deps)
 
         all-deps-tr (vec (for [[ds dk] bind] [dk (bind-param-type ds)]))]
 
@@ -389,12 +394,12 @@
                                   (~@(if norevoke `[do] [`vreset! reald])
                                    (do
                                      (ctx-tracer-> ~ctx t/trace-call ~ykey)
-                                     (~coerce-deferred (~the-fnv ~@deps)))))))
+                                     (~coerce-deferred (~the-fnv ~@fn-args)))))))
 
                              (~@(if norevoke `[do] [`vreset! reald])
                               (do
                                 (ctx-tracer-> ~ctx t/trace-call ~ykey)
-                                (~coerce-deferred (~the-fnv ~@deps)))))]
+                                (~coerce-deferred (~the-fnv ~@fn-args)))))]
 
                     (connect-result-mdm ~ctx ~ykey x# d# ~reald)))
                 (catch Throwable e#
@@ -431,9 +436,9 @@
   [ykey bind expr]
   (let [deps (set (map second bind))
         ff (gensym)
-        fargs (if (> (count bind) 20)
-                (let [[args1 args2] (split-at 20 (map first bind))]
-                  (vec (concat args1 ['& (vec args2)])))
+        fargs (if (> (count bind) 18)
+                (let [[args1 args2] (split-at 18 (map first bind))]
+                  (vec (conj (vec args1) (vec args2))))
                 (mapv first bind))]
     `(let [~ff (fn ~(-> ykey name symbol) [~@fargs] ~expr)
            gtr# ~(emit-yank-fns ff nil ykey bind)]
