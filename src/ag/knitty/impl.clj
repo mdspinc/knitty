@@ -407,13 +407,13 @@
                   (connect-error-mdm ~ctx ~ykey e# d# ~reald))))))))))
 
 
-(defn emit-yank-fns [thefn registry ykey bind]
+(defn emit-yank-fns [thefn ykey bind]
   (let [yarn-meta (meta bind)
         deps (map first bind)
         {:keys [keep-deps-order]} yarn-meta
-        bind (if (or keep-deps-order (nil? registry))
+        bind (if keep-deps-order
                bind
-               (sort-by second mdm/keyword->intid bind))]
+               (sort-by (comp mdm/keyword->intid second) bind))]
     (emit-yank-fns-impl thefn ykey bind deps yarn-meta)))
 
 
@@ -442,7 +442,7 @@
                   (vec (conj (vec args1) (vec args2))))
                 (mapv first bind))]
     `(let [~ff (fn ~(-> ykey name symbol) [~@fargs] ~expr)
-           gtr# ~(emit-yank-fns ff nil ykey bind)]
+           gtr# ~(emit-yank-fns ff ykey bind)]
        (Yarn. gtr# ~ykey '~deps))))
 
 
