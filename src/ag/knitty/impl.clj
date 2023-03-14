@@ -382,19 +382,20 @@
                 (let [~@yank-deps]
                   (let [x# (if ~some-syncs-unresolved
 
-                             (kd/await*
+                             (kd/unwrap1'
+                              (kd/await*
 
-                              (let [~df-array (object-array ~(count sync-deps))]
-                                ~@(for [[i d] (map vector (range) (reverse sync-deps))]
-                                    `(aset ~df-array ~i ~d))
-                                ~df-array)
+                               (let [~df-array (object-array ~(count sync-deps))]
+                                 ~@(for [[i d] (map vector (range) sync-deps)]
+                                     `(aset ~df-array ~i ~d))
+                                 ~df-array)
 
-                              (fn ~(fnn "--async") []
-                                (let [~@deref-syncs]
-                                  (~@(if norevoke `[do] [`vreset! reald])
-                                   (do
-                                     (ctx-tracer-> ~ctx t/trace-call ~ykey)
-                                     (~coerce-deferred (~the-fnv ~@fn-args)))))))
+                               (fn ~(fnn "--async") []
+                                 (let [~@deref-syncs]
+                                   (~@(if norevoke `[do] [`vreset! reald])
+                                    (do
+                                      (ctx-tracer-> ~ctx t/trace-call ~ykey)
+                                      (~coerce-deferred (~the-fnv ~@fn-args))))))))
 
                              (~@(if norevoke `[do] [`vreset! reald])
                               (do
