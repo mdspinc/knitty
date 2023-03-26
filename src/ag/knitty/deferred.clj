@@ -11,6 +11,11 @@
 (set! *unchecked-math* :warn-on-boxed)
 
 
+(declare connect-to-ka-deferred)
+(declare ka-deferred)
+(declare connect-two-deferreds)
+
+
 (definline success'! [d x]
   `(let [^IMutableDeferred d# ~d] (.success d# ~x)))
 
@@ -45,8 +50,6 @@
        (listen'! d1# d2#)
        (success'! d2# d1#))))
 
-
-(declare ka-deferred)
 
 
 ;; sequentially attaches itself as a listener
@@ -85,57 +88,16 @@
     (.onSuccess a nil)
     r))
 
-(defn await'
-  ([vs]
-   (let [^objects a (into-array java.lang.Object vs)]
-     (await* a #(do true))))
-  ([vs f]
-   (let [^objects a (into-array java.lang.Object vs)]
-     (await* a f))))
-
-
-(defn await
-  ([vs]
-   (await vs #(do true)))
-  ([vs f]
-   (await' (eduction (map #(md/->deferred % %)) vs) f)))
-
-
-(defmacro realize [binds & body]
-  {:pre [(every? simple-symbol? binds)]}
-  (if (empty? binds)
-    `(do ~@body)
-    `(let [x# (force ~(first binds))]
-       (md/chain'
-        (md/->deferred x# x#)
-        (fn [~(first binds)]
-          (realize [~@(rest binds)] ~@body))))))
-
-
-(defmacro realize' [binds & body]
-  {:pre [(every? simple-symbol? binds)]}
-  (if (empty? binds)
-    `(do ~@body)
-    `(md/chain'
-      ~(first binds)
-      (fn [~(first binds)]
-        (realize' [~@(rest binds)] ~@body)))))
-
 
 (def ^:private cancellation-exception
   (doto (CancellationException. (str ::cancel!))
     (.setStackTrace (make-array StackTraceElement 0))))
 
 
-(defn cancel!
-  ([d]
-   (try
-     (md/error! d cancellation-exception)
-     (catch Exception e (log/error e "failure while cancelling"))))
-  ([d claim-token]
-   (try
-     (md/error! d cancellation-exception claim-token)
-     (catch Exception e (log/error e "failure while cancelling")))))
+(defn cancel! [d]
+  (try
+    (md/error! d cancellation-exception)
+    (catch Exception e (log/error e "failure while cancelling"))))
 
 
 (defn revokation-exception? [e]
@@ -158,122 +120,6 @@
     (connect-to-ka-deferred d d')
     (md/add-listener! d' (RevokeListener. d c))
     d'))
-
-
-(defn revoke [d c]
-  (revoke' (md/->deferred d) c))
-
-
-(defn- chain-revoke*
-  [revoke chain x fns]
-  (let [abort (volatile! false)
-        curd  (volatile! x)
-        fnf (fn [f]
-              (fn [d]
-                (when-not @abort
-                  (vreset! curd (f d)))))]
-    (revoke
-     (transduce (map fnf) chain x fns)
-     (fn []
-       (vreset! abort true)
-       (when-let [d @curd]
-         (when (md/deferred? d)
-           (cancel! d)))))))
-
-
-(defn chain-revoke
-  [x & fns]
-  (chain-revoke* revoke md/chain x fns))
-
-
-(defn chain-revoke'
-  [x & fns]
-  (chain-revoke* revoke' md/chain' x fns))
-
-
-(defn zip*
-  ([ds] (apply md/zip ds))
-  ([a ds] (apply md/zip a ds))
-  ([a b ds] (apply md/zip a b ds))
-  ([a b c ds] (apply md/zip a b c ds))
-  ([a b c d ds] (apply md/zip a b c d ds))
-  ([a b c d e & ds] (zip* (apply list* a b c d e ds))))
-
-
-(defn zip*'
-  ([ds] (apply md/zip' ds))
-  ([a ds] (apply md/zip' a ds))
-  ([a b ds] (apply md/zip' a b ds))
-  ([a b c ds] (apply md/zip' a b c ds))
-  ([a b c d ds] (apply md/zip' a b c d ds))
-  ([a b c d e & ds] (zip*' (apply list* a b c d e ds))))
-
-
-(defmacro via [chain [=> expr & forms]]
-  (let [s (symbol (name =>))
-        [n r] (cond
-                (#{'-> '->> 'some-> 'some->>} s) [1 0]
-                (#{'cond-> 'cond->>} s)          [2 0]
-                (#{'as->} s)                     [1 1]
-                :else (throw (Exception. (str "unsupported arrow " =>))))
-        x (gensym)
-        e (take r forms)
-        fs (partition n (drop r forms))]
-    (list*
-     chain
-     expr
-     (for [a fs]
-       `(fn [~x] (~=> ~x ~@e ~@a))))))
-
-
-;; predefined popular varints of `via`
-(defmacro chain-> [expr & forms] `(via md/chain (-> ~expr ~@forms)))
-(defmacro chain->> [expr & forms] `(via md/chain (->> ~expr ~@forms)))
-(defmacro chain-as-> [expr name & forms] `(via md/chain (as-> ~expr ~name ~@forms)))
-
-(defmacro chain->' [expr & forms] `(via md/chain' (-> ~expr ~@forms)))
-(defmacro chain->>' [expr & forms] `(via md/chain' (->> ~expr ~@forms)))
-(defmacro chain-as->' [expr name & forms] `(via md/chain' (as-> ~expr ~name ~@forms)))
-
-
-(defmacro do-chain [& body]
-  (list* `md/chain () (for [b body] `(fn [_#] ~b))))
-
-(defmacro do-chain' [& body]
-  (list* `md/chain' () (for [b body] `(fn [_#] ~b))))
-
-
-(defmacro let-chain-via*
-  "simplified version of manifold.deferred/let-flow, resolve deferreds sequentially"
-  [chain [v d & rs :as binds] & body]
-  (if (empty? binds)
-    `(do ~@body)
-    `(let [v# ~d]
-       (~chain v#
-               (fn [~v]
-                 (let-chain-via* ~chain ~rs ~@body))))))
-
-(defmacro let-chain [binds & body]
-  `(let-chain-via* md/chain ~binds ~@body))
-
-(defmacro let-chain' [binds & body]
-  `(let-chain-via* md/chain' ~binds ~@body))
-
-(defmacro let-chain-revoke [binds & body]
-  `(let-chain-via* chain-revoke ~binds ~@body))
-
-(defmacro let-chain-revoke' [binds & body]
-  `(let-chain-via* chain-revoke' ~binds ~@body))
-
-
-(defn ?value
-  ([x]
-   (?value x nil))
-  ([x d]
-   (cond
-     (nil? x) d
-     (md/deferred? x) (md/success-value x d)
-     :else x)))
 
 
 ;; >> Knitty-aware deferred
