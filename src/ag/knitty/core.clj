@@ -5,7 +5,8 @@
             [clojure.java.browse]
             [clojure.java.browse-ui]
             [clojure.java.shell]
-            [clojure.spec.alpha :as s]))
+            [clojure.spec.alpha :as s]
+            [manifold.deferred :as md]))
 
 ;; >> API
 (declare yank)        ;; func,  (yank <map> [yarn-keys]) => @<new-map>
@@ -111,9 +112,10 @@
 (defmacro doyank
   [poy binds & body]
   (let [k (keyword (-> *ns* ns-name name) (name (gensym "doyank")))]
-    `(kd/chain-revoke'
-      (yank ~poy [(yarn ~k ~binds (do ~@body))])
-      (juxt ~k identity))))
+    `(let [r# (yank ~poy [(yarn ~k ~binds (do ~@body))])]
+       (kd/revoke'
+        (md/chain' r# (juxt ~k identity))
+        #(kd/cancel! r#)))))
 
 
 (defn yank-error? [ex]
