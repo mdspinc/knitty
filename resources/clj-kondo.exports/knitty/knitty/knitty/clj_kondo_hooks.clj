@@ -1,4 +1,4 @@
-(ns hooks.knitty
+(ns knitty.clj-kondo-hooks
   (:require [clj-kondo.hooks-api :as api]))
 
 

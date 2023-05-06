@@ -1,0 +1,17 @@
+{:linters
+
+ {;; knitty
+  :knitty/explicit-ns-in-yarn-key  {:level :warning}
+  :knitty/invalid-yarn-key         {:level :error}
+  :knitty/invalid-yarn-binding     {:level :error}
+  :knitty/invalid-defyarn-name     {:level :error}}
+
+ :hooks
+ {:analyze-call
+  {ag.knitty.core/yarn    knitty.clj-kondo-hooks/yarn
+   ag.knitty.core/defyarn knitty.clj-kondo-hooks/defyarn
+   ag.knitty.core/doyank  knitty.clj-kondo-hooks/doyank*
+   ag.knitty.core/doyank! knitty.clj-kondo-hooks/doyank*
+   }
+
+  }}
