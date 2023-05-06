@@ -10,10 +10,12 @@
 (defmacro do-defs 
   "eval forms one by one - allows to intermix defs"
   [& body]
-  (list*
-   `do
-   (for [b body]
-     (list `eval (list `quote b)))))
+    (list*
+     `do
+     (for [b body]
+       `(binding [*ns* *ns*]
+          (in-ns 'ag.knitty.knitty-test)
+          (eval '~b)))))
 
 
 (deftest smoke-test
