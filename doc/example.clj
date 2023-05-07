@@ -1,8 +1,7 @@
-(ns ag.knitty.example
-  (:require [ag.knitty.core :refer [defyarn doyank! tieknot yank yarn]]
-            [ag.knitty.tracetxt :refer [print-trace]]
-            [ag.knitty.traceviz :refer [render-trace view-trace]]
-            [manifold.deferred :as md]))
+(require '[ag.knitty.core :refer [defyarn doyank! tieknot yank yarn]]
+         '[ag.knitty.tracetxt :refer [print-trace]]
+         '[ag.knitty.traceviz :refer [render-trace view-trace]]
+         '[manifold.deferred :as md])
 
 (defyarn zero;; define "yarn" - single slot/value
   {}         ;; no inputs
