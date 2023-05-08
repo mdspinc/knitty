@@ -5,4 +5,6 @@
   :dependencies [[org.clojure/clojure "1.11.1"]
                  [manifold "0.4.0"]
                  [macroz/tangle "0.2.2"]]
-  :repl-options {:init-ns ag.knitty.core})
+  :repl-options {:init-ns ag.knitty.core}
+  :plugins [[io.github.borkdude/lein-lein2deps "0.1.0"]]
+  :prep-tasks [["lein2deps" "--write-file" "deps.edn" "--print" "false"]])
