@@ -1,5 +1,6 @@
 {:paths ["src" "resources"],
  :deps
  {org.clojure/clojure {:mvn/version "1.11.1"},
-  manifold/manifold {:mvn/version "0.4.0"},
+  manifold/manifold {:mvn/version "0.2.4"},
+  org.hdrhistogram/HdrHistogram {:mvn/version "2.1.12"},
   macroz/tangle {:mvn/version "0.2.2"}}}
