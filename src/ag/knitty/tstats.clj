@@ -1,28 +1,36 @@
-(ns ag.knitty.sstats
+(ns ag.knitty.tstats
   (:require [ag.knitty.trace :as trace]
             [manifold.deferred :as md])
-  (:import [org.HdrHistogram ConcurrentHistogram Histogram Recorder]))
+  (:import [org.HdrHistogram
+            ConcurrentHistogram 
+            Histogram
+            Recorder]))
 
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* true)
 
 
 (defrecord Stats 
-  [^long count
+  [^long total-count
+   ^long total-sum
+   ^long count
    ^long mean
    ^long stdv
    ^long min
    ^long max
-   ^{:doc "seq of pairs"} pcts
-])
+   ^{:doc "seq of pairs"} pcts])
 
 
 (defn- simple-stats-tracker
   [& {:keys [precision percentiles]}]
-  (let [h (ConcurrentHistogram. (int precision))]
+  (let [h (ConcurrentHistogram. (int precision))
+        total-count (atom 0)
+        total-sum (atom 0)]
      (fn
        ([]
         (->Stats
+         @total-count
+         @total-sum
          (.getTotalCount h)
          (Math/round (.getMean h))
          (Math/round (.getStdDeviation h))
@@ -32,6 +40,8 @@
           (for [p percentiles]
             [p (.getValueAtPercentile h p)]))))
        ([x]
+        (swap! total-count inc)
+        (swap! total-sum + x)
         (.recordValue h (long x))
         x))))
 
@@ -46,6 +56,8 @@
         window (long window)
         window-chunk (long window-chunk)
 
+        total-count (atom 0)
+        total-sum (atom 0)
         r (Recorder. (int precision))
         hss (atom clojure.lang.PersistentQueue/EMPTY)
         lc (atom (quot (now-ms) window))
@@ -78,6 +90,8 @@
          (doseq [[_c ^Histogram h] hs]
            (.add t h))
          (->Stats
+          @total-count
+          @total-sum
           (.getTotalCount t)
           (Math/round (.getMean t))
           (Math/round (.getStdDeviation t))
@@ -88,6 +102,8 @@
              [p (.getValueAtPercentile t p)])))))
 
       ([x]
+       (swap! total-count inc)
+       (swap! total-sum + x)
        (.recordValue r (long x))
        (flush! false)
        x)
@@ -99,7 +115,7 @@
   (let [ss (atom {})]
     (fn
       ([]
-       (update-vals @ss apply))
+       (into {} (map (fn [[k v]] [k (v)])) @ss))
       ([m]
        (run!
         (fn [[k v]]
@@ -134,52 +150,63 @@
            (let [y (:yarn log)]
              (when (yarns y)
                (let [e (:event log)]
-                 (when-let [i (cond
-                                (identical? ::trace/trace-yank e) 0
-                                (identical? ::trace/trace-call e) 1
-                                (identical? ::trace/trace-done e) 2)]
+                 (when-let [i (case e
+                                ::trace/trace-start 0
+                                ::trace/trace-call 1
+                                ::trace/trace-finish 2
+                                ::trace/trace-deferred 3
+                                nil)]
                    (let [y (:yarn log)
-                         v (long (:value log))
+                         v (if (== i 3) 1 (long (:value log)))
                          ^longs c (.get h y)]
                      (if c
                        (aset c i (+ v att))
-                       (let [c (long-array 3)]
+                       (let [c (long-array 4)]
                          (.put h y c)
                          (aset c i (+ v att)))))))))))
-       (let [emit-yank (events :yank)
-             emit-call (events :call)
-             emit-done (events :done)
-             emit-wait (events :wait)
-             emit-time (events :time)]
+       (let [emit-yank (events :yank-at)
+             emit-call (events :call-at)
+             emit-done (events :done-at)
+             emit-deps-time (events :deps-time)
+             emit-sync-time (events :sync-time)
+             emit-async-time (events :async-time)
+             ]
          (eduction
-          (comp
-           (mapcat (fn [kv]
-                     (let [k (key kv)
-                           ^longs v (val kv)
-                           yank (aget v 0)
-                           call (aget v 1)
-                           done (aget v 2)]
-                       [(when emit-yank [[k :yank] yank])
-                        (when emit-call [[k :call] call])
-                        (when emit-done [[k :done] done])
-                        (when emit-wait [[k :wait] (safe-minus call yank)])
-                        (when emit-time [[k :time] (safe-minus done call)])
+          (mapcat (fn [kv]
+                    (let [k (key kv)
+                          ^longs v (val kv)
+                          yank (aget v 0)
+                          call (aget v 1)
+                          done (aget v 2)
+                          sync (== 0 (aget v 3))]
+                      [(when emit-yank [[k :yank-at] yank])
+                       (when emit-call [[k :call-at] call])
+                       (when emit-done [[k :done-at] done])
+                       (when emit-deps-time [[k :deps-time] (safe-minus call yank)])
+                       (when (and emit-sync-time sync) [[k :sync-time] (safe-minus done call)])
+                       (when (and emit-async-time (not sync)) [[k :async-time] (safe-minus done call)])
                        ;;
-                        ])))
-           (remove nil?))
-          (filter #(some? (nth % 1)))
+                       ])))
+          (filter #(and (some? %) (some? (nth % 1))))
           (.entrySet h)))))))
 
 
 (defn timings-collector 
-  [& {:keys [yarns events window window-chunk precision percentiles]
+  [& {:keys [yarns 
+             events
+             window
+             window-chunk
+             precision
+             percentiles
+             ]
       :or {yarns (constantly true)  ;; all
-           events #{:yank :call :done :wait :time}
-           percentiles [0.50 0.90 0.95 0.99]
+           events #{:yank-at :call-at :done-at :deps-time :sync-time :async-time}
+           percentiles [50 90 95 99]
            precision 3
-           window nil
+           window 60
            }}]
-  (let [yarns (memoize yarns)
+  (let [
+        yarns (memoize yarns)
         tracker (grouped-stats-tracker
                  (if (some? window)
                    (partial windowed-stats-tracker
@@ -190,20 +217,20 @@
                    (partial simple-stats-tracker
                             {:precision precision
                              :percentiles percentiles})))]
-    (fn
-      ([]
-       (->> (tracker)
-            (group-by ffirst)
-            (mapcat (fn [[y row]]
-                      (->>
-                       row
-                       (map (fn [[[_ e] s]] (into {:event e, :yarn y} s))))))))
-      ([poy]
-       (md/chain'
-        poy
-        (fn [poy]
-          (let [s (trace/find-traces poy)]
-            (when s
-              (tracker (yarn-timings s yarns events))))))
-       poy)))
-  )
+     (fn
+       ([]
+        (->> (tracker)
+             (group-by ffirst)
+             (mapcat (fn [[y row]]
+                       (map (fn [[[_ e] s]] 
+                              (into {:event e, :yarn y} s)) 
+                            row)))))
+       ([poy]
+        (md/chain'
+         poy
+         (fn [poy]
+           (let [s (trace/find-traces poy)]
+             (when s
+               (tracker (yarn-timings s yarns events))))))
+        poy))))
+  
