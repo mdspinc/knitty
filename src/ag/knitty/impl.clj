@@ -197,7 +197,7 @@
 
 (defn force-lazy-result [v]
   (if (instance? Lazy v)
-    @v
+    (kd/unwrap1' @v)
     v))
 
 
