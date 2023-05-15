@@ -154,22 +154,20 @@
                                 ::trace/trace-start 0
                                 ::trace/trace-call 1
                                 ::trace/trace-finish 2
-                                ::trace/trace-deferred 3
                                 nil)]
                    (let [y (:yarn log)
-                         v (if (== i 3) 1 (long (:value log)))
+                         v (long (:value log))
                          ^longs c (.get h y)]
                      (if c
                        (aset c i (+ v att))
-                       (let [c (long-array 4)]
+                       (let [c (long-array 3)]
                          (.put h y c)
                          (aset c i (+ v att)))))))))))
        (let [emit-yank (events :yank-at)
              emit-call (events :call-at)
              emit-done (events :done-at)
              emit-deps-time (events :deps-time)
-             emit-sync-time (events :sync-time)
-             emit-async-time (events :async-time)
+             emit-time (events :time)
              ]
          (eduction
           (mapcat (fn [kv]
@@ -177,17 +175,15 @@
                           ^longs v (val kv)
                           yank (aget v 0)
                           call (aget v 1)
-                          done (aget v 2)
-                          sync (== 0 (aget v 3))]
+                          done (aget v 2)]
                       [(when emit-yank [[k :yank-at] yank])
                        (when emit-call [[k :call-at] call])
                        (when emit-done [[k :done-at] done])
                        (when emit-deps-time [[k :deps-time] (safe-minus call yank)])
-                       (when (and emit-sync-time sync) [[k :sync-time] (safe-minus done call)])
-                       (when (and emit-async-time (not sync)) [[k :async-time] (safe-minus done call)])
+                       (when emit-time [[k :time] (safe-minus done call)])
                        ;;
                        ])))
-          (filter #(and (some? %) (some? (nth % 1))))
+          (filter #(some-> % (nth 1) (> 0)))
           (.entrySet h)))))))
 
 
@@ -200,7 +196,7 @@
              percentiles
              ]
       :or {yarns (constantly true)  ;; all
-           events #{:yank-at :call-at :done-at :deps-time :sync-time :async-time}
+           events #{:yank-at :call-at :done-at :deps-time :time}
            percentiles [50 90 95 99]
            precision 3
            window 60
