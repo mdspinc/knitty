@@ -18,7 +18,7 @@
 
 ;; mapping {keyword => Yarn}
 (def ^:dynamic *registry* (impl/create-registry))
-(def ^:dynamic *tracing* false)
+(def ^:dynamic *tracing* true)
 
 
 (defn register-yarn
