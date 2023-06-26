@@ -8,13 +8,6 @@
             [clojure.spec.alpha :as s]
             [manifold.deferred :as md]))
 
-;; >> API
-(declare yank)        ;; func,  (yank <map> [yarn-keys]) => @<new-map>
-(declare yarn)        ;; macro, (yarn keyword { (bind-symbol keyword)* } expr)
-(declare defyarn)     ;; macro, (defyarn name doc? spec? { (bind-symbol keyword)* } <expr>)
-(declare doyank)      ;; macro, (doyank <map> { (bind-symbol keyword)* } <expr>)
-(declare doyank!)     ;; macro, (doyank <map> { (bind-symbol keyword)* } <expr>)
-;; << API
 
 ;; mapping {keyword => Yarn}
 (def ^:dynamic *registry* (impl/create-registry))
@@ -22,6 +15,8 @@
 
 
 (defn register-yarn
+  "Registers Yarn into the global registry, do nothing when
+   yarn is already registed and no-override is true."
   ([yarn]
    (register-yarn yarn false))
   ([yarn no-override]
@@ -40,8 +35,10 @@
                :name qualified-keyword?
                :bind-and-body ::bind-and-body))
 
-
-(defmacro declare-yarn [nm]
+(defmacro declare-yarn
+  "Defines abstract yarn without an implementation,
+   useful for making forward declarations."
+  [nm]
   {:pre [(ident? nm)]}
   (let [k (keyword (or (namespace nm)
                        (-> *ns* ns-name name))
@@ -50,7 +47,17 @@
           ~k)))
 
 
+(defn link-yarn
+  "Redeclares yarn as symlink to yarn-target."
+  [yarn yarn-target]
+  {:pre [(qualified-keyword? yarn)
+         (qualified-keyword? yarn-target)]}
+  (register-yarn (eval (impl/gen-yarn-ref yarn yarn-target))))
+
+
 (defmacro yarn
+  "Returns yarn object (without registering into a registry).
+   May capture variables from outer scope."
   [k & exprs]
   (if (empty? exprs)
     `(impl/fail-always-yarn ~k ~(str "input-only yarn " k))
@@ -78,18 +85,39 @@
                   :name symbol?
                   :doc (s/? string?)
                   :bind-and-body ::bind-and-body))
+
 (defmacro defyarn
-  [nm & body]
-  (let [bd (cons nm body)
+  "Defines yarn - computation node. Uses current *ns* to build qualified keyword as yarn id.
+  Examples:
+
+  ```clojure
+
+  ;; declare ::yarn-1 without a body
+  (defyarn yarn-1)
+
+  ;; declare ::yarn-2 with docstring
+  (defyarn yarn-2 \"documentation\")
+
+  ;; define ::yarn-3 without any inputs
+  (defyarn yarn-3 {} (rand-int 10))
+
+  ;; define ::yarn-4 with inputs
+  (defyarn yarn-4 {x yarn-3} (str \"Random is\" x))
+  ```
+  "
+
+  [name & doc-binds-body]
+  (let [bd (cons name doc-binds-body)
         cf (s/conform ::defyarn bd)
-        k (keyword (-> *ns* ns-name name) (name nm))]
+        k (keyword (-> *ns* ns-name clojure.core/name)
+                   (clojure.core/name name))]
 
     (when (s/invalid? cf)
       (throw (Exception. (s/explain-str ::defyarn bd))))
 
     (let [{doc :doc, {:keys [bind body]} :bind-and-body} cf
           bind (or bind {})
-          [nm m] (pick-yarn-meta nm (meta bind) doc)
+          [nm m] (pick-yarn-meta name (meta bind) doc)
           spec (:spec m)
           bind (with-meta bind m)
           y (if (empty? body)
@@ -103,13 +131,32 @@
 
 
 (defn yank
+  "Computes and adds missing nodes into 'poy' map. Always returns deferred."
   [poy yarns]
   (assert (map? poy) "poy should be a map")
   (assert (sequential? yarns) "yarns should be vector/sequence")
   (impl/yank0 poy yarns *registry* (when *tracing* (create-tracer poy yarns))))
 
 
+(defn yank-error?
+  "Returns true when exception is rethrown by 'yank'."
+  [ex]
+  (boolean (:knitty/yanked-yarns (ex-data ex))))
+
+
 (defmacro doyank
+  "Runs anonymous yarn, returns deferred with [map-of-yarns yarn-value].
+   Example:
+
+   (declare-yarn ::yarn1)
+   (defyarn yarn2 {x ::yarn1} (inc x))
+
+   @(doyank
+      {::yarn1 10}
+      {x ::yarn2}
+      (inc x))
+   ;; => [{::yarn1 10, ::yarn2 11, ::xxeayaes 12}, 12]
+   "
   [poy binds & body]
   (let [k (keyword (-> *ns* ns-name name) (name (gensym "doyank")))]
     `(let [r# (yank ~poy [(yarn ~k ~binds (do ~@body))])]
@@ -118,16 +165,12 @@
         #(kd/cancel! r#)))))
 
 
-(defn yank-error? [ex]
-  (boolean (:knitty/yanked-yarns (ex-data ex))))
-
-
 (defmacro doyank!
-  [poy binds & body] 
+  "Similar to `doyank, but ruturn only deferred with yarns-map."
+  [poy binds & body]
   (let [k (keyword (-> *ns* ns-name name) (name (gensym "doyank")))]
     `(yank ~poy [(yarn ~k ~binds (do ~@body))])))
 
 
-(defn tieknot [from dst]
-  (register-yarn (eval (impl/gen-yarn-ref dst from)))
-  from)
+(defn ^:deprecated tieknot [from dst]
+  (link-yarn dst from))
