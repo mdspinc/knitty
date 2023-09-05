@@ -170,7 +170,3 @@
   [poy binds & body]
   (let [k (keyword (-> *ns* ns-name name) (name (gensym "doyank")))]
     `(yank ~poy [(yarn ~k ~binds (do ~@body))])))
-
-
-(defn ^:deprecated tieknot [from dst]
-  (link-yarn dst from))

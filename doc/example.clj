@@ -1,4 +1,4 @@
-(require '[ag.knitty.core :refer [defyarn doyank! tieknot yank yarn]]
+(require '[ag.knitty.core :refer [defyarn doyank! yank yarn link-yarn]]
          '[ag.knitty.tracetxt :refer [print-trace]]
          '[ag.knitty.traceviz :refer [render-trace view-trace]]
          '[manifold.deferred :as md])
@@ -53,7 +53,7 @@
   (println "debug print")
   (* x y))
 
-(tieknot three abs-three)
+(link-yarn abs-three three)
 
 (yank {} [three])
 ;; yank - ensure all keys are inside the map - finishs deferred
