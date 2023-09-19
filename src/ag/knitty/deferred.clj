@@ -57,28 +57,28 @@
                           ^objects da
                           ^IMutableDeferred r
                           ^clojure.lang.IFn callback]
-  
+
   manifold.deferred.IDeferredListener
   (onSuccess
-   [this _]
-   (loop [ii (int i)]  ;; desc order on purpose
-     (if (== ii 0)
-       (try
-         (connect-to-ka-deferred (callback) r)
-         (catch Throwable e (error'! r e)))
-       (let [ii' (unchecked-dec-int ii)
-             v (md/unwrap' (aget da ii'))]
-         (if (md/deferred? v)
-           (do
-             (aset da ii' v)
-             (set! i ii')
-             (listen! v this))
-           (do
-             (aset da ii' nil)
-             (recur ii')))))))
+    [this _]
+    (loop [ii (int i)]  ;; desc order on purpose
+      (if (== ii 0)
+        (try
+          (connect-to-ka-deferred (callback) r)
+          (catch Throwable e (error'! r e)))
+        (let [ii' (unchecked-dec-int ii)
+              v (md/unwrap' (aget da ii'))]
+          (if (md/deferred? v)
+            (do
+              (aset da ii' v)
+              (set! i ii')
+              (listen! v this))
+            (do
+              (aset da ii' nil)
+              (recur ii')))))))
   (onError
-   [_ e]
-   (error'! r e)))
+    [_ e]
+    (error'! r e)))
 
 
 (defn await*
@@ -105,14 +105,13 @@
       (instance? TimeoutException e)))
 
 
-(deftype RevokeListener 
-  [^IDeferred deferred
-   ^clojure.lang.IFn canceller]
-  
+(deftype RevokeListener
+         [^IDeferred deferred
+          ^clojure.lang.IFn canceller]
+
   manifold.deferred.IDeferredListener
   (onSuccess [_ _] (when-not (md/realized? deferred) (canceller)))
-  (onError [_ _] (when-not (md/realized? deferred) (canceller)))
-)
+  (onError [_ _] (when-not (md/realized? deferred) (canceller))))
 
 
 (defn revoke' [^IDeferred d c]
@@ -163,13 +162,13 @@
         (or
          (.compareAndSet ~'callbacks s# (ListenerCons. ~listener s#))
          (recur (.get ~'callbacks)))))
-       (loop [] 
-         (let [s# ~'state] 
-           (if (== s# 1) 
-             (->> ~'val ~on-okk)
-             (if (== s# 2)
-               (->> ~'val ~on-err)
-               (recur)))))))
+     (loop []
+       (let [s# ~'state]
+         (if (== s# 1)
+           (->> ~'val ~on-okk)
+           (if (== s# 2)
+             (->> ~'val ~on-err)
+             (recur)))))))
 
 (defmacro ^:private kd-deferred-succerr
   [_this x ondo state]

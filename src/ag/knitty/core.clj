@@ -6,7 +6,8 @@
             [clojure.java.browse-ui]
             [clojure.java.shell]
             [clojure.spec.alpha :as s]
-            [manifold.deferred :as md]))
+            [manifold.deferred :as md]
+            [clojure.test :as t]))
 
 
 ;; mapping {keyword => Yarn}
@@ -20,12 +21,12 @@
   ([yarn]
    (register-yarn yarn false))
   ([yarn no-override]
-  (let [k (impl/yarn-key yarn)]
-    (when-not (qualified-keyword? k)
-      (throw (ex-info "yarn must be a qualified keyword" {::yarn k})))
-    (if no-override
-      (alter-var-root #'*registry* #(if (contains? % k) % (assoc % k yarn)))
-      (alter-var-root #'*registry* assoc k yarn)))))
+   (let [k (impl/yarn-key yarn)]
+     (when-not (qualified-keyword? k)
+       (throw (ex-info "yarn must be a qualified keyword" {::yarn k})))
+     (if no-override
+       (alter-var-root #'*registry* #(if (contains? % k) % (assoc % k yarn)))
+       (alter-var-root #'*registry* assoc k yarn)))))
 
 
 (s/def ::yarn-binding (s/map-of symbol? ident?))
@@ -116,10 +117,9 @@
       (throw (Exception. (s/explain-str ::defyarn bd))))
 
     (let [{doc :doc, {:keys [bind body]} :bind-and-body} cf
-          bind (or bind {})
           [nm m] (pick-yarn-meta name (meta bind) doc)
           spec (:spec m)
-          bind (with-meta bind m)
+          bind (when bind (with-meta bind m))
           y (if (empty? body)
               `(impl/fail-always-yarn ~k ~(str "input-only yarn " k))
               `(yarn ~k ~bind ~@body))]

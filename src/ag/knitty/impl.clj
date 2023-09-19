@@ -159,10 +159,10 @@
 (deftype Lazy
          [^AtomicReference value
           ^YankCtx ctx
-          ^clojure.lang.Keyword yk 
+          ^clojure.lang.Keyword yk
           ^clojure.lang.Keyword ykey
           ^long ykeyi]
-  
+
   clojure.lang.IDeref
   (deref [_]
     (if-let [v (.get value)]
