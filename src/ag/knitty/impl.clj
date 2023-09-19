@@ -105,12 +105,6 @@
           ^ag.knitty.trace.Tracer tracer])
 
 
-(defn as-deferred [v]
-  (if (md/deferred? v)
-    v
-    (md/success-deferred v nil)))
-
-
 (defn bind-param-type [ds]
   (let [{:keys [defer lazy]} (meta ds)]
     (cond
@@ -149,7 +143,7 @@
 (defmacro yarn-get-defer [yk ykey ctx]
   `(do
      (ctx-tracer-> ~ctx t/trace-dep ~yk ~ykey)
-     (as-deferred
+     (kd/as-deferred
       (let [v# (mdm/mdm-get! (.-mdm ~ctx) ~ykey ~(mdm/keyword->intid ykey))]
         (if (mdm/none? v#)
           ((get-yank-fn ~ctx ~ykey) ~ctx)

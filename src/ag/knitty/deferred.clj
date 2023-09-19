@@ -267,3 +267,49 @@
     (listen'! d1 d2)
     (listen'! d1 (DeferredHookListener. d2))))
 
+
+(deftype KaSuccess
+         [val
+          ^:volatile-mutable mta]
+
+  clojure.lang.IReference
+  (meta [_] mta)
+  (resetMeta [_ m] (set! mta m))
+  (alterMeta [this f args] (locking this (set! mta (apply f mta args))))
+
+  IMutableDeferred
+  (claim [_] false)
+  (addListener [_ listener] (.onSuccess ^IDeferredListener listener val) true)
+  (cancelListener [_ _listener] false)
+  (success [_ _x] false)
+  (success [_ _x _token] false)
+  (error [_ _x] false)
+  (error [_ _x _token] false)
+
+  IDeferred
+  (executor [_] nil)
+  (realized [_] true)
+  (onRealized [_ on-success _on-error] (on-success val))
+  (successValue [_ _default-value] val)
+  (errorValue [_ default-value] default-value)
+
+  clojure.lang.IPending
+  (isRealized [_] true)
+
+  clojure.lang.IDeref
+  clojure.lang.IBlockingDeref
+  (deref [_] val)
+  (deref [_ _ _] val))
+
+
+(defmethod print-method KaSuccess [y ^java.io.Writer w]
+  (.write w "#ag.knitty/Success[")
+  (print-method (md/success-value y ::fail) w)
+  (.write w "]"))
+
+
+(definline as-deferred [v]
+  `(let [v# ~v]
+     (if (md/deferred? v#)
+       v#
+       (KaSuccess. v# nil))))
