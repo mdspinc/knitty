@@ -12,6 +12,7 @@
    ag.knitty.core/defyarn knitty.clj-kondo-hooks/defyarn
    ag.knitty.core/doyank  knitty.clj-kondo-hooks/doyank*
    ag.knitty.core/doyank! knitty.clj-kondo-hooks/doyank*
+   ag.knitty.core/declare-yarn knitty.clj-kondo-hooks/declare-yarn
    }
 
   }}

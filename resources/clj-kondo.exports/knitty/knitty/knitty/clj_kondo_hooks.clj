@@ -77,12 +77,12 @@
                   :type :knitty/invalid-yarn-binding))
           (doseq [[_s0 v0] (partition-all 2 (:children v))]
             (when-not (or
-                         (api/token-node? v0) (ident? (:value v0))
-                         (api/keyword-node? v0) (or (:namespaced? v0) (qualified-keyword? (:k v0))))
+                       (api/token-node? v0) (ident? (:value v0))
+                       (api/keyword-node? v0) (or (:namespaced? v0) (qualified-keyword? (:k v0))))
               (api/reg-finding!
-                 (assoc (meta v0)
-                        :message "yankfn argument val must be a symbol or qualified keyword"
-                        :type :knitty/invalid-yarn-binding))))))
+               (assoc (meta v0)
+                      :message "yankfn argument val must be a symbol or qualified keyword"
+                      :type :knitty/invalid-yarn-binding))))))
 
       (when (and
              (not= :yankfn btype)
@@ -94,21 +94,20 @@
                 :message (if (api/map-node? v)
                            "yarn dependency should not be a map or should be marked with ^:yankfn"
                            "yarn dependency should be a symbol or qualified keyword")
-                :type :knitty/invalid-yarn-binding))))
-    )
+                :type :knitty/invalid-yarn-binding)))))
 
   (api/list-node
-    (list* ;; (let
-     (api/token-node `let)
+   (list* ;; (let
+    (api/token-node `let)
      ;; [ ~@bmap ]
-     (api/vector-node
-      (map-evens
-       #(api/list-node [(api/token-node `deref) %])
-       (:children bmap)))
+    (api/vector-node
+     (map-evens
+      #(api/list-node [(api/token-node `deref) %])
+      (:children bmap)))
      ;; ~expr
-     body
+    body
      ;; )
-     )))
+    )))
 
 
 (defn yarn [{:keys [node]}]
@@ -161,8 +160,7 @@
        (yarn* (list* name-kv bmap body))
 
        ;; )
-       ])
-     }))
+       ])}))
 
 
 (defn doyank* [{:keys [node]}]
@@ -177,3 +175,31 @@
          (api/list-node
           (list* (api/token-node `do) body))])
        poy])}))
+
+
+(defn declare-yarn [{:keys [node]}]
+
+  (let [node-child (rest (:children node))
+        [name] node-child]
+
+    (when-not (or
+               (and (api/keyword-node? name)
+                    (or
+                     (:namespaced? name)
+                     (-> name :k qualified-keyword?)))
+               (and (api/token-node? name)
+                    (-> name :value symbol?)))
+      (api/reg-finding!
+       (assoc (meta name)
+              :message "name must be a symbol or or qualified keyword"
+              :type :knitty/invalid-defyarn-name)))
+
+    (when (and (api/token-node? name)
+               (-> name :value symbol?))
+      {:node
+       ;; (declare ~name)
+       (api/list-node
+        (list* (api/token-node 'clojure.core/declare)
+               node-child))}
+      )))
+
