@@ -8,6 +8,13 @@
 (set! *warn-on-reflection* true)
 
 
+(def elide-tracing
+  (when-some [x (System/getProperty "knitty.elide-tracing")]
+    (let [b (parse-boolean x)]
+      (assert (some? b))
+      b)))
+
+
 (defprotocol Tracer
   (trace-start [_ yk kind deps])
   (trace-call [_ yk])
@@ -105,13 +112,14 @@
 (def ^:private yank-cnt (atom 0))
 
 (defn create-tracer [poy yarns]
-  (let [store (AtomicReference.)
-        extra {:at (java.util.Date.)
-               :yankid (swap! yank-cnt inc)
-               :base-at (now)
-               :poy poy
-               :yarns yarns}]
-    (TracerImpl. store extra)))
+  (when-not elide-tracing
+    (let [store (AtomicReference.)
+          extra {:at (java.util.Date.)
+                 :yankid (swap! yank-cnt inc)
+                 :base-at (now)
+                 :poy poy
+                 :yarns yarns}]
+      (TracerImpl. store extra))))
 
 
 (defn- safe-minus [a b]
