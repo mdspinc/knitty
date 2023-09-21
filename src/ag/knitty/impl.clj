@@ -105,18 +105,13 @@
           ^ag.knitty.trace.Tracer tracer])
 
 
-(defn as-deferred [v]
-  (if (md/deferred? v)
-    v
-    (md/success-deferred v nil)))
-
-
 (defn bind-param-type [ds]
-  (let [{:keys [defer lazy]} (meta ds)]
+  (let [{:keys [defer lazy yankfn]} (meta ds)]
     (cond
-      lazy  :lazy
-      defer :defer
-      :else :sync)))
+      lazy   :lazy
+      defer  :defer
+      yankfn :yankfn
+      :else  :sync)))
 
 
 (defmacro get-yank-fn [ctx ykey]
@@ -149,7 +144,7 @@
 (defmacro yarn-get-defer [yk ykey ctx]
   `(do
      (ctx-tracer-> ~ctx t/trace-dep ~yk ~ykey)
-     (as-deferred
+     (kd/as-deferred
       (let [v# (mdm/mdm-get! (.-mdm ~ctx) ~ykey ~(mdm/keyword->intid ykey))]
         (if (mdm/none? v#)
           ((get-yank-fn ~ctx ~ykey) ~ctx)
@@ -159,10 +154,10 @@
 (deftype Lazy
          [^AtomicReference value
           ^YankCtx ctx
-          ^clojure.lang.Keyword yk 
+          ^clojure.lang.Keyword yk
           ^clojure.lang.Keyword ykey
           ^long ykeyi]
-  
+
   clojure.lang.IDeref
   (deref [_]
     (if-let [v (.get value)]
@@ -180,7 +175,7 @@
               (catch Throwable t (kd/error'! v t)))
             v)
           (.get value)))))
-  
+
   Object
   (toString [_] (str "#ag.knitty/Lazy[" ykey "]"))
   )
@@ -193,6 +188,28 @@
     ~yk
     ~ykey
     ~(mdm/keyword->intid ykey)))
+
+
+(defn make-yankfn
+  [^YankCtx ctx
+   yk
+   yarns-map]
+  (fn yankfn [y]
+    (if-let [[i k] (yarns-map y)]
+      (do
+        (ctx-tracer-> ctx t/trace-dep yk k)
+        (kd/as-deferred
+         (let [v (mdm/mdm-get! (.-mdm ctx) k i)]
+           (if (mdm/none? v)
+             ((registry-yankfn' (.-registry ctx) k i) ctx)
+             v))))
+      (throw (ex-info "Invalid yank-fn arg" {:knitty/yankfn-arg y
+                                             :knytty/yankfn-known-args (keys yarns-map)})))))
+
+
+(defmacro yarn-get-yankfn [yk keys-map ctx]
+  (let [args (update-vals keys-map (juxt mdm/keyword->intid identity))]
+    `(make-yankfn ~ctx ~yk ~args)))
 
 
 (defn force-lazy-result [v]
@@ -334,9 +351,11 @@
                 (for [[ds dk] bind]
                   [ds
                    (case (bind-param-type ds)
-                     :sync   `(yarn-get-sync  ~ykey ~dk ~ctx)
-                     :defer  `(yarn-get-defer ~ykey ~dk ~ctx)
-                     :lazy   `(yarn-get-lazy  ~ykey ~dk ~ctx))]))
+                     :sync   `(yarn-get-sync   ~ykey ~dk ~ctx)
+                     :defer  `(yarn-get-defer  ~ykey ~dk ~ctx)
+                     :lazy   `(yarn-get-lazy   ~ykey ~dk ~ctx)
+                     :yankfn `(yarn-get-yankfn ~ykey ~dk ~ctx)
+                     )]))
 
         sync-deps
         (for [[ds _dk] bind
@@ -346,8 +365,8 @@
         param-types (set (for [[ds _dk] bind] (bind-param-type ds)))
 
         coerce-deferred (if (param-types :lazy)
-                          force-lazy-result
-                          'do)
+                          `force-lazy-result
+                          `do)
 
         some-syncs-unresolved (list* `or (for [d sync-deps] `(md/deferred? ~d)))
 
@@ -356,13 +375,20 @@
                 (for [[ds _dk] bind
                       :when (#{:sync} (bind-param-type ds))]
                   [ds `(md/unwrap' ~ds)]))
-        
+
         fn-args (if (> (count deps) 18)
                   (let [[a b] (split-at 18 deps)]
                     (conj (vec a) (vec b)))
                   deps)
 
-        all-deps-tr (vec (for [[ds dk] bind] [dk (bind-param-type ds)]))]
+        all-deps-tr (into
+                     []
+                     (comp cat (distinct))
+                     (for [[ds dk] bind
+                           :let [pt (bind-param-type ds)]]
+                       (if (= :yankfn pt)
+                         (for [[_ k] dk] [k :lazy])
+                         [[dk pt]])))]
 
     `(fn ~(fnn "--yank") [~ctx]
        (let [kv# (mdm/mdm-fetch! (.-mdm ~ctx) ~ykey ~kid)
@@ -413,7 +439,7 @@
         {:keys [keep-deps-order]} yarn-meta
         bind (if keep-deps-order
                bind
-               (sort-by (comp mdm/keyword->intid second) bind))]
+               (sort-by (comp #(when (keyword? %) (mdm/keyword->intid %)) second) bind))]
     (emit-yank-fns-impl thefn ykey bind deps yarn-meta)))
 
 
@@ -433,9 +459,22 @@
                (catch Throwable e#
                  (connect-error-mdm ctx# ~ykey e# d# nil)))))))))
 
+
+(defn- grab-yarn-bindmap-deps [bm]
+  (into
+   #{}
+   cat
+   (for [[_ k] bm]
+     (cond
+       (keyword? k) [k]
+       (map? k) (vals k)
+       :else (throw (ex-info "invalid binding arg" {::param k}))
+       ))))
+
+
 (defn gen-yarn
   [ykey bind expr]
-  (let [deps (set (map second bind))
+  (let [deps (grab-yarn-bindmap-deps bind)
         ff (gensym)
         fargs (if (> (count bind) 18)
                 (let [[args1 args2] (split-at 18 (map first bind))]

@@ -13,7 +13,7 @@
 (defonce ^:private keyword-int-mapping (ref {}))
 (defonce ^:private keyword-int-counter (ref 0))
 
-(defn max-initd 
+(defn max-initd
   ^long []
   @keyword-int-counter)
 
@@ -24,7 +24,7 @@
          (@keyword-int-mapping k)
          (dosync
            (when-not (qualified-keyword? k)
-             (throw (java.lang.IllegalArgumentException. "yarn key must be a qualified keyword")))
+             (throw (ex-info "yarn key must be a qualified keyword" {::key k})))
            (let [c (long @keyword-int-counter)]
              (alter keyword-int-counter inc)
              (alter keyword-int-mapping assoc k c)
@@ -32,7 +32,7 @@
     (.longValue c)))
 
 
-(deftype FetchResult [^boolean claimed 
+(deftype FetchResult [^boolean claimed
                       ^manifold.deferred.IMutableDeferred value])
 
 
@@ -132,7 +132,7 @@
   )
 
 
-(def ^:private nil-deferred (md/success-deferred nil nil))
+(def ^:private nil-deferred (kd/as-deferred nil))
 
 
 (defmacro ^:private arr-getset-lazy [a i v]
@@ -179,7 +179,7 @@
               (FetchResult. false d))))
 
         (if (none? v)
-            ;; new item, was prewarmed by calling mdmGet 
+            ;; new item, was prewarmed by calling mdmGet
           (let [d (kd/ka-deferred)
                 p (.compareAndSet a1 i1 ::none d)]
             (if p

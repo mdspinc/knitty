@@ -6,7 +6,8 @@
             [clojure.java.browse-ui]
             [clojure.java.shell]
             [clojure.spec.alpha :as s]
-            [manifold.deferred :as md]))
+            [manifold.deferred :as md]
+            [clojure.test :as t]))
 
 
 ;; mapping {keyword => Yarn}
@@ -20,20 +21,46 @@
   ([yarn]
    (register-yarn yarn false))
   ([yarn no-override]
-  (let [k (impl/yarn-key yarn)]
-    (when-not (qualified-keyword? k)
-      (throw (ex-info "yarn must be a qualified keyword" {::yarn k})))
-    (if no-override
-      (alter-var-root #'*registry* #(if (contains? % k) % (assoc % k yarn)))
-      (alter-var-root #'*registry* assoc k yarn)))))
+   (let [k (impl/yarn-key yarn)]
+     (when-not (qualified-keyword? k)
+       (throw (ex-info "yarn must be a qualified keyword" {::yarn k})))
+     (if no-override
+       (alter-var-root #'*registry* #(if (contains? % k) % (assoc % k yarn)))
+       (alter-var-root #'*registry* assoc k yarn)))))
 
 
-(s/def ::yarn-binding (s/map-of symbol? ident?))
-(s/def ::bind-and-body (s/? (s/cat :bind ::yarn-binding :body (s/+ any?))))
+(defn- valid-bind-type? [bsym]
+  (let [{:keys [defer lazy yankfn]} (meta bsym)
+        n (count (filter identity [defer lazy yankfn]))]
+    (<= n 1)))
 
-(s/def ::yarn (s/cat
-               :name qualified-keyword?
-               :bind-and-body ::bind-and-body))
+
+(s/def ::yarn-binding-yankfn-map
+  (s/map-of any? (some-fn qualified-keyword? symbol?)))
+
+(s/def ::yarn-bindind-var
+  (s/and symbol? valid-bind-type?))
+
+(s/def ::yarn-binding
+  (s/map-of
+   ::yarn-bindind-var
+   (s/or :ident ident?
+         :yankfn-map ::yarn-binding-yankfn-map)))
+
+(s/def ::bind-and-body
+  (s/? (s/cat :bind ::yarn-binding :body (s/+ any?))))
+
+(s/def ::yarn
+  (s/cat
+   :name qualified-keyword?
+   :bind-and-body ::bind-and-body))
+
+(s/def ::defyarn
+  (s/cat
+   :name symbol?
+   :doc (s/? string?)
+   :bind-and-body ::bind-and-body))
+
 
 (defmacro declare-yarn
   "Defines abstract yarn without an implementation,
@@ -55,6 +82,18 @@
   (register-yarn (eval (impl/gen-yarn-ref yarn yarn-target))))
 
 
+(defn- resolve-sym-or-kw
+  ([env]
+    (partial resolve-sym-or-kw env))
+  ([env k]
+   (if (keyword? k)
+     k
+     (let [v @(resolve env k)]
+       (when-not (qualified-keyword? v)
+         (throw (ex-info "yarn bindings must be qualified keyword" {::binding k})))
+       v))))
+
+
 (defmacro yarn
   "Returns yarn object (without registering into a registry).
    May capture variables from outer scope."
@@ -66,10 +105,11 @@
       (when (s/invalid? cf)
         (throw (Exception. (s/explain-str ::yarn bd))))
       (let [{{:keys [bind body]} :bind-and-body} cf
-            bind (or bind {})
-            bind (update-vals bind #(if (keyword? %) % @(resolve &env %)))]
-        (when-not (every? qualified-keyword? (vals bind))
-          (throw (Exception. "yarn bindings must be qualified keywords")))
+            bind (update-vals bind (fn [[t k]]
+                                     (case t
+                                       :ident (resolve-sym-or-kw &env k)
+                                       :yankfn-map (update-vals k (resolve-sym-or-kw &env))
+                                       )))]
         (impl/gen-yarn k bind `(do ~@body))))))
 
 
@@ -80,11 +120,6 @@
     [(with-meta obj m)
      m]))
 
-
-(s/def ::defyarn (s/cat
-                  :name symbol?
-                  :doc (s/? string?)
-                  :bind-and-body ::bind-and-body))
 
 (defmacro defyarn
   "Defines yarn - computation node. Uses current *ns* to build qualified keyword as yarn id.
@@ -116,10 +151,10 @@
       (throw (Exception. (s/explain-str ::defyarn bd))))
 
     (let [{doc :doc, {:keys [bind body]} :bind-and-body} cf
-          bind (or bind {})
           [nm m] (pick-yarn-meta name (meta bind) doc)
+          bind (update-vals bind second)
           spec (:spec m)
-          bind (with-meta bind m)
+          bind (when bind (with-meta bind m))
           y (if (empty? body)
               `(impl/fail-always-yarn ~k ~(str "input-only yarn " k))
               `(yarn ~k ~bind ~@body))]
@@ -170,7 +205,3 @@
   [poy binds & body]
   (let [k (keyword (-> *ns* ns-name name) (name (gensym "doyank")))]
     `(yank ~poy [(yarn ~k ~binds (do ~@body))])))
-
-
-(defn ^:deprecated tieknot [from dst]
-  (link-yarn dst from))

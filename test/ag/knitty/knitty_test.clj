@@ -1,5 +1,6 @@
-(ns ag.knitty.knitty-test 
-  (:require [ag.knitty.core :as knitty 
+(ns ag.knitty.knitty-test
+  {:clj-kondo/ignore [:inline-def]}
+  (:require [ag.knitty.core :as knitty
              :refer [defyarn doyank! yank yarn]]
             [clojure.spec.alpha :as s]
             [clojure.test :as t :refer [deftest is testing]]
@@ -7,7 +8,7 @@
             [manifold.executor :as executor]))
 
 
-(defmacro do-defs 
+(defmacro do-defs
   "eval forms one by one - allows to intermix defs"
   [& body]
     (list*
@@ -39,7 +40,7 @@
      (binding [knitty/*tracing* false]
        (is (= [4 6] @(md/chain (yank {} [four six]) (juxt four six)))))))
   )
-  
+
 
 (deftest defyarn-test
    (testing "define yarn without args"
@@ -67,7 +68,7 @@
       (defyarn y3 {x1 y1, x2 y2} (+ x1 x2))
       (is (every? keyword? [y1 y2 y3]))))
    )
-  
+
 
 (deftest types-of-bindings-test
 
@@ -103,7 +104,7 @@
        (+ @@x1 10))
      (is (= {::y1 1, ::y3 11} @(yank {} [y3]))))))
 
-#_  
+#_
 (deftest yank-deferreds-coercing-test
 
   (testing "coerce future to deferred"
@@ -138,7 +139,7 @@
 
 
 (deftest long-chain-of-yanks-test
-  
+
   (defyarn chain-0)
 
   (do-eval
@@ -154,7 +155,7 @@
   (is (= 9 @(md/chain (yank {::chain-90 0} [::chain-99]) ::chain-99)))
   (is (= 10 @(md/chain (yank {::chain-90 0} [::chain-99]) count))))
 
-  
+
 (deftest everytying-is-memoized-test
 
   #_{:clj-kondo/ignore [:inline-def]}
@@ -190,9 +191,9 @@
   (is (= 99 @(md/chain (yank {} [::node-99]) ::node-99)))
   )
 
-  
+
 (deftest hundred-of-inputs-test
-  
+
   (do-eval
    (for [i (range 100)]
      `(defyarn ~(symbol (str "pass-" i)) {} ~i)))
@@ -252,7 +253,27 @@
 
   )
 
-  
+
+(deftest yankfn-test
+
+  (do-defs
+
+   (defyarn y1 {} 1)
+   (defyarn y2 {} 2)
+   (defyarn y3 {} 3)
+
+   (defyarn yx
+     {^:yankfn f {:a y1, :b y2, :c y3}}
+     (is (fn? f))
+     (is (md/deferred? (f :a)))
+     (is (= @(f :a) 1))
+     (is (= @(f :b) 2))
+     (f :a))
+
+   (is (= {::y1 1, ::y2 2, ::yx 1} @(yank {} [yx])))
+   ))
+
+
 (comment
   (clojure.test/test-ns *ns*)
   )
