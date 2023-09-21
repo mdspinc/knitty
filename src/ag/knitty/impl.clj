@@ -12,6 +12,7 @@
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* :warn-on-boxed)
 
+
 (defprotocol IYarn
   (yarn-yankfn [_] "get or build yank fn [IYankCtx => result]")
   (yarn-deps [_] "get yarn dependencies as set of keywords")
@@ -23,7 +24,6 @@
   (yarn-yankfn [_] yankfn)
   (yarn-deps [_] deps)
   (yarn-key [_] key))
-
 
 
 (defn- check-no-cycle
@@ -120,7 +120,8 @@
 
 
 (defmacro ctx-tracer-> [ctx fn & args]
-  `(when-let [t# (.-tracer ~ctx)] (~fn t# ~@args)))
+  (t/do-when-tracing
+    `(when-let [t# (.-tracer ~ctx)] (~fn t# ~@args))))
 
 
 (defn yarn-get [^YankCtx ctx ^clojure.lang.Keyword ykey]

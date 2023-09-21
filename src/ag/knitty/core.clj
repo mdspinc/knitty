@@ -6,13 +6,12 @@
             [clojure.java.browse-ui]
             [clojure.java.shell]
             [clojure.spec.alpha :as s]
-            [manifold.deferred :as md]
-            [clojure.test :as t]))
+            [manifold.deferred :as md]))
 
 
 ;; mapping {keyword => Yarn}
 (def ^:dynamic *registry* (impl/create-registry))
-(def ^:dynamic *tracing* true)
+(def ^:dynamic *tracing* (not impl/elide-tracing))
 
 
 (defn register-yarn
@@ -170,7 +169,11 @@
   [poy yarns]
   (assert (map? poy) "poy should be a map")
   (assert (sequential? yarns) "yarns should be vector/sequence")
-  (impl/yank0 poy yarns *registry* (when *tracing* (create-tracer poy yarns))))
+  (impl/yank0 poy
+              yarns
+              *registry*
+              (when *tracing*
+                (create-tracer poy yarns))))
 
 
 (defn yank-error?
