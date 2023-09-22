@@ -13,6 +13,13 @@
 (set! *unchecked-math* :warn-on-boxed)
 
 
+(def elide-tracing
+  (when-some [x (System/getProperty "knitty.elide-tracing")]
+    (let [b (parse-boolean x)]
+      (assert (some? b))
+      b)))
+
+
 (defprotocol IYarn
   (yarn-yankfn [_] "get or build yank fn [IYankCtx => result]")
   (yarn-deps [_] "get yarn dependencies as set of keywords")
@@ -120,7 +127,7 @@
 
 
 (defmacro ctx-tracer-> [ctx fn & args]
-  (t/do-when-tracing
+  (when-not elide-tracing
     `(when-let [t# (.-tracer ~ctx)] (~fn t# ~@args))))
 
 
@@ -388,7 +395,7 @@
                      (for [[ds dk] bind
                            :let [pt (bind-param-type ds)]]
                        (if (= :yankfn pt)
-                         (for [[_ k] dk] [k :lazy])
+                         (for [[_ k] dk] [k :yankfn])
                          [[dk pt]])))]
 
     `(fn ~(fnn "--yank") [~ctx]

@@ -1,22 +1,26 @@
-(ns ag.knitty.tracetxt 
+(ns ag.knitty.tracetxt
   (:require [ag.knitty.trace :as t]))
 
 
-(def ^:private inst-format (java.text.SimpleDateFormat. 
-                  "yyyy-MM-dd HH:mm:ss.SSS"))
+(def ^:private inst-format
+  (java.text.SimpleDateFormat.
+   "yyyy-MM-dd HH:mm:ss.SSS"))
 
 
 (defn- format-inst [t]
   (.format inst-format t))
 
 
-(def ^:private format-dep-kind {:sync ""
-                      :defer "[defer]"
-                      :lazy "[lazy]"
-                      :ref "[ref]"})
+(def ^:private format-dep-kind
+  {:sync   ""
+   :defer  "[defer]"
+   :lazy   "[lazy]"
+   :ref    "[ref]"
+   :yankfn "[yankfn]"})
+
 
 (defn- render-tracegraph-txt [ts]
-  
+
   (doseq [{:keys [at yarns tracelog] :as t} (reverse ts)]
     (let [{:keys [nodes]} (t/parse-trace t)]
 
@@ -55,8 +59,8 @@
              "[defer]"
              ""))
 
-          ())))
-    
+          :no-match)))
+
     (println)))
 
 
