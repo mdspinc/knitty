@@ -71,6 +71,7 @@
                        (-> *ns* ns-name name))
                    (name nm))]
      `(do (register-yarn (impl/fail-always-yarn ~k ~(str "declared-only yarn " k)) true)
+          ~(when (simple-ident? nm) `(def ~nm ~k))
           ~k)))
 
 
