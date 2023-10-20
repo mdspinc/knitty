@@ -3,7 +3,7 @@
   (:require [clojure.tools.logging :as log]
             [manifold.deferred :as md]
             [ag.knitty.deferred :as kd])
-  (:import [java.util.concurrent CancellationException TimeoutException CountDownLatch]
+  (:import [java.util.concurrent CancellationException TimeoutException CountDownLatch TimeUnit]
            [java.util.concurrent.atomic AtomicReference]
            [manifold.deferred IDeferred IMutableDeferred IDeferredListener]))
 
@@ -141,7 +141,7 @@
 
 
 (defmacro ^:private kd-deferred-deref
-  [this await-form]
+  [this await-form timeout-form]
   `(let [s# ~'state]
      (if (== s# 1)
        ~'val
@@ -150,9 +150,11 @@
          (let [cdl# (CountDownLatch. 1)]
            (.addListener ~this (CountDownListener. cdl#))
            (-> cdl# ~await-form)
-           (if (== ~'state 1)
-             ~'val
-             (throw ~'val)))))))
+           (case ~'state
+             0 ~timeout-form
+             1 ~'val
+             2 (throw ~'val))
+           )))))
 
 (defmacro ^:private kd-deferred-onrealized
   [_this on-okk on-err listener]
@@ -191,10 +193,10 @@
           ^:volatile-mutable mta]
 
   clojure.lang.IDeref
-  (deref [this] (kd-deferred-deref this (.await)))
+  (deref [this] (kd-deferred-deref this (.await) (throw (TimeoutException.))))
 
   clojure.lang.IBlockingDeref
-  (deref [this time timeout] (kd-deferred-deref this (.await time timeout)))
+  (deref [this time timeout] (kd-deferred-deref this (.await time TimeUnit/MILLISECONDS) timeout))
 
   clojure.lang.IPending
   (isRealized [_] (not (== 0 state)))
