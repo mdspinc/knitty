@@ -409,19 +409,14 @@
                   (let [x# (if ~some-syncs-unresolved
 
                              (kd/unwrap1'
-                              (kd/await*
-
-                               (let [~df-array (object-array ~(count sync-deps))]
-                                 ~@(for [[i d] (map vector (range) sync-deps)]
-                                     `(aset ~df-array ~i ~d))
-                                 ~df-array)
-
-                               (fn ~(fnn "--async") []
+                              (kd/await-ary*
+                               (fn ~(fnn "--async") [_#]
                                  (let [~@deref-syncs]
                                    (~@(if norevoke `[do] [`vreset! reald])
                                     (do
                                       (ctx-tracer-> ~ctx t/trace-call ~ykey)
-                                      (~coerce-deferred (~the-fnv ~@fn-args))))))))
+                                      (~coerce-deferred (~the-fnv ~@fn-args))))))
+                               ~@sync-deps))
 
                              (~@(if norevoke `[do] [`vreset! reald])
                               (do
@@ -528,7 +523,7 @@
                   ((yarn-yankfn y) ctx)))))
       (->
        (kd/await* (.toArray yks)
-                   (fn fisnih-yarn []
+                   (fn fisnih-yarn [_]
                      (let [poy' (mdm/mdm-freeze! mdm)]
                        (if tracer
                          (vary-meta poy' update :knitty/trace conj (capture-trace! tracer))

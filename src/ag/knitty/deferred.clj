@@ -64,7 +64,7 @@
     (loop [ii (int i)]  ;; desc order on purpose
       (if (== ii 0)
         (try
-          (connect-to-ka-deferred (callback) r)
+          (connect-to-ka-deferred (callback nil) r)
           (catch Throwable e (error'! r e)))
         (let [ii' (unchecked-dec-int ii)
               v (md/unwrap' (aget da ii'))]
@@ -81,12 +81,45 @@
     (error'! r e)))
 
 
+(deftype CallbackListener [^clojure.lang.IFn callback]
+  manifold.deferred.IDeferredListener
+  (onSuccess [_ _] (callback))
+  (onError [_ _] (callback)))
+
+
 (defn await*
   [^objects ds f]
-  (let [r (ka-deferred)
-        a (AwaiterListener. (alength ds) ds r f)]
-    (.onSuccess a nil)
-    r))
+  (let [n (alength ds)]
+    (case n
+      0 nil
+      1 (md/chain' (aget ds 0) f)
+      2 (md/chain' (aget ds 1) (constantly (aget ds 0)) f)
+      3 (md/chain' (aget ds 2) (constantly (aget ds 1)) (constantly (aget ds 0)) f)
+      (let [r (ka-deferred)
+            a (AwaiterListener. (alength ds) ds r f)]
+        (.onSuccess a nil)
+        r))))
+
+
+(defmacro await-ary*
+  ([f]
+   `(~f nil))
+  ([f x1]
+   `(md/chain' ~x1 ~f))
+  ([f x1 x2]
+   `(md/chain' ~x2 (constantly ~x1) ~f))
+  ([f x1 x2 x3]
+   `(md/chain' ~x3 (constantly ~x2) (constantly ~x1) ~f))
+  ([f x1 x2 x3 & xs]
+   (let [xs (list* x1 x2 x3 xs)
+         n (count xs)
+         df (gensym)]
+     `(await*
+       (let [~df (object-array ~n)]
+         ~@(for [[i x] (map vector (range) xs)]
+             `(aset ~df ~i ~x))
+         ~df)
+       ~f))))
 
 
 (def ^:private cancellation-exception
