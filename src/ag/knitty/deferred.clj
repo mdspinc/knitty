@@ -32,6 +32,16 @@
   [d ls]
   `(let [^IMutableDeferred d# ~d] (.addListener d# ~ls)))
 
+
+(definline maybe-listen'!
+  [d ls]
+  `(let [d# ~d
+         ^IDeferredListener ls# ~ls]
+     (if (instance? IMutableDeferred d#)
+       (.addListener ^IMutableDeferred d# ls#)
+       (.onSuccess ls# d#))))
+
+
 (definline listen!
   [d ls]
   `(let [d# ~d
@@ -55,8 +65,7 @@
 ;; sequentially attaches itself as a listener
 (deftype AwaiterListener [^:volatile-mutable ^int i
                           ^objects da
-                          ^IMutableDeferred r
-                          ^clojure.lang.IFn callback]
+                          ^IDeferredListener ls]
 
   manifold.deferred.IDeferredListener
   (onSuccess
@@ -64,8 +73,8 @@
     (loop [ii (int i)]  ;; desc order on purpose
       (if (== ii 0)
         (try
-          (connect-to-ka-deferred (callback nil) r)
-          (catch Throwable e (error'! r e)))
+          (.onSuccess ls nil)
+          (catch Throwable e (.onError ls e)))
         (let [ii' (unchecked-dec-int ii)
               v (md/unwrap' (aget da ii'))]
           (if (md/deferred? v)
@@ -78,48 +87,47 @@
               (recur ii')))))))
   (onError
     [_ e]
-    (error'! r e)))
+    (.onError ls e)))
 
 
-(deftype CallbackListener [^clojure.lang.IFn callback]
-  manifold.deferred.IDeferredListener
-  (onSuccess [_ _] (callback))
-  (onError [_ _] (callback)))
+(defmacro chain-listener [next on-succ]
+  `(reify manifold.deferred.IDeferredListener
+     (onSuccess [_ _#] ~on-succ)
+     (onError [_ e#] (.onError ~next e#))))
 
 
-(defn await*
-  [^objects ds f]
+(defn await-all!
+  [^IDeferredListener ls, ^objects ds]
   (let [n (alength ds)]
     (case n
       0 nil
-      1 (md/chain' (aget ds 0) f)
-      2 (md/chain' (aget ds 1) (constantly (aget ds 0)) f)
-      3 (md/chain' (aget ds 2) (constantly (aget ds 1)) (constantly (aget ds 0)) f)
-      (let [r (ka-deferred)
-            a (AwaiterListener. (alength ds) ds r f)]
-        (.onSuccess a nil)
-        r))))
+      1 (maybe-listen'! (aget ds 0) ls)
+      2 (maybe-listen'! (aget ds 1) (chain-listener ls (maybe-listen'! (aget ds 0) ls)))
+      3 (maybe-listen'! (aget ds 2) (chain-listener ls (maybe-listen'! (aget ds 1) (chain-listener ls (maybe-listen'! (aget ds 0) ls)))))
+      (let [a (AwaiterListener. (alength ds) ds ls)] (.onSuccess a nil)))))
 
 
 (defmacro await-ary*
-  ([f]
-   `(~f nil))
-  ([f x1]
-   `(md/chain' ~x1 ~f))
-  ([f x1 x2]
-   `(md/chain' ~x2 (constantly ~x1) ~f))
-  ([f x1 x2 x3]
-   `(md/chain' ~x3 (constantly ~x2) (constantly ~x1) ~f))
-  ([f x1 x2 x3 & xs]
+  ([ls]
+   `(.onSuccess ~ls nil))
+  ([ls x1]
+   `(maybe-listen'! ~x1 ~ls))
+  ([ls x1 x2]
+   `(let [ls# ~ls]
+      (maybe-listen'! ~x2 (chain-listener ls# (await-ary* ls# ~x1)))))
+  ([ls x1 x2 x3]
+   `(let [ls# ~ls]
+      (maybe-listen'! ~x3 (chain-listener ls# (await-ary* ls# ~x1 ~x2)))))
+  ([ls x1 x2 x3 & xs]
    (let [xs (list* x1 x2 x3 xs)
          n (count xs)
          df (gensym)]
-     `(await*
+     `(await-all!
+       ~ls
        (let [~df (object-array ~n)]
          ~@(for [[i x] (map vector (range) xs)]
              `(aset ~df ~i ~x))
-         ~df)
-       ~f))))
+         ~df)))))
 
 
 (def ^:private cancellation-exception
