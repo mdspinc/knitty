@@ -3,9 +3,9 @@
   (:require [clojure.tools.logging :as log]
             [manifold.deferred :as md]
             [ag.knitty.deferred :as kd])
-  (:import [java.util.concurrent CancellationException TimeoutException CountDownLatch TimeUnit]
-           [java.util.concurrent.atomic AtomicReference]
-           [manifold.deferred IDeferred IMutableDeferred IDeferredListener]))
+  (:import [java.util.concurrent CancellationException TimeoutException]
+           [manifold.deferred IDeferred IMutableDeferred IDeferredListener]
+           [ag.knitty KaDeferred]))
 
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* :warn-on-boxed)
@@ -15,6 +15,9 @@
 (declare ka-deferred)
 (declare connect-two-deferreds)
 
+
+(KaDeferred/setExceptionLogFn
+ (fn log-ex [e] (log/error e "error in deferred handler")))
 
 (definline success'! [d x]
   `(let [^IMutableDeferred d# ~d] (.success d# ~x)))
@@ -62,34 +65,6 @@
 
 
 
-;; sequentially attaches itself as a listener
-(deftype AwaiterListener [^:volatile-mutable ^int i
-                          ^objects da
-                          ^IDeferredListener ls]
-
-  manifold.deferred.IDeferredListener
-  (onSuccess
-    [this _]
-    (loop [ii (int i)]  ;; desc order on purpose
-      (if (== ii 0)
-        (try
-          (.onSuccess ls nil)
-          (catch Throwable e (.onError ls e)))
-        (let [ii' (unchecked-dec-int ii)
-              v (md/unwrap' (aget da ii'))]
-          (if (md/deferred? v)
-            (do
-              (aset da ii' v)
-              (set! i ii')
-              (listen! v this))
-            (do
-              (aset da ii' nil)
-              (recur ii')))))))
-  (onError
-    [_ e]
-    (.onError ls e)))
-
-
 (defmacro chain-listener [next on-succ]
   `(reify manifold.deferred.IDeferredListener
      (onSuccess [_ _#] ~on-succ)
@@ -102,8 +77,7 @@
     (case n
       0 nil
       1 (maybe-listen'! (aget ds 0) ls)
-      2 (maybe-listen'! (aget ds 1) (chain-listener ls (maybe-listen'! (aget ds 0) ls)))
-      (let [a (AwaiterListener. (alength ds) ds ls)] (.onSuccess a nil)))))
+      (KaDeferred/awaitAll ls ds))))
 
 
 (defmacro await-ary*
@@ -157,121 +131,10 @@
     (md/add-listener! d' (RevokeListener. d c))
     d'))
 
-
-;; >> Knitty-aware deferred
-;; slimmer version of manifold.deferred.IMutableDeferred
-;; produces smaller stacktraces (just a nice touch) & works a tiny bit faster
-;; also custom deferred class allows us to introduce any custom field for MDM
-
-(deftype ListenerCons [listener next])
-(def ^:const empty-listener-cons (ListenerCons. nil nil))
-
-(deftype CountDownListener [^CountDownLatch cdl]
-  manifold.deferred.IDeferredListener
-  (onSuccess [_ _] (.countDown cdl))
-  (onError [_ _] (.countDown cdl)))
-
-(deftype KaListener [on-success on-error]
-  IDeferredListener
-  (onSuccess [_ x] (on-success x))
-  (onError [_ e] (on-error e)))
-
-
-(defmacro ^:private kd-deferred-deref
-  [this await-form timeout-form]
-  `(let [s# ~'state]
-     (if (== s# 1)
-       ~'val
-       (if (== s# 2)
-         (throw ~'val)
-         (let [cdl# (CountDownLatch. 1)]
-           (.addListener ~this (CountDownListener. cdl#))
-           (-> cdl# ~await-form)
-           (case ~'state
-             0 ~timeout-form
-             1 ~'val
-             2 (throw ~'val))
-           )))))
-
-(defmacro ^:private kd-deferred-onrealized
-  [_this on-okk on-err listener]
-  `(when-not
-    (loop [s# (.get ~'callbacks)]
-      (when s#
-        (or
-         (.compareAndSet ~'callbacks s# (ListenerCons. ~listener s#))
-         (recur (.get ~'callbacks)))))
-     (loop []
-       (let [s# ~'state]
-         (if (== s# 1)
-           (->> ~'val ~on-okk)
-           (if (== s# 2)
-             (->> ~'val ~on-err)
-             (recur)))))))
-
-(defmacro ^:private kd-deferred-succerr
-  [_this x ondo state]
-  `(when-let [css# (.getAndSet ~'callbacks nil)]
-     (set! ~'val ~x)
-     (set! ~'state (int ~state))
-     (loop [cs# css#]
-       (let [^IDeferredListener c# (.-listener ^ListenerCons cs#)]
-         (when-not (nil? c#)
-           (try
-             (-> c# ~ondo)
-             (catch Throwable e# (log/error e# "error in deferred handler")))
-           (recur (.-next ^ListenerCons cs#)))))
-     true))
-
-(deftype KaDeferred
-         [^AtomicReference callbacks       ;; nil - deferred is semi-realized
-          ^:volatile-mutable ^int state    ;; 1 ok, 2 err, 0 unrealized
-          ^:unsynchronized-mutable val
-          ^:volatile-mutable mta]
-
-  clojure.lang.IDeref
-  (deref [this] (kd-deferred-deref this (.await) (throw (TimeoutException.))))
-
-  clojure.lang.IBlockingDeref
-  (deref [this time timeout] (kd-deferred-deref this (.await time TimeUnit/MILLISECONDS) timeout))
-
-  clojure.lang.IPending
-  (isRealized [_] (not (== 0 state)))
-
-  clojure.lang.IFn
-  (invoke [this x] (when (if (instance? Throwable x) (.onError this x) (.onSuccess this x)) this))
-
-  clojure.lang.IReference
-  (meta [_] mta)
-  (resetMeta [_ m] (locking (set! mta m)))
-  (alterMeta [_ f args] (locking callbacks (set! mta (apply f mta args))))
-
-  manifold.deferred.IDeferred
-  (realized [_] (not (== 0 state)))
-  (onRealized [this on-okk on-err] (kd-deferred-onrealized this on-okk on-err (KaListener. on-okk on-err)))
-  (successValue [_ default] (if (== state 1) val default))
-  (errorValue [_ default] (if (== state 2) val default))
-
-  manifold.deferred.IDeferredListener
-  (onSuccess [this x] (.success this x))
-  (onError [this x]  (.error this x))
-
-  manifold.deferred.IMutableDeferred
-  (addListener [this t] (let [^IDeferredListener t t] (kd-deferred-onrealized this (.onSuccess t) (.onError t) t)))
-  (success [this x] (kd-deferred-succerr this x (.onSuccess x) 1))
-  (error [this x]   (kd-deferred-succerr this x (.onError x) 2))
-  (claim [_] nil)
-  (cancelListener [_ _l] (throw (UnsupportedOperationException.)))
-  (success [_ _x _token] (throw (UnsupportedOperationException.)))
-  (error [_ _x _token] (throw (UnsupportedOperationException.)))
-
-  ;;
-  )
-
 (definline ka-deferred
   "fast lock-free deferred (no executor/claim support)"
   []
-  `(KaDeferred. (AtomicReference. empty-listener-cons) 0 nil nil))
+  `(KaDeferred.))
 
 
 (defmethod print-method KaDeferred [y ^java.io.Writer w]
