@@ -292,31 +292,30 @@
       (kd/error'! mdmd ew))))
 
 
-(defn connect-result-mdm [^YankCtx ctx ykey result mdm-deferred maybe-real-result]
-
-  (if (md/deferred? result)
+(defmacro connect-result-mdm [ctx ykey result mdm-deferred maybe-real-result]
+  `(if (md/deferred? ~result)
     (do
 
       ;; revokation mdm-deferred -> result
-      (when maybe-real-result
-        (let [mrr @maybe-real-result]
-          (if (identical? ::none mrr)
+      (when ~maybe-real-result
+        (let [mrr# @~maybe-real-result]
+          (if (identical? ::none mrr#)
             ;; not yet ready
-            (kd/listen! mdm-deferred (RevokationListener. maybe-real-result))
+            (kd/listen! ~mdm-deferred (RevokationListener. ~maybe-real-result))
             ;; ready - revoke only if result if revokable deferred
-            (when (instance? manifold.deferred.IMutableDeferred mrr)
-              (kd/connect-two-deferreds mdm-deferred mrr)))))
+            (when (instance? manifold.deferred.IMutableDeferred mrr#)
+              (kd/connect-two-deferreds ~mdm-deferred mrr#)))))
 
       ;; connect result -> mdm-deferred
-      (kd/listen! result (ConnectListener. ctx ykey mdm-deferred))
-
-      mdm-deferred)
-
+      (kd/listen! ~result (ConnectListener. ~ctx ~ykey ~mdm-deferred))
+      ~mdm-deferred
+      )
     (do
       ;; no revokation for sync results
-      (ctx-tracer-> ctx t/trace-finish ykey result nil false)
-      (kd/success'! mdm-deferred result)
-      result)))
+      (ctx-tracer-> ~ctx t/trace-finish ~ykey ~result nil false)
+      (kd/success'! ~mdm-deferred ~result)
+      ~result
+      )))
 
 
 (defn connect-error-mdm [^YankCtx ctx ykey error mdm-deferred maybe-real-result]
@@ -340,7 +339,6 @@
 
         ctx (with-meta '_yank_ctx {:tag (str `YankCtx)})
         reald  (gensym "rd")
-        df-array (with-meta (gensym "dfs") {:tag "[Ljava.lang.Object;"})
         kid (mdm/keyword->intid ykey)
         fnn #(-> ykey name (str %) symbol)
 
@@ -428,8 +426,7 @@
                               (do
                                 (ctx-tracer-> ~ctx t/trace-call ~ykey)
                                 (~coerce-deferred (~the-fnv ~@fn-args))))]
-                      (connect-result-mdm ~ctx ~ykey x# d# ~reald)
-                      x#)))
+                      (connect-result-mdm ~ctx ~ykey x# d# ~reald))))
 
                 (catch Throwable e#
                   (connect-error-mdm ~ctx ~ykey e# d# ~reald))))))))))
@@ -447,7 +444,7 @@
 
   (defn emit-yarn-ref-gtr [ykey orig-ykey]
     (let [kid (mdm/keyword->intid ykey)]
-      `(fn [ctx#]
+      `(fn [^YankCtx ctx#]
          (let [kv# (mdm/mdm-fetch! (.-mdm ctx#) ~ykey ~kid)
                d# (mdm/fetch-result-value kv#)]
            (if-not (mdm/fetch-result-claimed? kv#)
