@@ -103,7 +103,6 @@
       0 nil
       1 (maybe-listen'! (aget ds 0) ls)
       2 (maybe-listen'! (aget ds 1) (chain-listener ls (maybe-listen'! (aget ds 0) ls)))
-      3 (maybe-listen'! (aget ds 2) (chain-listener ls (maybe-listen'! (aget ds 1) (chain-listener ls (maybe-listen'! (aget ds 0) ls)))))
       (let [a (AwaiterListener. (alength ds) ds ls)] (.onSuccess a nil)))))
 
 
@@ -114,12 +113,9 @@
    `(maybe-listen'! ~x1 ~ls))
   ([ls x1 x2]
    `(let [ls# ~ls]
-      (maybe-listen'! ~x2 (chain-listener ls# (await-ary* ls# ~x1)))))
-  ([ls x1 x2 x3]
-   `(let [ls# ~ls]
-      (maybe-listen'! ~x3 (chain-listener ls# (await-ary* ls# ~x1 ~x2)))))
-  ([ls x1 x2 x3 & xs]
-   (let [xs (list* x1 x2 x3 xs)
+      (maybe-listen'! ~x2 (chain-listener ls# (maybe-listen'! ~x1 ls#)))))
+  ([ls x1 x2 & xs]
+   (let [xs (list* x1 x2 xs)
          n (count xs)
          df (gensym)]
      `(await-all!
