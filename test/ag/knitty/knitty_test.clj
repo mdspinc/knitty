@@ -231,25 +231,26 @@
 
    (defyarn count1 {c cnt}
      (md/future
-       (Thread/sleep 10)
+       (Thread/sleep 20)
        (swap! c inc)))
 
    (defyarn count2 {c cnt, _ count1}
      (md/future
-       (Thread/sleep 10)
+       (Thread/sleep 20)
        (swap! c inc)))
 
    (defyarn count3 {c cnt, _ count2}
      (md/future
-       (Thread/sleep 10)
+       (Thread/sleep 20)
        (swap! c inc)))
 
    (let [a (atom 0)]
      (is (= 3 (-> (yank {cnt a} [count3]) deref cnt deref))))
 
    (let [a (atom 0)]
-     (is (= ::t @(-> (doyank! {cnt a} {x count3} x) (md/timeout! 15 ::t))))
-     (is (= 1 @a))))
+     (is (= ::t @(-> (doyank! {cnt a} {x count3} x) (md/timeout! 30 ::t))))
+     (Thread/sleep 50)
+     (is (= 2 @a))))
 
   )
 
