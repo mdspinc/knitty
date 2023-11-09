@@ -100,7 +100,7 @@
 
 
 (deftype YankCtx
-         [^ag.knitty.mdm.IMutableDeferredMap mdm
+         [^ag.knitty.MDM mdm
           ^ag.knitty.impl.Registry registry
           ^ag.knitty.trace.Tracer tracer])
 
@@ -125,7 +125,7 @@
 
 (defn yarn-get [^YankCtx ctx ^clojure.lang.Keyword ykey]
   (let [kid (mdm/keyword->intid ykey)
-        v (mdm/mdm-get! (.mdm ctx) ykey kid)]
+        v (mdm/mdm-get! (.mdm ctx) kid)]
     (if (mdm/none? v)
       ((registry-yankfn' (.-registry ctx) ykey kid) ctx)
       v)))
@@ -134,7 +134,7 @@
 (defmacro yarn-get-sync [yk ykey ctx]
   `(do
      (ctx-tracer-> ~ctx t/trace-dep ~yk ~ykey)
-     (let [v# (mdm/mdm-get! (.-mdm ~ctx) ~ykey ~(mdm/keyword->intid ykey))]
+     (let [v# (mdm/mdm-get! (.-mdm ~ctx) ~(mdm/keyword->intid ykey))]
        (if (mdm/none? v#)
          ((get-yank-fn ~ctx ~ykey) ~ctx)
          v#))))
@@ -144,7 +144,7 @@
   `(do
      (ctx-tracer-> ~ctx t/trace-dep ~yk ~ykey)
      (kd/as-deferred
-      (let [v# (mdm/mdm-get! (.-mdm ~ctx) ~ykey ~(mdm/keyword->intid ykey))]
+      (let [v# (mdm/mdm-get! (.-mdm ~ctx) ~(mdm/keyword->intid ykey))]
         (if (mdm/none? v#)
           ((get-yank-fn ~ctx ~ykey) ~ctx)
           v#)))))
@@ -166,7 +166,7 @@
           (do
             (try
               (ctx-tracer-> ctx t/trace-dep yk ykey)
-              (kd/connect-to-ka-deferred (let [r (mdm/mdm-get! (.-mdm ctx) ykey ykeyi)]
+              (kd/connect-to-ka-deferred (let [r (mdm/mdm-get! (.-mdm ctx) ykeyi)]
                                            (if (mdm/none? r)
                                              ((registry-yankfn' (.-registry ctx) ykey ykeyi) ctx)
                                              r))
@@ -197,7 +197,7 @@
       (do
         (ctx-tracer-> ctx t/trace-dep yk k)
         (kd/as-deferred
-         (let [v (mdm/mdm-get! (.-mdm ctx) k i)]
+         (let [v (mdm/mdm-get! (.-mdm ctx) i)]
            (if (mdm/none? v)
              ((registry-yankfn' (.-registry ctx) k i) ctx)
              v))))
@@ -267,70 +267,32 @@
                  ex)))))
 
 
-(deftype RevokationListener [^clojure.lang.Volatile dref]
+(deftype TraceListener [^YankCtx ctx, ykey]
   manifold.deferred.IDeferredListener
   (onSuccess [_ x]
-    (let [d @dref]
-      (when (instance? manifold.deferred.IMutableDeferred d)
-        (kd/success'! d x))))
-  (onError [_ e]
-    (let [d @dref]
-      (when (instance? manifold.deferred.IMutableDeferred d)
-        (kd/error'! d e)))))
-
-
-(deftype ConnectListener [^YankCtx ctx
-                          ykey
-                          ^manifold.deferred.IMutableDeferred mdmd]
-  manifold.deferred.IDeferredListener
-  (onSuccess [_ x]
-    (ctx-tracer-> ctx t/trace-finish ykey x nil true)
-    (kd/success'! mdmd x))
+    (ctx-tracer-> ctx t/trace-finish ykey x nil true))
   (onError [_ x]
-    (let [ew (wrap-yarn-exception ykey x)]
-      (ctx-tracer-> ctx t/trace-finish ykey nil ew true)
-      (kd/error'! mdmd ew))))
+    (ctx-tracer-> ctx t/trace-finish ykey nil x true)))
 
 
-(defmacro connect-result-mdm [ctx ykey result mdm-deferred maybe-real-result]
+(defmacro connect-result-mdm [ctx ykey result mdm-deferred]
   `(if (md/deferred? ~result)
-    (do
-
-      ;; revokation mdm-deferred -> result
-      (when ~maybe-real-result
-        (let [mrr# @~maybe-real-result]
-          (if (identical? ::none mrr#)
-            ;; not yet ready
-            (kd/listen! ~mdm-deferred (RevokationListener. ~maybe-real-result))
-            ;; ready - revoke only if result if revokable deferred
-            (when (instance? manifold.deferred.IMutableDeferred mrr#)
-              (kd/connect-two-deferreds ~mdm-deferred mrr#)))))
-
-      ;; connect result -> mdm-deferred
-      (kd/listen! ~result (ConnectListener. ~ctx ~ykey ~mdm-deferred))
-      ~mdm-deferred
-      )
-    (do
-      ;; no revokation for sync results
-      (ctx-tracer-> ~ctx t/trace-finish ~ykey ~result nil false)
-      (kd/success'! ~mdm-deferred ~result)
-      ~result
-      )))
+     (do
+       (kd/listen! ~result ~mdm-deferred)
+       (when (.-tracer ~ctx)
+         (kd/listen! ~mdm-deferred (TraceListener. ~ctx ~ykey)))
+       ~mdm-deferred)
+     (do
+       (ctx-tracer-> ~ctx t/trace-finish ~ykey ~result nil false)
+       (kd/success'! ~mdm-deferred ~result)
+       ~result)))
 
 
-(defn connect-error-mdm [^YankCtx ctx ykey error mdm-deferred maybe-real-result]
-  (let [ew (wrap-yarn-exception ykey error)]
-
-    ;; try to revoke
-    (when maybe-real-result
-      (when-let [d @maybe-real-result]
-        (when (instance? manifold.deferred.IMutableDeferred d)
-          (kd/error'! d error))))
-
-    (ctx-tracer-> ctx t/trace-finish ykey nil ew false)
-
-    (kd/error'! mdm-deferred ew)
-    mdm-deferred))
+(defmacro connect-error-mdm [ctx ykey error mdm-deferred]
+  `(let [ew# (wrap-yarn-exception ~ykey ~error)]
+    (ctx-tracer-> ~ctx t/trace-finish ~ykey nil ew# false)
+    (kd/error'! ~mdm-deferred ew#)
+    ~mdm-deferred))
 
 
 (defn emit-yank-fns-impl
@@ -338,7 +300,7 @@
   (let [{:keys [executor norevoke]} yarn-meta
 
         ctx (with-meta '_yank_ctx {:tag (str `YankCtx)})
-        reald  (gensym "rd")
+        kad (with-meta '_yank_kad {:tag (str `ag.knitty.KaDeferred)})
         kid (mdm/keyword->intid ykey)
         fnn #(-> ykey name (str %) symbol)
 
@@ -376,6 +338,8 @@
                     (conj (vec a) (vec b)))
                   deps)
 
+        revoke (if norevoke [`comment] ['.setRevokee kad])
+
         all-deps-tr (into
                      []
                      (comp cat (distinct))
@@ -386,7 +350,7 @@
                          [[dk pt]])))]
 
     `(fn ~(fnn "--yank") [~ctx]
-       (let [kv# (mdm/mdm-fetch! (.-mdm ~ctx) ~ykey ~kid)
+       (let [kv# (mdm/mdm-fetch! (.-mdm ~ctx) ~kid)
              d# (mdm/fetch-result-value kv#)]
          (if-not (mdm/fetch-result-claimed? kv#)
 
@@ -398,7 +362,8 @@
             ~executor
 
             (ctx-tracer-> ~ctx t/trace-start  ~ykey :yarn ~all-deps-tr)
-            (let [~@(if norevoke [] [reald `(volatile! ::none)])]
+            (let [~kad d#]
+              (.setErrorMod ~kad (fn ~(fnn "--wrap-err") [e#] (wrap-yarn-exception ~ykey e#)))
               (try ;; d# is alsways deffered
                 (let [~@yank-deps]
                   (if ~some-syncs-unresolved
@@ -410,26 +375,25 @@
                          (onSuccess
                            [_# _#]
                            (let [x# (let [~@deref-syncs]
-                                      (~@(if norevoke `[do] [`vreset! reald])
-                                       (do
-                                         (ctx-tracer-> ~ctx t/trace-call ~ykey)
-                                         (~coerce-deferred (~the-fnv ~@fn-args)))))]
-                             (connect-result-mdm ~ctx ~ykey x# d# ~reald)))
+                                        (ctx-tracer-> ~ctx t/trace-call ~ykey)
+                                        (~coerce-deferred (~the-fnv ~@fn-args)))]
+                             (~@revoke x#)
+                             (connect-result-mdm ~ctx ~ykey x# ~kad)))
                          (onError
                            [_ e#]
-                           (connect-error-mdm ~ctx ~ykey e# d# ~reald)))
+                           (connect-error-mdm ~ctx ~ykey e# ~kad)))
 
                        ~@sync-deps)
-                      d#)
+                      ~kad)
 
-                    (let [x# (~@(if norevoke `[do] [`vreset! reald])
-                              (do
-                                (ctx-tracer-> ~ctx t/trace-call ~ykey)
-                                (~coerce-deferred (~the-fnv ~@fn-args))))]
-                      (connect-result-mdm ~ctx ~ykey x# d# ~reald))))
+                    (let [x# (do
+                               (ctx-tracer-> ~ctx t/trace-call ~ykey)
+                               (~coerce-deferred (~the-fnv ~@fn-args)))]
+                      (~@revoke x#)
+                      (connect-result-mdm ~ctx ~ykey x# ~kad))))
 
                 (catch Throwable e#
-                  (connect-error-mdm ~ctx ~ykey e# d# ~reald))))))))))
+                  (connect-error-mdm ~ctx ~ykey e# ~kad))))))))))
 
 
   (defn emit-yank-fns [thefn ykey bind]
@@ -445,7 +409,7 @@
   (defn emit-yarn-ref-gtr [ykey orig-ykey]
     (let [kid (mdm/keyword->intid ykey)]
       `(fn [^YankCtx ctx#]
-         (let [kv# (mdm/mdm-fetch! (.-mdm ctx#) ~ykey ~kid)
+         (let [kv# (mdm/mdm-fetch! (.-mdm ctx#) ~kid)
                d# (mdm/fetch-result-value kv#)]
            (if-not (mdm/fetch-result-claimed? kv#)
              (kd/unwrap1' d#)
@@ -454,9 +418,9 @@
                (try
                  (ctx-tracer-> ctx# t/trace-call ~ykey)
                  (let [x# (yarn-get-sync ~ykey ~orig-ykey ctx#)]
-                   (connect-result-mdm ctx# ~ykey x# d# nil))
+                   (connect-result-mdm ctx# ~ykey x# d#))
                  (catch Throwable e#
-                   (connect-error-mdm ctx# ~ykey e# d# nil)))))))))
+                   (connect-error-mdm ctx# ~ykey e# d#)))))))))
 
 
   (defn- grab-yarn-bindmap-deps [bm]

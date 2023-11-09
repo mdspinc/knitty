@@ -1,7 +1,8 @@
 (ns ag.knitty.trace
   (:require
    [clojure.set :as set]
-   [manifold.deferred :as md]))
+   [manifold.deferred :as md])
+  (:import [java.util.concurrent.atomic AtomicReference]))
 
 
 (set! *warn-on-reflection* true)
@@ -15,10 +16,18 @@
   (capture-trace! [_]))
 
 
+(deftype TraceLogCons
+           [yarn
+            event
+            value
+            next])
+
+
 (defrecord TraceLog
            [yarn
             event
             value])
+
 
 (defrecord Trace
            [at
@@ -27,6 +36,7 @@
             poy
             yarns
             tracelog])
+
 
 (defmethod print-method Trace
   [x ^java.io.Writer w]
@@ -44,52 +54,58 @@
   `(System/nanoTime))
 
 
-(defn- aconj-tlog [a yarn event value]
-  (let [t (TraceLog. yarn event value)]
-    (swap! a #(when % (cons t %)))))
+(defn- aconj-tlog [^AtomicReference a yarn event value]
+  (loop [g (.get a)]
+    (when-not (.compareAndSet a g (TraceLogCons. yarn event value g))
+     (recur (.get a)))))
 
-(deftype TracerImpl [store extra]
+
+(defn tracelog->seq [^TraceLogCons t]
+  (lazy-seq
+   (when t
+     (cons (TraceLog. (.-yarn t) (.-event t) (.-value t))
+           (tracelog->seq (.-next t))))))
+
+
+(deftype TracerImpl [^AtomicReference store extra]
 
   Tracer
   (trace-start
-   [_ yk kind deps]
-   (aconj-tlog store yk ::trace-start (now))
-   (aconj-tlog store yk ::trace-kind kind)
-   (aconj-tlog store yk ::trace-all-deps deps)
-   )
+    [_ yk kind deps]
+    (aconj-tlog store yk ::trace-start (now))
+    (aconj-tlog store yk ::trace-kind kind)
+    (aconj-tlog store yk ::trace-all-deps deps))
 
   (trace-call
-   [_ yk]
-   (aconj-tlog store yk ::trace-call (now))
-   (aconj-tlog store yk ::trace-thread (.getName (Thread/currentThread))))
+    [_ yk]
+    (aconj-tlog store yk ::trace-call (now))
+    (aconj-tlog store yk ::trace-thread (.getName (Thread/currentThread))))
 
   (trace-dep [_ yk dep]
     (aconj-tlog store yk ::trace-dep [dep (now)]))
 
   (trace-finish
-   [_ yk value error deferred]
-   (when deferred
-     (aconj-tlog store yk ::trace-deferred true))
-   (when value
-     (aconj-tlog store yk ::trace-value value))
-   (when error
-     (aconj-tlog store yk ::trace-error error))
-   (aconj-tlog store yk ::trace-finish (now)))
+    [_ yk value error deferred]
+    (when deferred
+      (aconj-tlog store yk ::trace-deferred true))
+    (when value
+      (aconj-tlog store yk ::trace-value value))
+    (when error
+      (aconj-tlog store yk ::trace-error error))
+    (aconj-tlog store yk ::trace-finish (now)))
 
   (capture-trace!
-   [_]
-   (let [s @store]
-     (reset! store nil)
-     (map->Trace
-      (assoc extra
-             :done-at (now)
-             :tracelog s)))))
+    [_]
+    (map->Trace
+     (assoc extra
+            :done-at (now)
+            :tracelog (tracelog->seq (.getAndSet store nil))))))
 
 
 (def ^:private yank-cnt (atom 0))
 
 (defn create-tracer [poy yarns]
-  (let [store (atom ())
+  (let [store (AtomicReference.)
         extra {:at (java.util.Date.)
                :yankid (swap! yank-cnt inc)
                :base-at (now)
