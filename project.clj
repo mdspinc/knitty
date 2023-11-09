@@ -9,8 +9,8 @@
   :source-paths ["src/main/clojure"]
   :java-source-paths ["src/main/java"]
   :clean-non-project-classes true
-  :aot [#"hack"]
-  :javac-options ["-target" "17" "-source" "17" "-Xlint:-options"]
+  :aot [#"no-aot-really"]
+  :javac-options ["-target" "1.8" "-source" "1.8"]
   :repl-options {:init-ns ag.knitty.core}
   :plugins [[io.github.borkdude/lein-lein2deps "0.1.0"]]
   :profiles {:precomp {:aot ^:replace [manifold.deferred]
@@ -19,5 +19,4 @@
   :prep-tasks [["lein2deps" "--write-file" "deps.edn" "--print" "false"]
                ["with-profile" "precomp" "compile"]
                ["javac"]
-               ["compile"]]
-  )
+               ["compile"]])
