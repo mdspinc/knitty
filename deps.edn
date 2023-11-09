@@ -1,7 +1,7 @@
 {:paths ["src/main/clojure" "resources" "target/classes"],
  :deps
  {org.clojure/clojure {:mvn/version "1.11.1"},
-  manifold/manifold {:mvn/version "0.2.4"},
+  manifold/manifold {:mvn/version "0.4.1"},
   org.hdrhistogram/HdrHistogram {:mvn/version "2.1.12"},
   macroz/tangle {:mvn/version "0.2.2"}},
  :aliases
@@ -13,6 +13,6 @@
    :lein2deps/compile-java
    {:src-dirs ["src/main/java"],
     :class-dir "target/classes",
-    :javac-opts ["-target" "17" "-source" "17" "-Xlint:-options"]}}},
+    :javac-opts ["-target" "1.8" "-source" "1.8"]}}},
  :deps/prep-lib
  {:ensure "target/classes", :alias :lein2deps, :fn compile-java}}
