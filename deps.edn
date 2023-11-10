@@ -13,6 +13,6 @@
    :lein2deps/compile-java
    {:src-dirs ["src/main/java"],
     :class-dir "target/classes",
-    :javac-opts ["-target" "1.8" "-source" "1.8"]}}},
+    :javac-opts ["-target" "11" "-source" "11"]}}},
  :deps/prep-lib
  {:ensure "target/classes", :alias :lein2deps, :fn compile-java}}

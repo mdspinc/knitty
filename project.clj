@@ -10,7 +10,7 @@
   :java-source-paths ["src/main/java"]
   :clean-non-project-classes true
   :aot [#"no-aot-really"]
-  :javac-options ["-target" "17" "-source" "17"]
+  :javac-options ["-target" "11" "-source" "11"]
   :repl-options {:init-ns ag.knitty.core}
   :plugins [[io.github.borkdude/lein-lein2deps "0.1.0"]]
   :profiles {:precomp {:aot ^:replace [manifold.deferred]
