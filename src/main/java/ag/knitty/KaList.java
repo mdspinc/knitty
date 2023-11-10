@@ -30,7 +30,7 @@ public final class KaList<T> implements Iterable<T> {
     public T next() {
 
       Object res;
-      while ((res = LSA.getVolatile(this.node.lss, idx)) == null);
+      while ((res = LSA.getVolatile(this.node.lss, idx)) == null) Thread.onSpinWait();;
 
       // advance idx
       if (++idx >= this.nsz) {

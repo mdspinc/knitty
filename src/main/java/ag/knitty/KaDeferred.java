@@ -260,7 +260,7 @@ public final class KaDeferred
       switch (state) {
         case STATE_SUCC: return ls.onSuccess(value);
         case STATE_ERRR: return ls.onError(value);
-        case STATE_TRNS: Thread.yield(); continue; // busy wait
+        case STATE_TRNS: Thread.onSpinWait(); continue;
         case STATE_INIT:
           KaList<IDeferredListener> lsc = this.lsc;
           if (lsc == null) {
@@ -289,7 +289,7 @@ public final class KaDeferred
         switch (state) {
           case STATE_SUCC: r.success(value); return;
           case STATE_ERRR: r.error(value); return;
-          case STATE_TRNS: Thread.yield(); continue; // busy wait
+          case STATE_TRNS: Thread.onSpinWait(); continue;
           case STATE_INIT: return;
           default: throw new IllegalStateException();
         }
