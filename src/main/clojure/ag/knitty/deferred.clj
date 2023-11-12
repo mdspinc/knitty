@@ -75,7 +75,7 @@
   [^IDeferredListener ls, ^objects ds]
   (let [n (alength ds)]
     (case n
-      0 nil
+      0 (.onSuccess ls nil)
       1 (maybe-listen'! (aget ds 0) ls)
       (KaDeferred/awaitAll ls ds))))
 

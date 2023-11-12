@@ -12,11 +12,19 @@
   :aot [#"no-aot-really"]
   :javac-options ["-target" "11" "-source" "11"]
   :repl-options {:init-ns ag.knitty.core}
-  :plugins [[io.github.borkdude/lein-lein2deps "0.1.0"]]
   :profiles {:precomp {:aot ^:replace [manifold.deferred]
                        :clean-non-project-classes false
-                       :prep-tasks ^:replace ["compile"]}}
-  :prep-tasks [["lein2deps" "--write-file" "deps.edn" "--print" "false"]
-               ["with-profile" "precomp" "compile"]
+                       :prep-tasks ^:replace ["compile"]}
+             :dev {:dependencies [[criterium "0.4.6"]]
+                   :global-vars {*warn-on-reflection* true
+                                 ;;*unchecked-math* :warn-on-boxed
+                                 }}}
+  :prep-tasks [["with-profile" "precomp" "compile"]
                ["javac"]
-               ["compile"]])
+               ["compile"]]
+  :test-selectors {:default #(not
+                              (some #{:benchmark :stress}
+                                    (cons (:tag %) (keys %))))
+                   :benchmark :benchmark
+                   :stress #(or (:stress %) (= :stress (:tag %)))
+                   :all (constantly true)})
