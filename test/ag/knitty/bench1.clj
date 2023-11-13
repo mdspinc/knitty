@@ -1,87 +1,162 @@
 (ns ag.knitty.bench1
-  (:require
-   [clojure.test :as t :refer [deftest is testing]]
-   [ag.knitty.core :refer [defyarn yank]]
-   [manifold.deferred :as md]
-   [criterium.core :as cc]))
+  (:require [ag.knitty.core :refer [yank]]
+            [ag.knitty.deferred :as kd]
+            [ag.knitty.test-util :refer :all]
+            [clojure.test :as t :refer [deftest testing use-fixtures]]
+            [manifold.debug :as debug]
+            [manifold.deferred :as md]
+            [manifold.deferred :as d]))
 
 
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* true)
 
 
-(defn sample-few-deps [c]
-  (let [r (java.util.Random. (hash-ordered-coll c))
-        p (/ 10 (max 1 (count c)))]
-    (filter (fn [_] (< (.nextDouble r) p)) c)))
+(use-fixtures :once (report-benchmark-fixture))
+(use-fixtures :each (clear-known-yarns-fixture))
 
 
-(defn node-symbol [i]
-  (symbol (format "node-%04d" i)))
+(deftest ^:benchmark bench-deferred
+
+  (binding [debug/*dropped-error-logging-enabled?* false]
+    (doseq [[t create-d] [;;
+                          ;; [:manifold #(d/deferred nil)]
+                          [:knitty kd/ka-deferred]]]
+      (testing t
+        (bench :create
+               (create-d))
+        (bench :listener
+               (let [d (create-d)]
+                 (d/add-listener! d (d/listener (fn [_]) nil))
+                 (d/success! d 1)))
+        (bench :add-listener-3
+               (let [d (create-d)]
+                 (d/add-listener! d (d/listener (fn [_]) nil))
+                 (d/add-listener! d (d/listener (fn [_]) nil))
+                 (d/add-listener! d (d/listener (fn [_]) nil))
+                 (d/success! d 1)))
+        (bench :add-listener-10
+               (let [d (create-d)]
+                 (dotimes [_ 10]
+                   (d/add-listener! d (d/listener (fn [_]) nil)))
+                 (d/success! d 1)))
+        (bench :add-listener-33
+               (let [d (create-d)]
+                 (dotimes [_ 33]
+                   (d/add-listener! d (d/listener (fn [_]) nil)))
+                 (d/success! d 1)))
+        (bench :suc-add-listener
+               (let [d (create-d)]
+                 (d/success! d 1)
+                 (d/add-listener! d (d/listener (fn [_]) nil))))
+        (bench :success-get
+               (let [d (create-d)]
+                 (d/success! d 1)
+                 (d/success-value d 2)))
+        (bench :success-deref
+               (let [d (create-d)]
+                 (d/success! d 1)
+                 @d)))))
+  )
 
 
-(defn node-keyword [i]
-  (keyword (name (ns-name *ns*)) (format "node-%04d" i)))
+(defn pyank [ids]
+  #(yank % ids))
 
 
-(defn mod-or-future [x y]
-  (let [m (mod x y)]
-    (if (zero? m)
-      (md/future m)
-      m)))
+(defn linear-sync-deps [c]
+  (take-while
+   nat-int?
+   (nnext (reductions (fn [a x] (- a x)) c (range)))))
 
 
-(defonce init-graph1k
-  (delay
-    (println "compile 1k nodes...")
-    (eval
-     (list* `do
-            (concat
-             (for [i (range 0 200)]
-               (let [node-xxxx (node-symbol i)
-                     deps (map node-symbol (sample-few-deps (range 0 i)))]
-                 `(defyarn ~node-xxxx
-                    ~(zipmap deps deps)
-                    (mod-or-future (+ 1 ~@deps) 5))))
-             (for [i (range 200 400)]
-               (let [node-xxxx (node-symbol i)
-                     deps (map node-symbol (sample-few-deps (range (- i 50) i)))]
-                 `(defyarn ~node-xxxx
-                    ~(zipmap deps deps)
-                    (mod-or-future (+ 1 ~@deps) 5)))))))
-    (println "1k nodes had been compiled")))
+(defn exp-sync-deps [c]
+  (map #(- c %)
+       (butlast
+        (take-while
+         nat-int?
+         (iterate #(min (dec %) (int (* % 0.71))) c)))))
 
 
-(defmacro do-bench [& body]
-  `(do
-     (println (t/testing-contexts-str) " - run bench...")
-     (cc/quick-bench
-      ~@body)))
+(defn- run-benchs [nodes]
+  (let [ps (map #(nth nodes %) (range 0 (count nodes) 20))]
+
+    (bench :yank-last
+           @(yank {} [(last nodes)]))
+    (bench :yank-all
+           @(yank {} nodes))
+    (bench :seq-yank
+           @(md/chain'
+             (reduce #(md/chain' %1 (pyank [%2])) {} ps)
+             (pyank [(first nodes) (last nodes)])))))
 
 
-(deftest ^:benchmark graph-test-1k
+(deftest ^:benchmark sync-futures-50
+  (build-yarns-graph
+   :ids (range 50)
+   :prefix :node
+   :deps linear-sync-deps
+   :emit-body (fn [i & xs] `(mfut (reduce unchecked-add ~i [~@xs]) 3)))
+  (run-benchs (nodes-range :node 50)))
 
-  @init-graph1k
-  (println "run benchmarks...")
 
-  (let [target-keys (mapv node-keyword (range 1 90))]
+(deftest ^:benchmark sync-futures-50-exp
+  (build-yarns-graph
+   :ids (range 50)
+   :prefix :node
+   :deps exp-sync-deps
+   :emit-body (fn [i & xs] `(mfut (reduce unchecked-add ~i [~@xs]) 3)))
+  (run-benchs (nodes-range :node 50)))
 
-    (testing "tracing disabled"
-      (binding [ag.knitty.core/*tracing* false]
-        (do-bench @(md/chain (yank {} target-keys) second count))))
 
-    #_(testing "tracing enabled"
-      (binding [ag.knitty.core/*tracing* false]
-        (cc/quick-bench
-         @(md/chain (yank {} target-keys) second count))))))
+(deftest ^:benchmark sync-futures-200
+  (build-yarns-graph
+   :ids (range 200)
+   :prefix :node
+   :deps linear-sync-deps
+   :emit-body (fn [i & xs] `(mfut (reduce unchecked-add ~i [~@xs]) 20)))
+  (run-benchs (nodes-range :node 200)))
 
+
+(deftest ^:benchmark g100-by-deptype
+  (doseq [[nf f] [[:syn `do]
+                  [:fut `md/future]]]
+    (testing nf
+      (doseq [tt [:sync :defer :lazy]]
+        (clear-known-yarns!)
+        (build-yarns-graph
+         :ids (range 100)
+         :prefix :node
+         :deps #(map vector (repeat tt) (exp-sync-deps %))
+         :emit-body (fn [i & xs] `(~f
+                                    (reduce
+                                     (fn [a# ~'x]
+                                       (d/chain
+                                        ~(if (= :lazy tt) '@x 'x))
+                                       #(unchecked-add a# %))
+                                     ~i
+                                     [~@xs]))))
+        (bench tt @(yank {} [::node99]))))))
+
+
+(deftest ^:benchmark sync-nofutures-200
+  (build-yarns-graph
+   :ids (range 200)
+   :prefix :node
+   :deps linear-sync-deps
+   :emit-body (fn [i & xs] `(reduce unchecked-add ~i [~@xs])))
+  (run-benchs (nodes-range :node 200)))
 
 
 (deftest ^:stress check-big-graph
 
-  @init-graph1k
-  (dotimes [i 400]
-    (println ">>" i)
-    (let [target-keys (mapv node-keyword (range 1 i))]
+  (build-yarns-graph
+   :ids (range 1000)
+   :deps linear-sync-deps
+   :emit-body (fn [i & xs] `(mfut (reduce unchecked-add ~i [~@xs]) 10)))
+
+  (dotimes [i 100]
+    (println ".. " i " / 100")
+    (dotimes [_ 1000]
       (binding [ag.knitty.core/*tracing* false]
-        @(md/chain (yank {} target-keys) second count)))))
+        @(yank {} (random-sample 0.01 (nodes-range :node 0 500)))))))

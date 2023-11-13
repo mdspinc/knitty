@@ -19,7 +19,7 @@ public final class MDM {
     private static Object KLOCK = new Object();
     private static Keyword[] KSA = new Keyword[1024];
     private static int KID;
-    private static final Map<Keyword, Integer> KSM = new ConcurrentHashMap<>(1024);
+    private static Map<Keyword, Integer> KSM = new ConcurrentHashMap<>(1024);
 
     private static final CancellationException CANCEL_EX = createCancelEx("mdm is cancelled");
     private static final CancellationException FROZEN_EX = createCancelEx("mdm is frozen");
@@ -60,6 +60,14 @@ public final class MDM {
                 KSA[res] = k;
                 return res;
             }
+        }
+    }
+
+    public static void resetKeywordsPoolForTests() {
+        synchronized (KLOCK) {
+            KID = 0;
+            KSA = new Keyword[1024];
+            KSM = new ConcurrentHashMap<>(1024);
         }
     }
 
