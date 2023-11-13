@@ -128,15 +128,19 @@
          :ids (range 100)
          :prefix :node
          :deps #(map vector (repeat tt) (exp-sync-deps %))
-         :emit-body (fn [i & xs] `(~f
-                                    (reduce
-                                     (fn [a# ~'x]
-                                       (d/chain
-                                        ~(if (= :lazy tt) '@x 'x))
-                                       #(unchecked-add a# %))
-                                     ~i
-                                     [~@xs]))))
-        (bench tt @(yank {} [::node99]))))))
+         :emit-body (fn [i & xs]
+                      `(~f
+                        (reduce
+                         (fn [a# ~'x]
+                           (d/chain'
+                            a#
+                            (fn [aa#]
+                              (d/chain'
+                               ~(if (= :lazy tt) `(deref ~'x) 'x)
+                               (fn [xx#] (unchecked-add aa# xx#))))))
+                         ~i
+                         [~@xs]))))
+        (bench tt (::node99 @(yank {} [::node99])))))))
 
 
 (deftest ^:benchmark sync-nofutures-200
