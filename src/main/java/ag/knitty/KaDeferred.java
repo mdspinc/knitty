@@ -191,10 +191,10 @@ public final class KaDeferred
   private static final int STATE_INIT = 0;
   private static final int STATE_TRNS = 1;
   private static final int STATE_SUCC = 2;
-  private static final int STATE_ERRR = 4;
+  private static final int STATE_ERRR = 3;
   private static final int STATE_READY_MASK = STATE_SUCC | STATE_ERRR;
 
-  private static final int KALIST_INIT_CAPACITY = 5;
+  private static final int KALIST_INIT_CAPACITY = 4;
 
   private static final VarHandle STATE;
   private static final VarHandle LSC;
