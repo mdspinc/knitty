@@ -150,7 +150,7 @@ public final class MDM {
 
         Object v = AR1.getVolatile(a1, i1);
         if (v != null) {
-            return unwrap(v);
+            return unwrap1(v);
         }
 
         Object vv = init.valAt(ksa[i], NONE);
@@ -158,7 +158,7 @@ public final class MDM {
         return vv;
     }
 
-    private static Object unwrap(Object x) {
+    private static Object unwrap1(Object x) {
         if (x instanceof IDeferred) {
             return ((IDeferred) x).successValue(x);
         } else if (x == NIL) {
@@ -172,13 +172,15 @@ public final class MDM {
         if (init instanceof IEditableCollection) {
             ITransientAssociative t = (ITransientAssociative) ((IEditableCollection) init).asTransient();
             for (int i : added) {
-                t = t.assoc(ksa[i], unwrap(AR1.getVolatile(chunk(i), i & AMASK)));
+                Object x = unwrap1(AR1.getVolatile(chunk(i), i & AMASK));
+                t = t.assoc(ksa[i], x);
             }
             return (Associative) t.persistent();
         } else {
             Associative t = init;
             for (int i : added) {
-                t = t.assoc(ksa[i], unwrap(AR1.getVolatile(chunk(i), i & AMASK)));
+                Object x = unwrap1(AR1.getVolatile(chunk(i), i & AMASK));
+                t = t.assoc(ksa[i], x);
             }
             return t;
         }

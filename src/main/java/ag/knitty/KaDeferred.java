@@ -63,28 +63,89 @@ public final class KaDeferred
     }
   }
 
-  private static class AwaiterListener implements IDeferredListener {
+  private static class AwaiterOneListener implements IDeferredListener {
+
+    private final IDeferredListener ls;
+    private Object cd;
+
+    public AwaiterOneListener(Object d, IDeferredListener ls) {
+      this.cd = d;
+      this.ls = ls;
+    }
+
+    class SuccCallback extends AFn {
+      public Object invoke(Object x) {
+        return AwaiterOneListener.this.onSuccess(x);
+      }
+    }
+
+    class FailCallback extends AFn {
+      public Object invoke(Object x) {
+        return AwaiterOneListener.this.onError(x);
+      }
+    }
+
+    public Object onError(Object e) {
+      return ls.onError(e);
+    }
+
+    public Object onSuccess(Object x) {
+      while (this.cd instanceof IDeferred) {
+        IDeferred dd = (IDeferred) this.cd;
+        Object ndd = dd.successValue(dd);
+        if (dd == ndd) {
+          this.cd = dd;
+          if (dd instanceof IMutableDeferred) {
+            ((IMutableDeferred) dd).addListener(this);
+          } else {
+            dd.onRealized(new SuccCallback(), new FailCallback());
+          }
+          return null;
+        } else {
+          this.cd = ndd;
+        }
+      }
+
+      try {
+        ls.onSuccess(this.cd);
+      } catch (Throwable e) {
+        LOG_EXCEPTION.invoke(e);
+      }
+      return null;
+    }
+  }
+
+  public static final class SuccCallback extends AFn {
+      private final IDeferredListener ls;
+      public SuccCallback(IDeferredListener ls) {
+        this.ls = ls;
+      }
+      public Object invoke(Object x) {
+        return ls.onSuccess(x);
+      }
+    }
+
+   public static final class FailCallback extends AFn {
+      private final IDeferredListener ls;
+      public FailCallback(IDeferredListener ls) {
+        this.ls = ls;
+      }
+      public Object invoke(Object x) {
+        return ls.onError(x);
+      }
+    }
+
+
+  private static class AwaiterManyListener implements IDeferredListener {
 
     private final Object[] da;
     private final IDeferredListener ls;
     private int i;
     private IDeferred cd;
 
-    public AwaiterListener(Object[] da, IDeferredListener ls) {
+    public AwaiterManyListener(Object[] da, IDeferredListener ls) {
       this.da = da;
       this.ls = ls;
-    }
-
-    class SuccCallback extends AFn {
-      public Object invoke(Object x) {
-        return AwaiterListener.this.onSuccess(x);
-      }
-    }
-
-    class FailCallback extends AFn {
-      public Object invoke(Object x) {
-        return AwaiterListener.this.onError(x);
-      }
     }
 
     public Object onError(Object e) {
@@ -104,7 +165,7 @@ public final class KaDeferred
             if (dd instanceof IMutableDeferred) {
               ((IMutableDeferred) d).addListener(this);
             } else {
-              dd.onRealized(new SuccCallback(), new FailCallback());
+              dd.onRealized(new SuccCallback(this), new FailCallback(this));
             }
             return null;
           } else {
@@ -112,7 +173,8 @@ public final class KaDeferred
           }
         }
 
-        if (i == da.length) break;
+        if (i == da.length)
+          break;
         d = this.da[i++];
       }
 
@@ -258,9 +320,13 @@ public final class KaDeferred
 
     while (true) {
       switch (state) {
-        case STATE_SUCC: return ls.onSuccess(value);
-        case STATE_ERRR: return ls.onError(value);
-        case STATE_TRNS: Thread.onSpinWait(); continue;
+        case STATE_SUCC:
+          return ls.onSuccess(value);
+        case STATE_ERRR:
+          return ls.onError(value);
+        case STATE_TRNS:
+          Thread.onSpinWait();
+          continue;
         case STATE_INIT:
           KaList<IDeferredListener> lsc = this.lsc;
           if (lsc == null) {
@@ -270,9 +336,13 @@ public final class KaDeferred
             if (state != STATE_INIT) {
               boolean _x = LSC.compareAndSet(this, lsc, (KaList<?>) null);
               continue;
-            };
+            }
+            ;
           }
-          if (lsc.push(ls)) return null; else continue;
+          if (lsc.push(ls))
+            return null;
+          else
+            continue;
         default:
           throw new IllegalStateException();
       }
@@ -285,11 +355,19 @@ public final class KaDeferred
       this.revokee = r;
       while (true) {
         switch (state) {
-          case STATE_SUCC: r.success(value); return;
-          case STATE_ERRR: r.error(value); return;
-          case STATE_TRNS: Thread.onSpinWait(); continue;
-          case STATE_INIT: return;
-          default: throw new IllegalStateException();
+          case STATE_SUCC:
+            r.success(value);
+            return;
+          case STATE_ERRR:
+            r.error(value);
+            return;
+          case STATE_TRNS:
+            Thread.onSpinWait();
+            continue;
+          case STATE_INIT:
+            return;
+          default:
+            throw new IllegalStateException();
         }
       }
     }
@@ -320,7 +398,16 @@ public final class KaDeferred
   }
 
   public Object onSuccess(Object x) {
-    return this.success(x);
+    if (x instanceof IDeferred) {
+      if (x instanceof IMutableDeferred) {
+        ((IMutableDeferred) x).addListener(this);
+      } else {
+        ((IDeferred) x).onRealized(new SuccCallback(this), new FailCallback(this));
+      }
+      return null;
+    } else {
+      return this.success(x);
+    }
   }
 
   public Object onError(Object e) {
@@ -350,8 +437,10 @@ public final class KaDeferred
   public Object deref(long ms, Object timeoutValue) {
 
     switch (state) {
-      case STATE_SUCC: return value;
-      case STATE_ERRR: throw Util.sneakyThrow((Throwable) value);
+      case STATE_SUCC:
+        return value;
+      case STATE_ERRR:
+        throw Util.sneakyThrow((Throwable) value);
     }
 
     try {
@@ -361,8 +450,10 @@ public final class KaDeferred
     }
 
     switch (state) {
-      case STATE_SUCC: return value;
-      case STATE_ERRR: throw Util.sneakyThrow((Throwable) value);
+      case STATE_SUCC:
+        return value;
+      case STATE_ERRR:
+        throw Util.sneakyThrow((Throwable) value);
     }
 
     return timeoutValue;
@@ -371,8 +462,10 @@ public final class KaDeferred
   public Object deref() {
 
     switch (state) {
-      case STATE_SUCC: return value;
-      case STATE_ERRR: throw Util.sneakyThrow((Throwable) value);
+      case STATE_SUCC:
+        return value;
+      case STATE_ERRR:
+        throw Util.sneakyThrow((Throwable) value);
     }
 
     try {
@@ -382,8 +475,10 @@ public final class KaDeferred
     }
 
     switch (state) {
-      case STATE_SUCC: return value;
-      case STATE_ERRR: throw Util.sneakyThrow((Throwable) value);
+      case STATE_SUCC:
+        return value;
+      case STATE_ERRR:
+        throw Util.sneakyThrow((Throwable) value);
     }
 
     throw new IllegalStateException();
@@ -395,8 +490,11 @@ public final class KaDeferred
     return cdl;
   }
 
+  public static void awaitOne(IDeferredListener ls, Object d) {
+    new AwaiterOneListener(d, ls).onSuccess(null);
+  }
+
   public static void awaitAll(IDeferredListener ls, Object... ds) {
-    AwaiterListener al = new AwaiterListener(ds, ls);
-    al.onSuccess(null);
+    new AwaiterManyListener(ds, ls).onSuccess(null);
   }
 }
