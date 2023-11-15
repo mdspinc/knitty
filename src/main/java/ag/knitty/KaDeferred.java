@@ -191,10 +191,10 @@ public final class KaDeferred
   private static final int STATE_INIT = 0;
   private static final int STATE_TRNS = 1;
   private static final int STATE_SUCC = 2;
-  private static final int STATE_ERRR = 3;
+  private static final int STATE_ERRR = 4;
   private static final int STATE_READY_MASK = STATE_SUCC | STATE_ERRR;
 
-  private static final int KALIST_INIT_CAPACITY = 4;
+  private static final int KALIST_INIT_CAPACITY = 5;
 
   private static final VarHandle STATE;
   private static final VarHandle LSC;
@@ -220,7 +220,7 @@ public final class KaDeferred
     LOG_EXCEPTION = f;
   }
 
-  private volatile KaList<IDeferredListener> lsc;
+  private final KaList<IDeferredListener> lsc = new KaList<>();
   private volatile int state;
   private Object value; // sync by 'state'
   private IPersistentMap meta; // sychronized
@@ -263,13 +263,13 @@ public final class KaDeferred
 
     KaList<IDeferredListener> lsc = this.lsc;
     if (lsc != null) {
-      this.lsc = null;
       for (IDeferredListener ls : lsc)
         try {
           ls.onSuccess(value);
         } catch (Throwable e) {
           LOG_EXCEPTION.invoke(e);
         }
+      this.lsc.clean();
     }
 
     return null;
@@ -302,13 +302,13 @@ public final class KaDeferred
 
     KaList<IDeferredListener> lsc = this.lsc;
     if (lsc != null) {
-      this.lsc = null;
       for (IDeferredListener ls : lsc)
         try {
           ls.onError(value);
         } catch (Throwable e) {
           LOG_EXCEPTION.invoke(e);
         }
+      this.lsc.clean();
     }
 
     return null;
@@ -328,18 +328,7 @@ public final class KaDeferred
           Thread.onSpinWait();
           continue;
         case STATE_INIT:
-          KaList<IDeferredListener> lsc = this.lsc;
-          if (lsc == null) {
-            lsc = new KaList<IDeferredListener>(KALIST_INIT_CAPACITY);
-            KaList<IDeferredListener> oldLsc = (KaList<IDeferredListener>) LSC.compareAndExchange(this, null, lsc);
-            lsc = oldLsc == null ? lsc : oldLsc;
-            if (state != STATE_INIT) {
-              boolean _x = LSC.compareAndSet(this, lsc, (KaList<?>) null);
-              continue;
-            }
-            ;
-          }
-          if (lsc.push(ls))
+          if (this.lsc.push(ls))
             return null;
           else
             continue;
