@@ -146,6 +146,7 @@ public final class KaDeferred
     public AwaiterManyListener(Object[] da, IDeferredListener ls) {
       this.da = da;
       this.ls = ls;
+      this.i = da.length;
     }
 
     public Object onError(Object e) {
@@ -173,9 +174,9 @@ public final class KaDeferred
           }
         }
 
-        if (i == da.length)
+        if (i == 0)
           break;
-        d = this.da[i++];
+        d = this.da[--i];
       }
 
       try {
@@ -191,7 +192,7 @@ public final class KaDeferred
   private static final int STATE_INIT = 0;
   private static final int STATE_TRNS = 1;
   private static final int STATE_SUCC = 2;
-  private static final int STATE_ERRR = 4;
+  private static final int STATE_ERRR = 3;
   private static final int STATE_READY_MASK = STATE_SUCC | STATE_ERRR;
 
   private static final int KALIST_INIT_CAPACITY = 5;
@@ -262,7 +263,6 @@ public final class KaDeferred
     }
 
     KaList<IDeferredListener> lsc = this.lsc;
-    if (lsc != null) {
       for (IDeferredListener ls : lsc)
         try {
           ls.onSuccess(value);
@@ -270,7 +270,6 @@ public final class KaDeferred
           LOG_EXCEPTION.invoke(e);
         }
       this.lsc.clean();
-    }
 
     return null;
   }
@@ -301,7 +300,6 @@ public final class KaDeferred
     }
 
     KaList<IDeferredListener> lsc = this.lsc;
-    if (lsc != null) {
       for (IDeferredListener ls : lsc)
         try {
           ls.onError(value);
@@ -309,7 +307,6 @@ public final class KaDeferred
           LOG_EXCEPTION.invoke(e);
         }
       this.lsc.clean();
-    }
 
     return null;
   }

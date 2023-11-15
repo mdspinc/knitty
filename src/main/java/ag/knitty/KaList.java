@@ -48,7 +48,7 @@ public final class KaList<T> implements Iterable<T> {
 
   private Node first;
   private Node last;
-  private int initsize;
+  private final int initsize;
   private int pos;
   private boolean frozen;
 
