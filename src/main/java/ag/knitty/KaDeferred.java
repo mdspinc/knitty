@@ -226,7 +226,6 @@ public final class KaDeferred
   private Object value; // sync by 'state'
   private IPersistentMap meta; // sychronized
   private volatile IMutableDeferred revokee;
-  private volatile IFn errorMod;
 
   public synchronized IPersistentMap meta() {
     return meta;
@@ -282,11 +281,6 @@ public final class KaDeferred
     this.value = x;
     if (!STATE.compareAndSet(this, STATE_TRNS, STATE_ERRR)) {
       return null;
-    }
-
-    IFn aerr = this.errorMod;
-    if (aerr != null) {
-      x = aerr.invoke(x);
     }
 
     IMutableDeferred r = this.revokee;
@@ -357,10 +351,6 @@ public final class KaDeferred
         }
       }
     }
-  }
-
-  public void setErrorMod(Object x) {
-    this.errorMod = (IFn) x;
   }
 
   public Object onRealized(Object onSucc, Object onErr) {

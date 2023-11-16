@@ -240,33 +240,6 @@
     `(run-future ~executor-var (fn [] ~@body))))
 
 
-(defn- exception-java-cause [ex]
-  (cond
-    (nil? ex) nil
-    (instance? clojure.lang.ExceptionInfo ex) (recur (ex-cause ex))
-    (instance? java.util.concurrent.ExecutionException ex) (recur (ex-cause ex))
-    :else ex))
-
-
-(defn wrap-yarn-exception [k ex]
-  (if (kd/revokation-exception? ex)
-    ex
-    (let [d (ex-data ex)]
-      (if (::inyank d)
-        (ex-info "yarn failure"
-                 (assoc d
-                        :knitty/failed-yarn-chain (conj (:knitty/failed-yarn-chain d) k))
-                 (ex-cause ex))
-        (ex-info "yarn failure"
-                 (assoc d
-                        ::inyank true
-                        :knitty/fail-at   (java.util.Date.)
-                        :knitty/failed-yarn k
-                        :knitty/failed-yarn-chain [k]
-                        :knitty/java-cause (exception-java-cause ex))
-                 ex)))))
-
-
 (deftype TraceListener [^YankCtx ctx, ykey]
   manifold.deferred.IDeferredListener
   (onSuccess [_ x]
@@ -289,9 +262,9 @@
 
 
 (defmacro connect-error-mdm [ctx ykey error mdm-deferred]
-  `(let [ew# (wrap-yarn-exception ~ykey ~error)]
-    (ctx-tracer-> ~ctx t/trace-finish ~ykey nil ew# false)
-    (kd/error'! ~mdm-deferred ew#)
+  `(do
+    (ctx-tracer-> ~ctx t/trace-finish ~ykey nil ~error false)
+    (kd/error'! ~mdm-deferred ~error)
     ~mdm-deferred))
 
 
@@ -363,7 +336,6 @@
 
             (ctx-tracer-> ~ctx t/trace-start  ~ykey :yarn ~all-deps-tr)
             (let [~kad d#]
-              (.setErrorMod ~kad (fn ~(fnn "--wrap-err") [e#] (wrap-yarn-exception ~ykey e#)))
               (try ;; d# is alsways deffered
                 (let [~@yank-deps]
                   (if ~some-syncs-unresolved
@@ -464,7 +436,7 @@
           errh (fn [e]
                  (ex-info "failed to yank"
                           (cond->
-                           (assoc (dissoc (ex-data e) ::inyank)
+                           (assoc (ex-data e)
                                   :knitty/yanked-poy poy
                                   :knitty/failed-poy (mdm/mdm-freeze! mdm)
                                   :knitty/yanked-yarns yarns)
