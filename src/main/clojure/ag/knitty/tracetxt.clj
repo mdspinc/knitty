@@ -27,7 +27,7 @@
       (println "at" (format-inst at)
                "yank" yarns)
 
-      (doseq [{:keys [yarn event]} (reverse tracelog)
+      (doseq [{:keys [yarn event value]} (reverse tracelog)
               :let [n (nodes yarn)]]
 
         (case event
@@ -45,6 +45,9 @@
                (if (when-let [x (nodes d)] (not= (:type x) :input)) "call" "read")
                d
                (format-dep-kind k k))))
+
+          ::t/trace-route-by
+          (println "route" yarn "by" value)
 
           ::t/trace-call
           (if-let [e (:error n)]

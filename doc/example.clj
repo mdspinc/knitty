@@ -1,17 +1,20 @@
-(require '[ag.knitty.core :refer [defyarn doyank! yank yarn link-yarn]]
-         '[ag.knitty.tracetxt :refer [print-trace]]
-         '[ag.knitty.traceviz :refer [render-trace view-trace]]
-         '[manifold.deferred :as md])
+(ns example
+  (:require [ag.knitty.core :refer [defyarn defyarn-method defyarn-multi
+                                    doyank! link-yarn yank yarn]]
+            [ag.knitty.tracetxt :refer [print-trace]]
+            [ag.knitty.traceviz :refer [render-trace view-trace]]
+            [manifold.deferred :as md]))
+
 
 (defyarn zero;; define "yarn" - single slot/value
   {}         ;; no inputs
-  0)         ;; value, use explicit `do when needed
+  0) ;; value, use explicit `do when needed
 
 @(yank {} [zero])
 
 (defyarn one
   {_ zero}   ;; wait for zero, but don't use it
-  1)         ;; any manifold-like deferred can be finished
+  1) ;; any manifold-like deferred can be finished
 
 (defyarn one-slooow
   {}
@@ -22,40 +25,51 @@
    ^:defer y one-slooow}     ;; don't unwrap deferred (all values coerced to manifold/deffered)
   (md/chain' (md/alt x y) inc))
 
-(defyarn three-fast {x one, y two}
+
+(defyarn three-stategy {}
+  (rand-nth [::fast ::slow]))
+
+(defyarn-multi three three-stategy)
+
+(defyarn-method three ::fast {x one, y two}
   (md/future
     (Thread/sleep (long (rand-int 5))) (+ x y)))
 
-(defyarn three-slow {x one, y two}
+(defyarn-method three ::slow {x one, y two}
   (md/future
     (Thread/sleep (long (rand-int 10))) (+ x y)))
 
-(defyarn three        ;; put deferred into delay, enables branching
-  {^:lazy f three-fast
-   ^:lazy s three-slow}
-  (if (zero? (rand-int 2)) f s))
 
+;; use raw keywords (not recommended)
 (defyarn four
-  {x ::one, y ::three};; use raw keywords (not recommended)
+  {x ::one, y three}
   (md/future (+ x y)))
 
+
+;; predeclare yarn without implementation
 (defyarn abs-three)
 
+;; link implementation
+(link-yarn abs-three three)
+
 (defyarn five
-  {x ::two, y abs-three}  ;; mixed approach
-  (println ">>>" x y)
+  "doc string"               ;; doc
+  {x ::two, y abs-three}
+  (println "debug>>>" x y)
   (+ x y))
+
+;; or
 
 (defyarn six
   ^{:doc "doc string"}       ;; doc
   ^{:spec number?}           ;; spec
   {y ::three x ::two}
-  (println "debug print")
+  (println "debug>>>" x y)
   (* x y))
 
-(link-yarn abs-three three)
 
-(yank {} [three])
+@(yank {} [three])
+
 ;; yank - ensure all keys are inside the map - finishs deferred
 @(yank {} [abs-three])
 @(yank {} [five])

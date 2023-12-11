@@ -234,6 +234,7 @@
                     (= :ref type)            "none"
                     (= :sync type)           "none"
                     (= :defer type)          "odot"
+                    (= :route type)          "invempty"
                     (= :lazy type)           "odiamond"
                     (= :changed-input type)  "none"
                     :else                    "none")

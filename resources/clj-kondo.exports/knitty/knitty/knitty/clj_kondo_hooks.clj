@@ -87,8 +87,8 @@
       (when (and
              (not= :yankfn btype)
              (not (or
-                   (api/token-node? v) (ident? (:value v))
-                   (api/keyword-node? v) (or (:namespaced? v) (qualified-keyword? (:k v))))))
+                   (and (api/token-node? v) (ident? (:value v)))
+                   (and (api/keyword-node? v) (or (:namespaced? v) (qualified-keyword? (:k v)))))))
         (api/reg-finding!
          (assoc (meta v)
                 :message (if (api/map-node? v)
@@ -119,10 +119,11 @@
   (cons x xs))
 
 
+
 (defn defyarn [{:keys [node]}]
 
   (let [node-child (rest (:children node))
-        [name bmap & body] (if (-> node-child second string?)
+        [name bmap & body] (if (-> node-child second api/string-node?)
                              (skip-second node-child)
                              node-child)
 
@@ -154,7 +155,7 @@
          (api/reg-finding!
           (assoc (meta name)
                  :message "name must be a symbol"
-                 :type :knitty/invalid-defyarn-name)))
+                 :type :knitty/invalid-defyarn)))
 
        ;; (yarn ::~name ~bmap ~body)
        (yarn* (list* name-kv bmap body))
@@ -192,7 +193,7 @@
       (api/reg-finding!
        (assoc (meta name)
               :message "name must be a symbol or or qualified keyword"
-              :type :knitty/invalid-defyarn-name)))
+              :type :knitty/invalid-defyarn)))
 
     (when (and (api/token-node? name)
                (-> name :value symbol?))
@@ -200,6 +201,42 @@
        ;; (declare ~name)
        (api/list-node
         (list* (api/token-node 'clojure.core/declare)
-               node-child))}
-      )))
+               node-child))})))
+
+
+(defn defyarn-multi [{:keys [node]}]
+  (let [node-child (rest (:children node))
+        [name route-key & exx] (if (-> node-child second api/string-node?)
+                                 (skip-second node-child)
+                                 node-child)]
+    (when (seq exx)
+      (api/reg-finding!
+        (assoc (meta (first exx))
+               :message "unexpected extra parameter"
+               :type :knitty/invalid-defyarn)))
+    {:node
+     (api/list-node
+      (list*
+       (api/token-node 'ag.knitty.core/defyarn)
+       name
+       (api/map-node [(api/token-node '_) route-key])
+       (api/token-node nil)
+       ))}))
+
+
+(defn defyarn-method [{:keys [node]}]
+  (let [node-child (rest (:children node))
+        [name route-val bvec & body] node-child
+        name' (if (and (api/token-node? name)
+                      (-> name :value symbol?))
+               (api/token-node ::SYMBOL)
+               name)]
+    {:node
+     (api/list-node
+      [(api/token-node 'do)
+       ;; (do
+       route-val
+       name
+       ;; (yarn :name ...)
+       (yarn* [name' bvec body])])}))
 
