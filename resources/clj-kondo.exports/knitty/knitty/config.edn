@@ -4,7 +4,8 @@
   :knitty/explicit-ns-in-yarn-key  {:level :warning}
   :knitty/invalid-yarn-key         {:level :error}
   :knitty/invalid-yarn-binding     {:level :error}
-  :knitty/invalid-defyarn-name     {:level :error}}
+  :knitty/invalid-defyarn          {:level :error}}
+
 
  :hooks
  {:analyze-call
@@ -12,7 +13,9 @@
    knitty.core/defyarn knitty.clj-kondo-hooks/defyarn
    knitty.core/doyank  knitty.clj-kondo-hooks/doyank*
    knitty.core/doyank! knitty.clj-kondo-hooks/doyank*
-   knitty.core/declare-yarn knitty.clj-kondo-hooks/declare-yarn
+   knitty.core/declare-yarn   knitty.clj-kondo-hooks/declare-yarn
+   knitty.core/defyarn-multi  knitty.clj-kondo-hooks/defyarn-multi
+   knitty.core/defyarn-method knitty.clj-kondo-hooks/defyarn-method
    }
 
   }}

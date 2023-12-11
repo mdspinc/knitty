@@ -5,7 +5,8 @@
             [clojure.set :as set]
             [manifold.deferred :as md]
             [manifold.executor]
-            [manifold.utils])
+            [manifold.utils]
+            [knitty.trace :as trace])
   (:import [java.util.concurrent.atomic AtomicReference]))
 
 
@@ -18,13 +19,15 @@
   (yarn-deps [_] "get yarn dependencies as set of keywords")
   (yarn-key [_] "get yarn qualified keyword id"))
 
+(defprotocol IYarnMulti
+  (yarn-multifn [_] "get yarn routing multifn"))
+
 
 (deftype Yarn [yankfn key deps]
   IYarn
   (yarn-yankfn [_] yankfn)
   (yarn-deps [_] deps)
   (yarn-key [_] key))
-
 
 
 (defn- check-no-cycle
@@ -115,11 +118,6 @@
       :else  :sync)))
 
 
-(defmacro get-yank-fn [ctx ykey]
-  (let [k (mdm/keyword->intid ykey)]
-    `(registry-yankfn' (.-registry ~ctx) ~ykey ~k)))
-
-
 (defmacro ctx-tracer-> [ctx fn & args]
   (when-not t/elide-tracing
    `(when-let [t# (.-tracer ~ctx)] (~fn t# ~@args))))
@@ -133,13 +131,16 @@
       v)))
 
 
-(defmacro yarn-get-sync [yk ykey ctx]
-  `(do
-     (ctx-tracer-> ~ctx t/trace-dep ~yk ~ykey)
-     (let [v# (mdm/mdm-get! (.-mdm ~ctx) ~(mdm/keyword->intid ykey))]
-       (if (mdm/none? v#)
-         ((get-yank-fn ~ctx ~ykey) ~ctx)
-         v#))))
+(defmacro yarn-get-sync
+  ([yk ykey ctx]
+   `(yarn-get-sync ~yk ~ykey ~(mdm/keyword->intid ykey) ~ctx))
+  ([yk ykey ykeyi ctx]
+   `(do
+      (ctx-tracer-> ~ctx t/trace-dep ~yk ~ykey)
+      (let [v# (mdm/mdm-get! (.-mdm ~ctx) ~ykeyi)]
+        (if (mdm/none? v#)
+          ((registry-yankfn' (.-registry ~ctx) ~ykey ~ykeyi) ~ctx)
+          v#)))))
 
 
 (defmacro yarn-get-defer [yk ykey ctx]
@@ -148,7 +149,7 @@
      (kd/as-deferred
       (let [v# (mdm/mdm-get! (.-mdm ~ctx) ~(mdm/keyword->intid ykey))]
         (if (mdm/none? v#)
-          ((get-yank-fn ~ctx ~ykey) ~ctx)
+          ((registry-yankfn' (.-registry ~ctx) ~ykey ~(mdm/keyword->intid ykey)) ~ctx)
           v#)))))
 
 
@@ -370,112 +371,180 @@
                   (connect-error-mdm ~ctx ~ykey e# ~kad))))))))))
 
 
-  (defn emit-yank-fns [thefn ykey bind]
-    (let [yarn-meta (meta bind)
-          deps (map first bind)
-          {:keys [keep-deps-order]} yarn-meta
-          bind (if keep-deps-order
-                 bind
-                 (sort-by (comp #(when (keyword? %) (mdm/keyword->intid %)) second) bind))]
-      (emit-yank-fns-impl thefn ykey bind deps yarn-meta)))
+(defn emit-yank-fns [thefn ykey bind]
+  (let [yarn-meta (meta bind)
+        deps (map first bind)
+        {:keys [keep-deps-order]} yarn-meta
+        bind (if keep-deps-order
+               bind
+               (sort-by (comp #(when (keyword? %) (mdm/keyword->intid %)) second) bind))]
+    (emit-yank-fns-impl thefn ykey bind deps yarn-meta)))
 
 
-  (defn emit-yarn-ref-gtr [ykey orig-ykey]
-    (let [kid (mdm/keyword->intid ykey)]
-      `(fn [^YankCtx ctx#]
-         (let [kv# (mdm/mdm-fetch! (.-mdm ctx#) ~kid)
-               d# (mdm/fetch-result-value kv#)]
-           (if-not (mdm/fetch-result-claimed? kv#)
-             (kd/unwrap1' d#)
-             (do
-               (ctx-tracer-> ctx# t/trace-start ~ykey :knot [[~orig-ykey :ref]])
-               (try
-                 (ctx-tracer-> ctx# t/trace-call ~ykey)
-                 (let [x# (yarn-get-sync ~ykey ~orig-ykey ctx#)]
-                   (connect-result-mdm ctx# ~ykey x# d#))
-                 (catch Throwable e#
-                   (connect-error-mdm ctx# ~ykey e# d#)))))))))
+(defn emit-yarn-ref-gtr [ykey orig-ykey]
+  (let [kid (mdm/keyword->intid ykey)]
+    `(fn [^YankCtx ctx#]
+       (let [kv# (mdm/mdm-fetch! (.-mdm ctx#) ~kid)
+             d# (mdm/fetch-result-value kv#)]
+         (if-not (mdm/fetch-result-claimed? kv#)
+           (kd/unwrap1' d#)
+           (do
+             (ctx-tracer-> ctx# t/trace-start ~ykey :knot [[~orig-ykey :ref]])
+             (try
+               (ctx-tracer-> ctx# t/trace-call ~ykey)
+               (let [x# (yarn-get-sync ~ykey ~orig-ykey ctx#)]
+                 (connect-result-mdm ctx# ~ykey x# d#))
+               (catch Throwable e#
+                 (connect-error-mdm ctx# ~ykey e# d#)))))))))
 
 
-  (defn- grab-yarn-bindmap-deps [bm]
-    (into
-     #{}
-     cat
-     (for [[_ k] bm]
-       (cond
-         (keyword? k) [k]
-         (map? k) (vals k)
-         :else (throw (ex-info "invalid binding arg" {::param k}))))))
+(defn- grab-yarn-bindmap-deps [bm]
+  (into
+   #{}
+   cat
+   (for [[_ k] bm]
+     (cond
+       (keyword? k) [k]
+       (map? k) (vals k)
+       :else (throw (ex-info "invalid binding arg" {::param k}))))))
 
 
-  (defn gen-yarn
-    [ykey bind expr]
-    (let [deps (grab-yarn-bindmap-deps bind)
-          ff (gensym)
-          fargs (if (> (count bind) 18)
-                  (let [[args1 args2] (split-at 18 (map first bind))]
-                    (vec (conj (vec args1) (vec args2))))
-                  (mapv first bind))]
-      `(let [~ff (fn ~(-> ykey name symbol) [~@fargs] ~expr)
-             gtr# ~(emit-yank-fns ff ykey bind)]
-         (Yarn. gtr# ~ykey '~deps))))
+(defn gen-yarn
+  [ykey bind expr]
+  (let [deps (grab-yarn-bindmap-deps bind)
+        ff (gensym)
+        fargs (if (> (count bind) 18)
+                (let [[args1 args2] (split-at 18 (map first bind))]
+                  (vec (conj (vec args1) (vec args2))))
+                (mapv first bind))]
+    `(let [~ff (fn ~(-> ykey name symbol) [~@fargs] ~expr)
+           gtr# ~(emit-yank-fns ff ykey bind)]
+       (Yarn. gtr# ~ykey '~deps))))
 
 
-  (defn gen-yarn-ref
-    [ykey from]
-    `(let [d# ~(emit-yarn-ref-gtr ykey from)]
-       (Yarn. d# ~ykey #{~from})))
+(defn gen-yarn-ref
+  [ykey from]
+  `(let [d# ~(emit-yarn-ref-gtr ykey from)]
+     (Yarn. d# ~ykey #{~from})))
 
 
-  (defn fail-always-yarn [ykey msg]
-    (Yarn. (fn [_] (throw (java.lang.UnsupportedOperationException. (str msg)))) ykey #{}))
+(defn yarn-multifn [yarn-name]
+  (cond
+    (symbol? yarn-name) `(yarn-multifn ~(eval yarn-name))
+    (keyword? yarn-name) (symbol (namespace yarn-name) (str (name yarn-name) "--multifn"))
+    :else (throw (ex-info "invalid yarn-name" {:yarn-name yarn-name}))))
 
 
-  (defn yank0
-    [poy yarns ^Registry registry tracer]
-    (let [mdm (mdm/create-mdm poy)
-          ctx (YankCtx. mdm registry tracer)
-          errh (fn [e]
-                 (ex-info "failed to yank"
-                          (cond->
-                           (assoc (ex-data e)
-                                  :knitty/yanked-poy poy
-                                  :knitty/failed-poy (mdm/mdm-freeze! mdm)
-                                  :knitty/yanked-yarns yarns)
-                            tracer (assoc
-                                    :knitty/trace
-                                    (conj
-                                     (-> poy meta :knitty/trace)
-                                     (capture-trace! tracer))))
-                          e))
-          n (count yarns)
-          yks (java.util.ArrayList. n)]
+(deftype YarnMulti [^clojure.lang.MultiFn multifn key route-key]
 
-      (try
-        (doseq [y yarns]
-          (.add yks
-                (if (keyword? y)
-                  (yarn-get ctx y)
-                  (do
-                    (when (contains? registry (yarn-key y))
-                      (throw (ex-info "dynamic yarn is already in registry"
-                                      {:knitty/yarn (yarn-key y)})))
-                    ((yarn-yankfn y) ctx)))))
-        (let [r (kd/ka-deferred)]
-          (kd/await-all!
-           (reify manifold.deferred.IDeferredListener
-             (onSuccess [_ _]
-               (kd/success'! r
-                             (try
-                               (let [poy' (mdm/mdm-freeze! mdm)]
-                                 (if tracer
-                                   (vary-meta poy' update :knitty/trace conj (capture-trace! tracer))
-                                   poy'))
-                               (catch Throwable e
-                                 (kd/error'! r (errh e))))))
-             (onError [_ e]
-               (kd/error'! r (errh e))))
-           (.toArray yks))
-          (kd/revoke' r (fn cancel-mdm [] (mdm/mdm-cancel! mdm))))
-        (catch Throwable e
-          (md/error-deferred (errh e))))))
+  IYarn
+  (yarn-yankfn [_] multifn)
+  (yarn-deps [_]
+    (into #{route-key}
+          (comp (map val)
+                (keep #(%))
+                (mapcat yarn-deps))
+          (methods multifn)))
+  (yarn-key [_] key)
+
+  IYarnMulti
+  (yarn-multifn [_] multifn)
+  )
+
+
+(defn make-multiyarn-route-key-fn [ykey k]
+  (let [i (long (mdm/keyword->intid k))]
+    (fn yank-route-key [^YankCtx ctx]
+      (ctx-tracer-> ctx trace/trace-route-by ykey k)
+      (let [d (yarn-get-sync ykey k i ctx)]
+        (if (md/deferred? d)
+          ::deferred
+          d)))))
+
+
+(defn gen-yarn-multi
+  [ykey route-key mult-options]
+  `(do
+
+     (defmulti ~(yarn-multifn ykey)
+       (make-multiyarn-route-key-fn ~ykey ~route-key)
+       ~@mult-options)
+
+     (defmethod ~(yarn-multifn ykey) ::deferred
+       ([] nil)
+       ([^YankCtx ctx#]
+        (md/chain' (yarn-get-sync ~ykey ~route-key ctx#)
+                   (fn ~(symbol (str (name ykey) '--reyank)) [_#]
+                     ((var ~(yarn-multifn ykey)) ctx#)) ;; call again
+                   )))
+
+     (YarnMulti. ~(yarn-multifn ykey) ~ykey ~route-key)))
+
+
+(defn gen-reg-yarn-method
+  [yk yarn route-val]
+  (let [y (gensym)]
+    `(let [~y ~yarn
+           rv# ~route-val
+           yf# (yarn-yankfn ~y)]
+       (defmethod
+         ~(yarn-multifn yk)
+         rv#
+         ([] ~y)
+         ([ctx#]
+          (yf# ctx#))))))
+
+
+(defn fail-always-yarn [ykey msg]
+  (Yarn. (fn [_] (throw (java.lang.UnsupportedOperationException. (str msg)))) ykey #{}))
+
+
+
+(defn yank0
+  [poy yarns ^Registry registry tracer]
+  (let [mdm (mdm/create-mdm poy)
+        ctx (YankCtx. mdm registry tracer)
+        errh (fn [e]
+               (ex-info "failed to yank"
+                        (cond->
+                         (assoc (dissoc (ex-data e) ::inyank)
+                                :knitty/yanked-poy poy
+                                :knitty/failed-poy (mdm/mdm-freeze! mdm)
+                                :knitty/yanked-yarns yarns)
+                          tracer (assoc
+                                  :knitty/trace
+                                  (conj
+                                   (-> poy meta :knitty/trace)
+                                   (capture-trace! tracer))))
+                        e))
+        n (count yarns)
+        yks (java.util.ArrayList. n)]
+
+    (try
+      (doseq [y yarns]
+        (.add yks
+              (if (keyword? y)
+                (yarn-get ctx y)
+                (do
+                  (when (contains? registry (yarn-key y))
+                    (throw (ex-info "dynamic yarn is already in registry"
+                                    {:knitty/yarn (yarn-key y)})))
+                  ((yarn-yankfn y) ctx)))))
+      (let [r (kd/ka-deferred)]
+        (kd/await-all!
+         (reify manifold.deferred.IDeferredListener
+           (onSuccess [_ _]
+             (kd/success'! r
+                           (try
+                             (let [poy' (mdm/mdm-freeze! mdm)]
+                               (if tracer
+                                 (vary-meta poy' update :knitty/trace conj (capture-trace! tracer))
+                                 poy'))
+                             (catch Throwable e
+                               (kd/error'! r (errh e))))))
+           (onError [_ e]
+             (kd/error'! r (errh e))))
+         (.toArray yks))
+        (kd/revoke' r (fn cancel-mdm [] (mdm/mdm-cancel! mdm))))
+      (catch Throwable e
+        (md/error-deferred (errh e))))))

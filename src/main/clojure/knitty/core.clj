@@ -140,7 +140,8 @@
   (defyarn yarn-4 {x yarn-3} (str \"Random is\" x))
   ```
   "
-
+  {:arglists '([name doc-string?]
+               [name doc-string? [dependencies*] & body])}
   [name & doc-binds-body]
   (let [bd (cons name doc-binds-body)
         cf (s/conform ::defyarn bd)
@@ -163,6 +164,43 @@
        (when spec `(s/def ~k ~spec))
        `(register-yarn ~y)
        `(def ~nm ~k)))))
+
+
+(defmacro defyarn-multi
+  ([name route-by]
+   `(defyarn-multi ~name nil ~route-by))
+  ([name docstring route-by]
+   (let [k (keyword (-> *ns* ns-name clojure.core/name)
+                    (clojure.core/name name))
+         my (impl/gen-yarn-multi k (resolve-sym-or-kw &env route-by) {})
+         [name m] (pick-yarn-meta name {} docstring)
+         spec (:spec m)]
+     (list
+      `do
+       (when spec `(s/def ~k ~spec))
+      `(register-yarn ~my)
+      `(def ~name ~k)))))
+
+
+(defmacro defyarn-method [name route-value bvec & body]
+  (let [k (resolve-sym-or-kw &env name)
+        y (gensym)]
+    `(let [~y (yarn ~k ~bvec ~@body)]
+       ~(impl/gen-reg-yarn-method k y route-value)
+       (register-yarn (get *registry* ~k) false)  ;; reregister to trigger cycle-check
+       )))
+
+
+(defn- yarn-multifn
+  [yarn]
+  (impl/yarn-multifn (if (keyword? yarn) (get *registry* yarn) yarn)))
+
+
+(defn yarn-prefer-method
+  "Causes the multiyarn to prefer matches of dispatch-val-x over dispatch-val-y"
+  [yarn dispatch-val-x dispatch-val-y]
+  (prefer-method (yarn-multifn yarn)
+                 dispatch-val-x dispatch-val-y))
 
 
 (defn yank

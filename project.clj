@@ -11,7 +11,6 @@
   :clean-non-project-classes true
   :aot [#"no-aot-really"]
   :javac-options ["-target" "11" "-source" "11"]
-  :repl-options {:init-ns knitty.core}
   :profiles {:precomp {:aot ^:replace [manifold.deferred]
                        :clean-non-project-classes false
                        :prep-tasks ^:replace ["compile"]}

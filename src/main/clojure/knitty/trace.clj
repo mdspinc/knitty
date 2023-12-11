@@ -20,6 +20,7 @@
   (trace-call [_ yk])
   (trace-finish [_ yk value error async])
   (trace-dep [_ yk dep])
+  (trace-route-by [_ yk rk-dep])
   (capture-trace! [_]))
 
 
@@ -91,6 +92,9 @@
   (trace-dep [_ yk dep]
     (aconj-tlog store yk ::trace-dep [dep (now)]))
 
+  (trace-route-by [_ yk rk-dep]
+    (aconj-tlog store yk ::trace-route-by rk-dep))
+
   (trace-finish
     [_ yk value error deferred]
     (when deferred
@@ -149,7 +153,11 @@
                   (map (fn [{c :yarn, [y _] :value}] [y c])))
                  tracelog)
 
-        all-deps (set (for [t (vals ytlog), [d _] (::trace-all-deps t)] d))
+        all-deps (set
+                  (concat
+                   (keep ::trace-route-by (vals ytlog))
+                   (mapcat #(map first (::trace-all-deps %)) (vals ytlog))))
+
         ex-deps (set/difference all-deps (set (keys ytlog)))
 
         knot-ref (fn [t]
@@ -206,7 +214,9 @@
              {}
              (concat
               (for [[y t] ytlog
-                    [dk dt] (::trace-all-deps t)
+                    [dk dt] (concat
+                             (::trace-all-deps t)
+                             (when-let [a (::trace-route-by t)] [[a :route]]))
                     :let [time (get ytdep-time [y dk])]]
                 [[y dk]
                  {:source (cond

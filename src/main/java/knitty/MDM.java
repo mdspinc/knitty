@@ -14,6 +14,7 @@ import clojure.lang.Keyword;
 import manifold.deferred.IDeferred;
 import manifold.deferred.IMutableDeferred;
 
+
 public final class MDM {
 
     private static Object KLOCK = new Object();
