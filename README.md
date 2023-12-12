@@ -5,7 +5,7 @@ Knitty assigns data computation functions to qualified Clojure keywords. Each su
 
 ```clojure
 (ns user
-  (:require [ag.knitty.core :refer [defyarn yank]]
+  (:require [knitty.core :refer [defyarn yank]]
             [manifold.deferred :as md]))
 ```
 
@@ -63,8 +63,8 @@ This information may be used for visualizations:
 
 ```clojure
 (require
-  '[ag.knitty.tracetxt :as ktt]
-  '[ag.knitty.traceviz :as ktv]
+  '[knitty.tracetxt :as ktt]
+  '[knitty.traceviz :as ktv]
   )
 
 (def m @(yank {node-a 1, node-b 10} [anode-x, anode-y, anode-z]))

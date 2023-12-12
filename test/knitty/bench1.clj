@@ -1,7 +1,7 @@
-(ns ag.knitty.bench1
-  (:require [ag.knitty.core :refer [yank]]
-            [ag.knitty.deferred :as kd]
-            [ag.knitty.test-util :refer :all]
+(ns knitty.bench1
+  (:require [knitty.core :refer [yank]]
+            [knitty.deferred :as kd]
+            [knitty.test-util :refer :all]
             [clojure.test :as t :refer [deftest testing use-fixtures]]
             [manifold.debug :as debug]
             [manifold.deferred :as md]
@@ -162,5 +162,5 @@
   (dotimes [i 100]
     (println ".. " i " / 100")
     (dotimes [_ 1000]
-      (binding [ag.knitty.core/*tracing* false]
+      (binding [knitty.core/*tracing* false]
         @(yank {} (random-sample 0.01 (nodes-range :node 0 500)))))))

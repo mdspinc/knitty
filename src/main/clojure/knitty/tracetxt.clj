@@ -1,5 +1,5 @@
-(ns ag.knitty.tracetxt
-  (:require [ag.knitty.trace :as t]))
+(ns knitty.tracetxt
+  (:require [knitty.trace :as t]))
 
 
 (def ^:private inst-format

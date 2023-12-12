@@ -1,6 +1,6 @@
-(ns ag.knitty.test-util
-  (:require [ag.knitty.core :refer [*registry* defyarn]]
-            [ag.knitty.impl :as impl]
+(ns knitty.test-util
+  (:require [knitty.core :refer [*registry* defyarn]]
+            [knitty.impl :as impl]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.pprint :as pp]
@@ -55,7 +55,7 @@
 
 (defn clear-known-yarns! []
   (alter-var-root #'*registry* (fn [_] (impl/create-registry)))
-  (ag.knitty.MDM/resetKeywordsPoolForTests))
+  (knitty.MDM/resetKeywordsPoolForTests))
 
 
 (defn clear-known-yarns-fixture

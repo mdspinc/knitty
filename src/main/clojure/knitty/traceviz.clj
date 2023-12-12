@@ -1,5 +1,5 @@
-(ns ag.knitty.traceviz
-  (:require [ag.knitty.trace
+(ns knitty.traceviz
+  (:require [knitty.trace
              :refer [find-traces merge-parsed-traces parse-trace]]
             [clojure.datafy :refer [datafy]]
             [clojure.java.browse :as browse]

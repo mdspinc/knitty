@@ -1,4 +1,4 @@
-(require '[ag.knitty.core :refer [defyarn yank]]
+(require '[knitty.core :refer [defyarn yank]]
          '[manifold.deferred :as md]
          '[criterium.core :as cc]
          '[clj-async-profiler.core :as prof])
@@ -22,7 +22,7 @@
 
 (defn mod-or-future [x y]
   (let [m (mod x y)]
-    (if (zero? m) 
+    (if (zero? m)
       (md/future m)
       m)))
 
@@ -58,19 +58,19 @@
 (defn dobench []
 
   (print "Tracing off")
-  (binding [ag.knitty.core/*tracing* false]
+  (binding [knitty.core/*tracing* false]
     (cc/quick-bench
      @(md/chain (yank {} target-keys) second count)))
 
   #_(println "Tracing on")
-  #_(binding [ag.knitty.core/*tracing* true]
+  #_(binding [knitty.core/*tracing* true]
     (cc/quick-bench
      @(md/chain (yank {} target-keys) second count))))
 
 
 (comment
-  
-  (alter-var-root #'ag.knitty.core/*tracing* (constantly false))
+
+  (alter-var-root #'knitty.core/*tracing* (constantly false))
   (time
      @(md/chain (yank {} target-keys) count))
 
@@ -78,10 +78,10 @@
   (dobench)
 
   (prof/profile 1)
-  
+
   (dotimes [_ 100000]
     @(yank {} target-keys))
-  
+
   (prof/profile
    (dotimes [_ 100000]
      @(yank {} target-keys)
@@ -89,5 +89,5 @@
 
   (prof/profile (dobench))
   (prof/serve-files 8080)
-  
+
   )

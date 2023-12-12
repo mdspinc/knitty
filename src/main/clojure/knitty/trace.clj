@@ -1,4 +1,4 @@
-(ns ag.knitty.trace
+(ns knitty.trace
   (:require
    [clojure.set :as set]
    [manifold.deferred :as md])

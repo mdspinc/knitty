@@ -1,11 +1,11 @@
-(ns ag.knitty.deferred
+(ns knitty.deferred
   (:refer-clojure :exclude [await])
   (:require [clojure.tools.logging :as log]
             [manifold.deferred :as md]
-            [ag.knitty.deferred :as kd])
+            [knitty.deferred :as kd])
   (:import [java.util.concurrent CancellationException TimeoutException]
            [manifold.deferred IDeferred IMutableDeferred IDeferredListener]
-           [ag.knitty KaDeferred]))
+           [knitty KaDeferred]))
 
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* :warn-on-boxed)
@@ -138,7 +138,7 @@
 
 
 (defmethod print-method KaDeferred [y ^java.io.Writer w]
-  (.write w "#ag.knitty/Deferred[")
+  (.write w "#knitty/Deferred[")
   (let [error (md/error-value y ::none)
         value (md/success-value y ::none)]
     (cond
@@ -205,7 +205,7 @@
 
 
 (defmethod print-method KaSuccess [y ^java.io.Writer w]
-  (.write w "#ag.knitty/Success[")
+  (.write w "#knitty/Success[")
   (print-method (md/success-value y ::fail) w)
   (.write w "]"))
 

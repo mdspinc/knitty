@@ -1,6 +1,6 @@
-(ns ag.knitty.knitty-test
+(ns knitty.knitty-test
   {:clj-kondo/ignore [:inline-def]}
-  (:require [ag.knitty.core :as knitty
+  (:require [knitty.core :as knitty
              :refer [defyarn doyank! yank yarn]]
             [clojure.spec.alpha :as s]
             [clojure.test :as t :refer [deftest is testing]]
@@ -15,7 +15,7 @@
      `do
      (for [b body]
        `(binding [*ns* *ns*]
-          (in-ns 'ag.knitty.knitty-test)
+          (in-ns 'knitty.knitty-test)
           (eval '~b)))))
 
 

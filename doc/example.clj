@@ -1,6 +1,6 @@
-(require '[ag.knitty.core :refer [defyarn doyank! yank yarn link-yarn]]
-         '[ag.knitty.tracetxt :refer [print-trace]]
-         '[ag.knitty.traceviz :refer [render-trace view-trace]]
+(require '[knitty.core :refer [defyarn doyank! yank yarn link-yarn]]
+         '[knitty.tracetxt :refer [print-trace]]
+         '[knitty.traceviz :refer [render-trace view-trace]]
          '[manifold.deferred :as md])
 
 (defyarn zero;; define "yarn" - single slot/value
@@ -70,7 +70,7 @@
 (for [i (range 1 4)]
   @(yank {} [(yarn ::eight {s ::four} (* i s))]))
 
-(alter-var-root #'ag.knitty.core/*tracing* (constantly true))
+(alter-var-root #'knitty.core/*tracing* (constantly true))
 
 (print-trace (yank {} [six]))
 

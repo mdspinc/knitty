@@ -1,4 +1,4 @@
-package ag.knitty;
+package knitty;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;

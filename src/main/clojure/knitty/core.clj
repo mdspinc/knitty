@@ -1,7 +1,7 @@
-(ns ag.knitty.core
-  (:require [ag.knitty.deferred :as kd]
-            [ag.knitty.impl :as impl]
-            [ag.knitty.trace :as trace]
+(ns knitty.core
+  (:require [knitty.deferred :as kd]
+            [knitty.impl :as impl]
+            [knitty.trace :as trace]
             [clojure.java.browse]
             [clojure.java.browse-ui]
             [clojure.java.shell]

@@ -4,7 +4,7 @@ There are two basic building blocks in Knitty: macro `defyarn` and function `yan
 
 ```clojure
 (ns user
-  (:require [ag.knitty.core :refer [defyarn yank]]))
+  (:require [knitty.core :refer [defyarn yank]]))
 ```
 
 Macro `defyarn` defines a "node of computation" (referred to as "yarn").  Each node is identified by a qualified keyword, body expression is evaluated and added to the global "registry" of known nodes.  Also macro defines a var with a keyword value for convenience -- it helps with text editors and linters, but is not strictly required for library usage:

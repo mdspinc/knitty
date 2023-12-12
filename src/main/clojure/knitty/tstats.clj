@@ -1,8 +1,8 @@
-(ns ag.knitty.tstats
-  (:require [ag.knitty.trace :as trace]
+(ns knitty.tstats
+  (:require [knitty.trace :as trace]
             [manifold.deferred :as md])
   (:import [org.HdrHistogram
-            ConcurrentHistogram 
+            ConcurrentHistogram
             Histogram
             Recorder]))
 
@@ -10,7 +10,7 @@
 (set! *unchecked-math* true)
 
 
-(defrecord Stats 
+(defrecord Stats
   [^long total-count
    ^long total-sum
    ^long count
@@ -51,7 +51,7 @@
 
 
 (defn- windowed-stats-tracker
-  [& {:keys [window window-chunk precision percentiles]}] 
+  [& {:keys [window window-chunk precision percentiles]}]
   (let [;;
         window (long window)
         window-chunk (long window-chunk)
@@ -80,7 +80,7 @@
                     (when-not (zero? (.getTotalCount h))
                       (swap! hss conj [t h])))))
               (cleanup!))))]
- 
+
     (fn
 
       ([]
@@ -187,8 +187,8 @@
           (.entrySet h)))))))
 
 
-(defn timings-collector 
-  [& {:keys [yarns 
+(defn timings-collector
+  [& {:keys [yarns
              events
              window
              window-chunk
@@ -218,8 +218,8 @@
         (->> (tracker)
              (group-by ffirst)
              (mapcat (fn [[y row]]
-                       (map (fn [[[_ e] s]] 
-                              (into {:event e, :yarn y} s)) 
+                       (map (fn [[[_ e] s]]
+                              (into {:event e, :yarn y} s))
                             row)))))
        ([poy]
         (md/chain'
@@ -229,4 +229,4 @@
              (when s
                (tracker (yarn-timings s yarns events))))))
         poy))))
-  
+

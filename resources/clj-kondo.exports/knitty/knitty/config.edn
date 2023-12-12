@@ -8,11 +8,11 @@
 
  :hooks
  {:analyze-call
-  {ag.knitty.core/yarn    knitty.clj-kondo-hooks/yarn
-   ag.knitty.core/defyarn knitty.clj-kondo-hooks/defyarn
-   ag.knitty.core/doyank  knitty.clj-kondo-hooks/doyank*
-   ag.knitty.core/doyank! knitty.clj-kondo-hooks/doyank*
-   ag.knitty.core/declare-yarn knitty.clj-kondo-hooks/declare-yarn
+  {knitty.core/yarn    knitty.clj-kondo-hooks/yarn
+   knitty.core/defyarn knitty.clj-kondo-hooks/defyarn
+   knitty.core/doyank  knitty.clj-kondo-hooks/doyank*
+   knitty.core/doyank! knitty.clj-kondo-hooks/doyank*
+   knitty.core/declare-yarn knitty.clj-kondo-hooks/declare-yarn
    }
 
   }}

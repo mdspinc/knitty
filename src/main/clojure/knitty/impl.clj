@@ -1,7 +1,7 @@
-(ns ag.knitty.impl
-  (:require [ag.knitty.deferred :as kd]
-            [ag.knitty.mdm :as mdm]
-            [ag.knitty.trace :as t :refer [capture-trace!]]
+(ns knitty.impl
+  (:require [knitty.deferred :as kd]
+            [knitty.mdm :as mdm]
+            [knitty.trace :as t :refer [capture-trace!]]
             [clojure.set :as set]
             [manifold.deferred :as md]
             [manifold.executor]
@@ -94,16 +94,16 @@
 
 
 (defmacro registry-yankfn' [registry kkw kid]
-  `(let [^ag.knitty.impl.Registry r# ~registry]
+  `(let [^knitty.impl.Registry r# ~registry]
      (if-some [y# (aget ^"[Ljava.lang.Object;" (.-ygets r#) ~kid)]
        y#
        (registry-yankfn r# ~kkw ~kid))))
 
 
 (deftype YankCtx
-         [^ag.knitty.MDM mdm
-          ^ag.knitty.impl.Registry registry
-          ^ag.knitty.trace.Tracer tracer])
+         [^knitty.MDM mdm
+          ^knitty.impl.Registry registry
+          ^knitty.trace.Tracer tracer])
 
 
 (defn bind-param-type [ds]
@@ -178,7 +178,7 @@
           (.get value)))))
 
   Object
-  (toString [_] (str "#ag.knitty/Lazy[" ykey "]")))
+  (toString [_] (str "#knitty/Lazy[" ykey "]")))
 
 
 (defmacro yarn-get-lazy [yk ykey ctx]
@@ -275,7 +275,7 @@
   (let [{:keys [executor norevoke]} yarn-meta
 
         ctx (with-meta '_yank_ctx {:tag (str `YankCtx)})
-        kad (with-meta '_yank_kad {:tag (str `ag.knitty.KaDeferred)})
+        kad (with-meta '_yank_kad {:tag (str `knitty.KaDeferred)})
         kid (mdm/keyword->intid ykey)
         fnn #(-> ykey name (str %) symbol)
 
