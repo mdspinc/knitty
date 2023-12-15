@@ -94,6 +94,13 @@
        v))))
 
 
+(def update-vals'
+  (or
+   (requiring-resolve 'clojure.core/update-vals)
+   (fn update-vals [m f]
+     (into {} (map (fn [[k v]] [k (f v)])) m))))
+
+
 (defmacro yarn
   "Returns yarn object (without registering into a registry).
    May capture variables from outer scope."
@@ -105,11 +112,11 @@
       (when (s/invalid? cf)
         (throw (Exception. (s/explain-str ::yarn bd))))
       (let [{{:keys [bind body]} :bind-and-body} cf
-            bind (update-vals bind (fn [[t k]]
-                                     (case t
-                                       :ident (resolve-sym-or-kw &env k)
-                                       :yankfn-map (update-vals k (resolve-sym-or-kw &env))
-                                       )))]
+            bind (update-vals' bind (fn [[t k]]
+                         (case t
+                           :ident (resolve-sym-or-kw &env k)
+                           :yankfn-map (update-vals' k (resolve-sym-or-kw &env)))))
+            ]
         (impl/gen-yarn k bind `(do ~@body))))))
 
 
@@ -153,7 +160,7 @@
 
     (let [{doc :doc, {:keys [bind body]} :bind-and-body} cf
           [nm m] (pick-yarn-meta name (meta bind) doc)
-          bind (update-vals bind second)
+          bind (update-vals' bind second)
           spec (:spec m)
           bind (when bind (with-meta bind m))
           y (if (empty? body)

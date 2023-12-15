@@ -1,11 +1,11 @@
 (ns knitty.deferred
   (:refer-clojure :exclude [await])
-  (:require [clojure.tools.logging :as log]
-            [manifold.deferred :as md]
-            [knitty.deferred :as kd])
+  (:require [knitty.javaimpl]
+            [clojure.tools.logging :as log]
+            [manifold.deferred :as md])
   (:import [java.util.concurrent CancellationException TimeoutException]
            [manifold.deferred IDeferred IMutableDeferred IDeferredListener]
-           [knitty KaDeferred]))
+           [knitty.java KaDeferred]))
 
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* :warn-on-boxed)

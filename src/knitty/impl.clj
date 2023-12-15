@@ -5,8 +5,7 @@
             [clojure.set :as set]
             [manifold.deferred :as md]
             [manifold.executor]
-            [manifold.utils]
-            [knitty.trace :as trace])
+            [manifold.utils])
   (:import [java.util.concurrent.atomic AtomicReference]))
 
 
@@ -104,7 +103,7 @@
 
 
 (deftype YankCtx
-         [^knitty.MDM mdm
+         [^knitty.java.MDM mdm
           ^knitty.impl.Registry registry
           ^knitty.trace.Tracer tracer])
 
@@ -209,7 +208,7 @@
 
 
 (defmacro yarn-get-yankfn [yk keys-map ctx]
-  (let [args (update-vals keys-map (juxt mdm/keyword->intid identity))]
+  (let [args (into {} (map (fn [[k v]] [k [(mdm/keyword->intid v) v]])) keys-map)]
     `(make-yankfn ~ctx ~yk ~args)))
 
 
@@ -276,7 +275,7 @@
   (let [{:keys [executor norevoke]} yarn-meta
 
         ctx (with-meta '_yank_ctx {:tag (str `YankCtx)})
-        kad (with-meta '_yank_kad {:tag (str `knitty.KaDeferred)})
+        kad (with-meta '_yank_kad {:tag (str `knitty.java.KaDeferred)})
         kid (mdm/keyword->intid ykey)
         fnn #(-> ykey name (str %) symbol)
 
@@ -455,7 +454,7 @@
 (defn make-multiyarn-route-key-fn [ykey k]
   (let [i (long (mdm/keyword->intid k))]
     (fn yank-route-key [^YankCtx ctx]
-      (ctx-tracer-> ctx trace/trace-route-by ykey k)
+      (ctx-tracer-> ctx t/trace-route-by ykey k)
       (let [d (yarn-get-sync ykey k i ctx)]
         (if (md/deferred? d)
           ::deferred

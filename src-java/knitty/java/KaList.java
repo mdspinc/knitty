@@ -1,4 +1,4 @@
-package knitty;
+package knitty.java;
 
 import java.util.Iterator;
 
@@ -33,6 +33,7 @@ public final class KaList<T> implements Iterable<T> {
       return node != null ;
     }
 
+    @SuppressWarnings("unchecked")
     public T next() {
       Object res = node.items[idx++];
       if (idx == len) {

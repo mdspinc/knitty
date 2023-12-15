@@ -55,7 +55,7 @@
 
 (defn clear-known-yarns! []
   (alter-var-root #'*registry* (fn [_] (impl/create-registry)))
-  (knitty.MDM/resetKeywordsPoolForTests))
+  (knitty.java.MDM/resetKeywordsPoolForTests))
 
 
 (defn clear-known-yarns-fixture

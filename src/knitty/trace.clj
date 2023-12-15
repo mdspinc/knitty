@@ -9,10 +9,7 @@
 
 
 (def elide-tracing
-  (when-some [x (System/getProperty "knitty.elide-tracing")]
-    (let [b (parse-boolean x)]
-      (assert (some? b))
-      b)))
+  (#{"1" "true" "yes"} (System/getProperty "knitty.elide-tracing")))
 
 
 (defprotocol Tracer
@@ -135,9 +132,10 @@
   (let [{:keys [at base-at done-at poy tracelog yankid yarns]} t
 
         yanked? (set yarns)
-        ytlog (update-vals
-               (group-by :yarn tracelog)
-               (fn [ts] (into {} (map (juxt :event :value) ts))))
+        ytlog (into
+               {}
+               (map (fn [[k ts]] [k (into {} (map (juxt :event :value) ts))]))
+               (group-by :yarn tracelog))
 
         ytdep-time (into {}
                          (for [{y :yarn, e :event, v :value} tracelog

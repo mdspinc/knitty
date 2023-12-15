@@ -1,5 +1,6 @@
 (ns knitty.mdm
-  (:import [knitty MDM]))
+  (:require [knitty.javaimpl])
+  (:import [knitty.java MDM]))
 
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* :warn-on-boxed)
@@ -11,22 +12,22 @@
   `(MDM/regkw ~k))
 
 (definline mdm-fetch! [mdm kid]
-  (list '.fetch (with-meta mdm {:tag "knitty.MDM"}) kid))
+  (list '.fetch (with-meta mdm {:tag "knitty.java.MDM"}) kid))
 
 (definline mdm-freeze! [mdm]
-  (list '.freeze (with-meta mdm {:tag "knitty.MDM"})))
+  (list '.freeze (with-meta mdm {:tag "knitty.java.MDM"})))
 
 (definline mdm-cancel! [mdm]
-  (list '.cancel (with-meta mdm {:tag "knitty.MDM"})))
+  (list '.cancel (with-meta mdm {:tag "knitty.java.MDM"})))
 
 (definline mdm-get! [mdm kid]
-  (list '.get (with-meta mdm {:tag "knitty.MDM"}) kid))
+  (list '.get (with-meta mdm {:tag "knitty.java.MDM"}) kid))
 
 (definline fetch-result-claimed? [r]
-  (list '.-claimed (with-meta r {:tag "knitty.MDM$Result"})))
+  (list '.-claimed (with-meta r {:tag "knitty.java.MDM$Result"})))
 
 (definline fetch-result-value [r]
-  (list '.-value (with-meta r {:tag "knitty.MDM$Result"})))
+  (list '.-value (with-meta r {:tag "knitty.java.MDM$Result"})))
 
 (definline none? [x]
   `(MDM/isNone ~x))
