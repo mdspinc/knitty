@@ -1,4 +1,4 @@
-package knitty.java;
+package knitty.javaimpl;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;

@@ -1,3 +1,4 @@
+(require 'manifold.deferred)
 (ns example
   (:require [knitty.core :refer [defyarn defyarn-method defyarn-multi
                                  doyank! link-yarn yank yarn]]

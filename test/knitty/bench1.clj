@@ -1,6 +1,6 @@
 (ns knitty.bench1
   (:require [knitty.core :refer [yank]]
-            [knitty.deferred :as kd]
+            [knitty.javaimpl :as ji]
             [knitty.test-util :refer :all]
             [clojure.test :as t :refer [deftest testing use-fixtures]]
             [manifold.debug :as debug]
@@ -19,9 +19,8 @@
 (deftest ^:benchmark bench-deferred
 
   (binding [debug/*dropped-error-logging-enabled?* false]
-    (doseq [[t create-d] [;;
-                          ;; [:manifold #(d/deferred nil)]
-                          [:knitty kd/ka-deferred]]]
+    (doseq [[t create-d] [[:manifold #(md/deferred nil)]
+                          [:knitty #(ji/create-kd)]]]
       (testing t
         (bench :create
                (create-d))

@@ -55,7 +55,7 @@
 
 (defn clear-known-yarns! []
   (alter-var-root #'*registry* (fn [_] (impl/create-registry)))
-  (knitty.java.MDM/resetKeywordsPoolForTests))
+  (knitty.javaimpl.MDM/resetKeywordsPoolForTests))
 
 
 (defn clear-known-yarns-fixture
@@ -116,7 +116,7 @@
                 (file-seq (io/file bench-results-dir))
                 (next)
                 (map (comp read-string slurp))
-                (sort-by #(.getTime (:when %))))
+                (sort-by #(let [^java.util.Date w (:when %)] (.getTime w))))
           oids (map :id oldr)
           oldm (into {}
                      (for [ors oldr

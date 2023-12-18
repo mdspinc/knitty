@@ -1,23 +1,15 @@
 (ns knitty.deferred
   (:refer-clojure :exclude [await])
-  (:require [knitty.javaimpl]
+  (:require [manifold.deferred :as md]
             [clojure.tools.logging :as log]
-            [manifold.deferred :as md])
+            [knitty.javaimpl :as ji])
   (:import [java.util.concurrent CancellationException TimeoutException]
-           [manifold.deferred IDeferred IMutableDeferred IDeferredListener]
-           [knitty.java KaDeferred]))
+           [manifold.deferred IDeferred IMutableDeferred IDeferredListener]))
+
 
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* :warn-on-boxed)
 
-
-(declare connect-to-ka-deferred)
-(declare ka-deferred)
-(declare connect-two-deferreds)
-
-
-(KaDeferred/setExceptionLogFn
- (fn log-ex [e] (log/error e "error in deferred handler")))
 
 (definline success'! [d x]
   `(let [^IMutableDeferred d# ~d] (.success d# ~x)))
@@ -64,7 +56,6 @@
        (success'! d2# d1#))))
 
 
-
 (defmacro chain-listener [next on-succ]
   `(reify manifold.deferred.IDeferredListener
      (onSuccess [_ _#] ~on-succ)
@@ -77,7 +68,8 @@
     (case n
       0 (.onSuccess ls nil)
       1 (maybe-listen'! (aget ds 0) ls)
-      (KaDeferred/awaitAll ls ds))))
+      (ji/kd-await-all ls ds)
+      )))
 
 
 (defmacro await-ary*
@@ -126,48 +118,10 @@
 
 
 (defn revoke' [^IDeferred d c]
-  (let [d' (ka-deferred)]
+  (let [d' (ji/create-kd)]
     (connect-to-ka-deferred d d')
     (md/add-listener! d' (RevokeListener. d c))
     d'))
-
-(definline ka-deferred
-  "fast lock-free deferred (no executor/claim support)"
-  []
-  `(KaDeferred.))
-
-
-(defmethod print-method KaDeferred [y ^java.io.Writer w]
-  (.write w "#knitty/Deferred[")
-  (let [error (md/error-value y ::none)
-        value (md/success-value y ::none)]
-    (cond
-      (not (identical? error ::none))
-      (do
-        (.write w ":error ")
-        (print-method (class error) w)
-        (.write w " ")
-        (print-method (ex-message error) w))
-      (not (identical? value ::none))
-      (do
-        (.write w ":value ")
-        (print-method value w))
-      :else
-      (.write w "…")))
-  (.write w "]"))
-
-;; >> Knitty aware deferred
-
-(deftype DeferredHookListener [^IMutableDeferred d]
-  manifold.deferred.IDeferredListener
-  (onSuccess [_ x] (success'! d x))
-  (onError [_ e] (error'! d e)))
-
-
-(defn connect-two-deferreds [^IDeferred d1 ^IDeferred d2]
-  (if (instance? KaDeferred d2)
-    (listen'! d1 d2)
-    (listen'! d1 (DeferredHookListener. d2))))
 
 
 (deftype KaSuccess

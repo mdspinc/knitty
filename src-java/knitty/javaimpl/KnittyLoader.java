@@ -1,9 +1,11 @@
-package knitty.java;
+package knitty.javaimpl;
 
 import java.io.IOException;
 import java.net.URL;
 
 import clojure.lang.DynamicClassLoader;
+import clojure.lang.IFn;
+import clojure.java.api.Clojure;
 
 public class KnittyLoader extends DynamicClassLoader {
 
@@ -12,7 +14,7 @@ public class KnittyLoader extends DynamicClassLoader {
     }
 
     public Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
-        if (name.startsWith("knitty.java.")) {
+        if (name.startsWith("knitty.javaimpl.")) {
             URL r = this.getResource(name.replace(".", "/") + ".class");
             if (r != null) {
                 // Load Knitty java class as clj dynamic classes
@@ -27,15 +29,22 @@ public class KnittyLoader extends DynamicClassLoader {
         return super.loadClass(name, resolve);
     }
 
-    public static void init() throws ClassNotFoundException, IOException {
-        KnittyLoader cl = new KnittyLoader();
-        cl.loadKnittyClasses();
-        cl.close();
+    public static void touch() {
+        // Do nothing.
     }
 
-    void loadKnittyClasses() throws ClassNotFoundException {
-        loadClass("knitty.java.KaList");
-        loadClass("knitty.java.KaDeferred");
-        loadClass("knitty.java.MDM");
+    static {
+        // load manifold.deferred (compile 'definterface')
+        IFn require = Clojure.var("clojure.core/require");
+        IFn symbol = Clojure.var("clojure.core/symbol");
+        require.invoke(symbol.invoke("manifold.deferred"));
+
+        try (KnittyLoader cl = new KnittyLoader()) {
+            cl.loadClass("knitty.javaimpl.KaList");
+            cl.loadClass("knitty.javaimpl.KaDeferred");
+            cl.loadClass("knitty.javaimpl.MDM");
+        } catch (ClassNotFoundException | IOException e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

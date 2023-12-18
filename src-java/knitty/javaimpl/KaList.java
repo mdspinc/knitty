@@ -1,4 +1,4 @@
-package knitty.java;
+package knitty.javaimpl;
 
 import java.util.Iterator;
 

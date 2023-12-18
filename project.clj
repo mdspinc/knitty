@@ -14,7 +14,7 @@
   :source-paths ["src"]
   :java-source-paths ["src-java"]
 
-  :aot-include [#"knitty\.java\..*"]
+  :aot-include [#"knitty\.javaimpl\..*"]
   :aot [knitty.core]
 
   :javac-options ["-target" "17" "-source" "17"]
