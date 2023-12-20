@@ -18,17 +18,13 @@
   :aot [knitty.core]
 
   :javac-options ["-target" "17" "-source" "17"]
-  :profiles {:precompile {:aot ^:replace [manifold.deferred]
-                          :prep-tasks ^:replace []}
-             :dev {:dependencies [[criterium "0.4.6"]]
+  :profiles {:dev {:dependencies [[criterium "0.4.6"]]
                    :global-vars {*warn-on-reflection* true}}}
 
-  :prep-tasks [["with-profile" "precompile" "compile"]
-               ["javac"]
+  :prep-tasks [["javac"]
                ["compile"]
                ["aot-filter"]
-               ["shell" "find" "target/classes" "-type" "d" "-empty" "-delete"]
-               ]
+               ["shell" "find" "target/classes" "-type" "d" "-empty" "-delete"]]
 
   :test-selectors {:default #(not (some #{:benchmark :stress} (cons (:tag %) (keys %))))
                    :benchmark :benchmark
