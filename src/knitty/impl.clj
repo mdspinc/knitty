@@ -260,6 +260,7 @@
      (do
        (ctx-tracer-> ~ctx t/trace-finish ~ykey ~result nil false)
        (kd/success'! ~mdm-deferred ~result)
+       (ji/mdm-put! (.-mdm ~ctx) ~(ji/keyword->intid ykey) ~result)
        ~result)))
 
 

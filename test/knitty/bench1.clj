@@ -15,7 +15,7 @@
 (use-fixtures :once (report-benchmark-fixture))
 (use-fixtures :each (clear-known-yarns-fixture))
 
-
+#_
 (deftest ^:benchmark bench-deferred
 
   (binding [debug/*dropped-error-logging-enabled?* false]

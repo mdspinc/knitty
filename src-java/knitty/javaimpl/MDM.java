@@ -14,7 +14,6 @@ import clojure.lang.Keyword;
 import manifold.deferred.IDeferred;
 import manifold.deferred.IMutableDeferred;
 
-
 public final class MDM {
 
     private static Object KLOCK = new Object();
@@ -33,6 +32,7 @@ public final class MDM {
 
     private static final Object NONE = new Object();
     private static final Object NIL = new Object();
+
     private static final int ASHIFT = 5;
     private static final int ASIZE = 1 << ASHIFT;
     private static final int AMASK = ASIZE - 1;
@@ -155,8 +155,14 @@ public final class MDM {
         }
 
         Object vv = init.valAt(ksa[i], NONE);
-        AR1.set(a1, i1, vv == null ? NIL : vv);
+        AR1.setVolatile(a1, i1, vv == null ? NIL : vv);
         return vv;
+    }
+
+    public void put(int i, Object vv) {
+        Object[] a1 = chunk(i);
+        int i1 = i & AMASK;
+        AR1.setVolatile(a1, i1, vv == null ? NIL : vv);
     }
 
     private static Object unwrap1(Object x) {
