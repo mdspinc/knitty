@@ -4,24 +4,24 @@
 (ns knitty.javaimpl
   (:require [manifold.deferred :as md]
             [clojure.tools.logging :as log])
-  (:import [knitty.javaimpl MDM KaDeferred]))
+  (:import [knitty.javaimpl MDM KDeferred]))
 
 
 ;; KdDeferred
 
-(KaDeferred/setExceptionLogFn
+(KDeferred/setExceptionLogFn
  (fn log-ex [e] (log/error e "error in deferred handler")))
 
 (definline create-kd []
-  `(KaDeferred.))
+  `(KDeferred.))
 
 (definline kd-await-all [ls ds]
-  `(KaDeferred/awaitAll ~ls ~ds))
+  `(KDeferred/awaitAll ~ls ~ds))
 
 (definline kd-set-revokee [kd revokee]
-  (list '.setRevokee (with-meta kd {:tag "knitty.javaimpl.KaDeferred"}) revokee))
+  (list '.setRevokee (with-meta kd {:tag "knitty.javaimpl.KDeferred"}) revokee))
 
-(defmethod print-method KaDeferred [y ^java.io.Writer w]
+(defmethod print-method KDeferred [y ^java.io.Writer w]
   (.write w "#knitty/Deferred[")
   (let [error (md/error-value y ::none)
         value (md/success-value y ::none)]
