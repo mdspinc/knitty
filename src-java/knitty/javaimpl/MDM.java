@@ -11,7 +11,6 @@ import clojure.lang.Associative;
 import clojure.lang.IEditableCollection;
 import clojure.lang.ITransientAssociative;
 import clojure.lang.Keyword;
-import manifold.deferred.IDeferred;
 
 public final class MDM {
 
@@ -28,8 +27,7 @@ public final class MDM {
         return e;
     }
 
-    private static final Object NONE = new Object();
-    private static final Object NIL = new Object();
+    private static final KDeferred NONE = KDeferred.wrap(new Object() {});
 
     private static final int ASHIFT = 5;
     private static final int ASIZE = 1 << ASHIFT;
@@ -70,8 +68,8 @@ public final class MDM {
         }
     }
 
-    private static final VarHandle AR0 = MethodHandles.arrayElementVarHandle(Object[][].class);
-    private static final VarHandle AR1 = MethodHandles.arrayElementVarHandle(Object[].class);
+    private static final VarHandle AR0 = MethodHandles.arrayElementVarHandle(KDeferred[][].class);
+    private static final VarHandle AR1 = MethodHandles.arrayElementVarHandle(KDeferred[].class);
     private static final VarHandle ADDED;
 
     static {
@@ -84,7 +82,7 @@ public final class MDM {
     }
 
     private final Associative init;
-    private final Object[][] a0;
+    private final KDeferred[][] a0;
     private volatile KVCons added;
 
     public static class Result {
@@ -93,7 +91,7 @@ public final class MDM {
 
         public Result(boolean claimed, Object value) {
             this.claimed = claimed;
-            this.value = value == NIL ? null : value;
+            this.value = value;
         }
     }
 
@@ -114,15 +112,15 @@ public final class MDM {
         this.init = init;
         int maxid;
         maxid = KID;
-        this.a0 = new Object[(maxid >> ASHIFT) + 1][];
+        this.a0 = new KDeferred[(maxid >> ASHIFT) + 1][];
     }
 
-    private Object[] chunk(int k) {
+    private KDeferred[] chunk(int k) {
         int z = k >> ASHIFT;
-        Object[] a1 = (Object[]) AR0.getVolatile(a0, z);
+        KDeferred[] a1 = (KDeferred[]) AR0.getVolatile(a0, z);
         if (a1 == null) {
-            a1 = new Object[ASIZE];
-            Object[] a1x = (Object[]) AR0.compareAndExchange(a0, z, null, a1);
+            a1 = new KDeferred[ASIZE];
+            KDeferred[] a1x = (KDeferred[]) AR0.compareAndExchange(a0, z, null, a1);
             return a1x == null ? a1 : a1x;
         } else {
             return a1;
@@ -131,31 +129,33 @@ public final class MDM {
 
     public Result fetch(Keyword k, int i) {
 
-        Object[] a1 = chunk(i);
+        KDeferred[] a1 = chunk(i);
         int i1 = i & AMASK;
 
-        Object v = AR1.getVolatile(a1, i1);
+        KDeferred v = (KDeferred) AR1.getVolatile(a1, i1);
+
         if (v == null) {
             Object vv = init.valAt(k, NONE);
             if (vv != NONE) {
-                AR1.setVolatile(a1, i1, vv == null ? NIL : vv);
-                return new Result(false, vv);
+                KDeferred d = KDeferred.wrap(vv);
+                AR1.setVolatile(a1, i1, d);
+                return new Result(false, d.unwrap());
             }
         } else if (v != NONE) {
-            return new Result(false, v);
+            return new Result(false, v.unwrap());
         }
 
         // new item, was prewarmed by calling mdmGet
         KDeferred d = new KDeferred();
-        Object d1 = AR1.compareAndExchange(a1, i1, v, (Object) d);
-        if (v == d1) {
+        KDeferred d1 = (KDeferred) AR1.compareAndExchange(a1, i1, v, d);
+        if (d1 == v) {
             while (true) {
                 KVCons a = added;
                 if (ADDED.compareAndSet(this, a, new KVCons(a, k, d))) break;
             }
             return new Result(true, d);
         } else {
-            return new Result(false, d1);
+            return new Result(false, d1.unwrap());
         }
     }
 
@@ -163,45 +163,28 @@ public final class MDM {
         Object[] a1 = chunk(i);
         int i1 = i & AMASK;
 
-        Object v = AR1.getVolatile(a1, i1);
+        KDeferred v = (KDeferred) AR1.getVolatile(a1, i1);
         if (v != null) {
-            return unwrap1(v);
+            return v.unwrap();
         }
 
         Object vv = init.valAt(k, NONE);
-        AR1.setVolatile(a1, i1, vv == null ? NIL : vv);
+        AR1.setVolatile(a1, i1, KDeferred.wrap(vv));
+
         return vv;
-    }
-
-    public void put(int i, Object vv) {
-        Object[] a1 = chunk(i);
-        int i1 = i & AMASK;
-        AR1.setVolatile(a1, i1, vv == null ? NIL : vv);
-    }
-
-    private static Object unwrap1(Object x) {
-        if (x instanceof IDeferred) {
-            return ((IDeferred) x).successValue(x);
-        } else if (x == NIL) {
-            return null;
-        } else {
-            return x;
-        }
     }
 
     public Associative freeze() {
         if (init instanceof IEditableCollection) {
             ITransientAssociative t = (ITransientAssociative) ((IEditableCollection) init).asTransient();
             for (KVCons a = added; a != null; a = a.next) {
-                Object x = a.d.successValue(a.d);
-                t = t.assoc(a.k, x);
+                t = t.assoc(a.k, a.d.unwrap());
             }
             return (Associative) t.persistent();
         } else {
             Associative t = init;
             for (KVCons a = added; a != null; a = a.next) {
-                Object x = a.d.successValue(a.d);
-                t = t.assoc(a.k, x);
+                t = t.assoc(a.k, a.d.unwrap());
             }
             return t;
         }

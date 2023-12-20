@@ -61,9 +61,6 @@
 (definline mdm-get! [mdm kw kid]
   (list '.get (with-meta mdm {:tag "knitty.javaimpl.MDM"}) kw kid))
 
-(definline mdm-put! [mdm kid vv]
-  (list '.put (with-meta mdm {:tag "knitty.javaimpl.MDM"}) kid vv))
-
 (definline fetch-result-claimed? [r]
   (list '.-claimed (with-meta r {:tag "knitty.javaimpl.MDM$Result"})))
 

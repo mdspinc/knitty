@@ -260,7 +260,6 @@
      (do
        (ctx-tracer-> ~ctx t/trace-finish ~ykey ~result nil false)
        (kd/success'! ~mdm-deferred ~result)
-       (ji/mdm-put! (.-mdm ~ctx) ~(ji/keyword->intid ykey) ~result)
        ~result)))
 
 
@@ -325,13 +324,13 @@
                          (for [[_ k] dk] [k :yankfn])
                          [[dk pt]])))]
 
-    `(fn ~(fnn "--yank") [~ctx]
+    `(fn ~(-> ykey name (str '--yank) symbol) [~ctx]
        (let [kv# (ji/mdm-fetch! (.-mdm ~ctx) ~ykey ~kid)
              d# (ji/fetch-result-value kv#)]
          (if-not (ji/fetch-result-claimed? kv#)
 
            ;; got item from mdm
-           (kd/unwrap1' d#)
+           d#
 
            ;; calculate & provide new value to mdm
            (maybe-future-with
@@ -383,16 +382,16 @@
 
 (defn emit-yarn-ref-gtr [ykey orig-ykey]
   (let [kid (ji/keyword->intid ykey)]
-    `(fn [^YankCtx ctx#]
+    `(fn ~(-> ykey name (str '--ref) symbol) [^YankCtx ctx#]
        (let [kv# (ji/mdm-fetch! (.-mdm ctx#) ~ykey ~kid)
              d# (ji/fetch-result-value kv#)]
          (if-not (ji/fetch-result-claimed? kv#)
-           (kd/unwrap1' d#)
+           d#
            (do
              (ctx-tracer-> ctx# t/trace-start ~ykey :knot [[~orig-ykey :ref]])
              (try
-               (ctx-tracer-> ctx# t/trace-call ~ykey)
                (let [x# (yarn-get-sync ~ykey ~orig-ykey ctx#)]
+                 (ctx-tracer-> ctx# t/trace-call ~ykey)
                  (connect-result-mdm ctx# ~ykey x# d#))
                (catch Throwable e#
                  (connect-error-mdm ctx# ~ykey e# d#)))))))))
@@ -497,7 +496,6 @@
 
 (defn fail-always-yarn [ykey msg]
   (Yarn. (fn [_] (throw (java.lang.UnsupportedOperationException. (str msg)))) ykey #{}))
-
 
 
 (defn yank0

@@ -140,14 +140,14 @@ public final class KDeferred
 
     private static final class ListenersChunk {
 
-        private static final int MAX_SIZE = 256;
+        private static final int MAX_SIZE = 32;
 
         public final IDeferredListener[] items;
         public int pos;
         public ListenersChunk next;
 
         public ListenersChunk(IDeferredListener x) {
-            this.items = new IDeferredListener[] {x, null, null, null, null};
+            this.items = new IDeferredListener[] {x, null, null, null};
             this.pos = 1;
         }
 
@@ -536,6 +536,15 @@ public final class KDeferred
                 return value;
             default:
                 return fallback;
+        }
+    }
+
+    public Object unwrap() {
+        switch (this.state) {
+            case STATE_SUCC:
+                return value;
+            default:
+                return this;
         }
     }
 
