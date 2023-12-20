@@ -124,7 +124,7 @@
 
 (defn yarn-get [^YankCtx ctx ^clojure.lang.Keyword ykey]
   (let [kid (ji/keyword->intid ykey)
-        v (ji/mdm-get! (.mdm ctx) kid)]
+        v (ji/mdm-get! (.mdm ctx) ykey kid)]
     (if (ji/none? v)
       ((registry-yankfn' (.-registry ctx) ykey kid) ctx)
       v)))
@@ -136,7 +136,7 @@
   ([yk ykey ykeyi ctx]
    `(do
       (ctx-tracer-> ~ctx t/trace-dep ~yk ~ykey)
-      (let [v# (ji/mdm-get! (.-mdm ~ctx) ~ykeyi)]
+      (let [v# (ji/mdm-get! (.-mdm ~ctx) ~ykey ~ykeyi)]
         (if (ji/none? v#)
           ((registry-yankfn' (.-registry ~ctx) ~ykey ~ykeyi) ~ctx)
           v#)))))
@@ -146,7 +146,7 @@
   `(do
      (ctx-tracer-> ~ctx t/trace-dep ~yk ~ykey)
      (kd/as-deferred
-      (let [v# (ji/mdm-get! (.-mdm ~ctx) ~(ji/keyword->intid ykey))]
+      (let [v# (ji/mdm-get! (.-mdm ~ctx) ~ykey ~(ji/keyword->intid ykey))]
         (if (ji/none? v#)
           ((registry-yankfn' (.-registry ~ctx) ~ykey ~(ji/keyword->intid ykey)) ~ctx)
           v#)))))
@@ -168,7 +168,7 @@
           (do
             (try
               (ctx-tracer-> ctx t/trace-dep yk ykey)
-              (kd/connect-to-ka-deferred (let [r (ji/mdm-get! (.-mdm ctx) ykeyi)]
+              (kd/connect-to-ka-deferred (let [r (ji/mdm-get! (.-mdm ctx) yk ykeyi)]
                                            (if (ji/none? r)
                                              ((registry-yankfn' (.-registry ctx) ykey ykeyi) ctx)
                                              r))
@@ -199,7 +199,7 @@
       (do
         (ctx-tracer-> ctx t/trace-dep yk k)
         (kd/as-deferred
-         (let [v (ji/mdm-get! (.-mdm ctx) i)]
+         (let [v (ji/mdm-get! (.-mdm ctx) yk i)]
            (if (ji/none? v)
              ((registry-yankfn' (.-registry ctx) k i) ctx)
              v))))
@@ -326,7 +326,7 @@
                          [[dk pt]])))]
 
     `(fn ~(fnn "--yank") [~ctx]
-       (let [kv# (ji/mdm-fetch! (.-mdm ~ctx) ~kid)
+       (let [kv# (ji/mdm-fetch! (.-mdm ~ctx) ~ykey ~kid)
              d# (ji/fetch-result-value kv#)]
          (if-not (ji/fetch-result-claimed? kv#)
 
@@ -384,7 +384,7 @@
 (defn emit-yarn-ref-gtr [ykey orig-ykey]
   (let [kid (ji/keyword->intid ykey)]
     `(fn [^YankCtx ctx#]
-       (let [kv# (ji/mdm-fetch! (.-mdm ctx#) ~kid)
+       (let [kv# (ji/mdm-fetch! (.-mdm ctx#) ~ykey ~kid)
              d# (ji/fetch-result-value kv#)]
          (if-not (ji/fetch-result-claimed? kv#)
            (kd/unwrap1' d#)

@@ -17,7 +17,7 @@ public final class MDM {
 
     private static Object KLOCK = new Object();
     private static Keyword[] KSA = new Keyword[1024];
-    private static int KID;
+    private static volatile int KID;
     private static Map<Keyword, Integer> KSM = new ConcurrentHashMap<>(1024);
 
     private static final CancellationException CANCEL_EX = createCancelEx("mdm is cancelled");
@@ -85,7 +85,6 @@ public final class MDM {
 
     private final Associative init;
     private final Object[][] a0;
-    private final Keyword[] ksa;
     private volatile KVCons added;
 
     public static class Result {
@@ -101,24 +100,20 @@ public final class MDM {
     private static class KVCons {
 
         public final KVCons next;
-        public final int k;
+        public final Keyword k;
         public final KDeferred d;
 
-        public KVCons(KVCons next, int k, KDeferred d) {
+        public KVCons(KVCons next, Keyword k, KDeferred d) {
             this.next = next;
             this.k = k;
             this.d = d;
         }
     }
 
-
     public MDM(Associative init) {
         this.init = init;
         int maxid;
-        synchronized (KLOCK) {
-            this.ksa = KSA;
-            maxid = KID;
-        }
+        maxid = KID;
         this.a0 = new Object[(maxid >> ASHIFT) + 1][];
     }
 
@@ -134,14 +129,14 @@ public final class MDM {
         }
     }
 
-    public Result fetch(int i) {
+    public Result fetch(Keyword k, int i) {
 
         Object[] a1 = chunk(i);
         int i1 = i & AMASK;
 
         Object v = AR1.getVolatile(a1, i1);
         if (v == null) {
-            Object vv = init.valAt(ksa[i], NONE);
+            Object vv = init.valAt(k, NONE);
             if (vv != NONE) {
                 AR1.setVolatile(a1, i1, vv == null ? NIL : vv);
                 return new Result(false, vv);
@@ -156,7 +151,7 @@ public final class MDM {
         if (v == d1) {
             while (true) {
                 KVCons a = added;
-                if (ADDED.compareAndSet(this, a, new KVCons(a, i, d))) break;
+                if (ADDED.compareAndSet(this, a, new KVCons(a, k, d))) break;
             }
             return new Result(true, d);
         } else {
@@ -164,7 +159,7 @@ public final class MDM {
         }
     }
 
-    public Object get(int i) {
+    public Object get(Keyword k, int i) {
         Object[] a1 = chunk(i);
         int i1 = i & AMASK;
 
@@ -173,7 +168,7 @@ public final class MDM {
             return unwrap1(v);
         }
 
-        Object vv = init.valAt(ksa[i], NONE);
+        Object vv = init.valAt(k, NONE);
         AR1.setVolatile(a1, i1, vv == null ? NIL : vv);
         return vv;
     }
@@ -198,15 +193,15 @@ public final class MDM {
         if (init instanceof IEditableCollection) {
             ITransientAssociative t = (ITransientAssociative) ((IEditableCollection) init).asTransient();
             for (KVCons a = added; a != null; a = a.next) {
-                Object x = unwrap1(a.d);
-                t = t.assoc(ksa[a.k], x);
+                Object x = a.d.successValue(a.d);
+                t = t.assoc(a.k, x);
             }
             return (Associative) t.persistent();
         } else {
             Associative t = init;
             for (KVCons a = added; a != null; a = a.next) {
-                Object x = unwrap1(a.d);
-                t = t.assoc(ksa[a.k], x);
+                Object x = a.d.successValue(a.d);
+                t = t.assoc(a.k, x);
             }
             return t;
         }
