@@ -12,7 +12,6 @@ import clojure.lang.IEditableCollection;
 import clojure.lang.ITransientAssociative;
 import clojure.lang.Keyword;
 import manifold.deferred.IDeferred;
-import manifold.deferred.IMutableDeferred;
 
 public final class MDM {
 
@@ -22,7 +21,6 @@ public final class MDM {
     private static Map<Keyword, Integer> KSM = new ConcurrentHashMap<>(1024);
 
     private static final CancellationException CANCEL_EX = createCancelEx("mdm is cancelled");
-    private static final CancellationException FROZEN_EX = createCancelEx("mdm is frozen");
 
     private static CancellationException createCancelEx(String msg) {
         CancellationException e = new CancellationException(msg);
@@ -74,11 +72,21 @@ public final class MDM {
 
     private static final VarHandle AR0 = MethodHandles.arrayElementVarHandle(Object[][].class);
     private static final VarHandle AR1 = MethodHandles.arrayElementVarHandle(Object[].class);
+    private static final VarHandle ADDED;
+
+    static {
+        try {
+            MethodHandles.Lookup l = MethodHandles.lookup();
+            ADDED = l.findVarHandle(MDM.class, "added", KVCons.class);
+        } catch (ReflectiveOperationException var1) {
+            throw new ExceptionInInitializerError(var1);
+        }
+    }
 
     private final Associative init;
-    private final KaList<Integer> added;
     private final Object[][] a0;
     private final Keyword[] ksa;
+    private volatile KVCons added;
 
     public static class Result {
         public final Object value;
@@ -90,9 +98,22 @@ public final class MDM {
         }
     }
 
+    private static class KVCons {
+
+        public final KVCons next;
+        public final int k;
+        public final KDeferred d;
+
+        public KVCons(KVCons next, int k, KDeferred d) {
+            this.next = next;
+            this.k = k;
+            this.d = d;
+        }
+    }
+
+
     public MDM(Associative init) {
         this.init = init;
-        this.added = new KaList<>(16);
         int maxid;
         synchronized (KLOCK) {
             this.ksa = KSA;
@@ -130,16 +151,14 @@ public final class MDM {
         }
 
         // new item, was prewarmed by calling mdmGet
-        KaDeferred d = new KaDeferred();
+        KDeferred d = new KDeferred();
         Object d1 = AR1.compareAndExchange(a1, i1, v, (Object) d);
         if (v == d1) {
-            boolean ok = added.push(i);
-            if (!ok) {
-                d.error(FROZEN_EX);
-                return new Result(false, d);
-            } else {
-                return new Result(true, d);
+            while (true) {
+                KVCons a = added;
+                if (ADDED.compareAndSet(this, a, new KVCons(a, i, d))) break;
             }
+            return new Result(true, d);
         } else {
             return new Result(false, d1);
         }
@@ -178,27 +197,24 @@ public final class MDM {
     public Associative freeze() {
         if (init instanceof IEditableCollection) {
             ITransientAssociative t = (ITransientAssociative) ((IEditableCollection) init).asTransient();
-            for (int i : added) {
-                Object x = unwrap1(AR1.getVolatile(chunk(i), i & AMASK));
-                t = t.assoc(ksa[i], x);
+            for (KVCons a = added; a != null; a = a.next) {
+                Object x = unwrap1(a.d);
+                t = t.assoc(ksa[a.k], x);
             }
             return (Associative) t.persistent();
         } else {
             Associative t = init;
-            for (int i : added) {
-                Object x = unwrap1(AR1.getVolatile(chunk(i), i & AMASK));
-                t = t.assoc(ksa[i], x);
+            for (KVCons a = added; a != null; a = a.next) {
+                Object x = unwrap1(a.d);
+                t = t.assoc(ksa[a.k], x);
             }
             return t;
         }
     }
 
     public void cancel() {
-        for (int i : added) {
-            Object x = AR1.getVolatile(chunk(i), i & AMASK);
-            if (x instanceof IMutableDeferred) {
-                ((IMutableDeferred) x).error(CANCEL_EX);
-            }
+        for (KVCons a = added; a != null; a = a.next) {
+            a.d.error(CANCEL_EX);
         }
     }
 }

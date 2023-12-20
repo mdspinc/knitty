@@ -40,8 +40,7 @@ public class KnittyLoader extends DynamicClassLoader {
         require.invoke(symbol.invoke("manifold.deferred"));
 
         try (KnittyLoader cl = new KnittyLoader()) {
-            cl.loadClass("knitty.javaimpl.KaList");
-            cl.loadClass("knitty.javaimpl.KaDeferred");
+            cl.loadClass("knitty.javaimpl.KDeferred");
             cl.loadClass("knitty.javaimpl.MDM");
         } catch (ClassNotFoundException | IOException e) {
             throw new IllegalStateException(e);
