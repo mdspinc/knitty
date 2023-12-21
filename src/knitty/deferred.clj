@@ -11,11 +11,11 @@
 (set! *unchecked-math* :warn-on-boxed)
 
 
-(definline success'! [d x]
-  `(let [^IMutableDeferred d# ~d] (.success d# ~x)))
+(definline success'! [d x t]
+  `(let [^IMutableDeferred d# ~d] (.success d# ~x ~t)))
 
-(definline error'! [d x]
-  `(let [^IMutableDeferred d# ~d] (.error d# ~x)))
+(definline error'! [d x t]
+  `(let [^IMutableDeferred d# ~d] (.error d# ~x ~t)))
 
 (definline unwrap1' [x]
   `(let [x# ~x]
@@ -23,51 +23,33 @@
        (md/success-value x# x#)
        x#)))
 
-(definline listen'!
-  [d ls]
-  `(let [^IMutableDeferred d# ~d] (.addListener d# ~ls)))
+
+(deftype FnSucc [^IDeferredListener ls]
+  clojure.lang.IFn
+  (invoke [_ x] (.onSuccess ls x)))
 
 
-(definline maybe-listen'!
-  [d ls]
-  `(let [d# ~d
-         ^IDeferredListener ls# ~ls]
-     (if (instance? IMutableDeferred d#)
-       (.addListener ^IMutableDeferred d# ls#)
-       (.onSuccess ls# d#))))
+(deftype FnErrr [^IDeferredListener ls]
+  clojure.lang.IFn
+  (invoke [_ x] (.onError ls x)))
 
 
 (definline listen!
   [d ls]
-  `(let [d# ~d
-         ^IDeferredListener ls# ~ls]
+  `(let [d# ~d, ^IDeferredListener ls# ~ls]
      (if (instance? IMutableDeferred d#)
        (.addListener ^IMutableDeferred d# ls#)
-       (md/on-realized d#
-                       (fn ~'on-okk [x#] (.onSuccess ls# x#))
-                       (fn ~'on-err [e#] (.onError ls# e#))))))
+       (.onRealized ^IDeferred d# (FnSucc. ls#) (FnErrr. ls#)))))
 
 
-(defmacro connect-to-ka-deferred [v ka-deferred]
-  `(let [d1# ~v
-         d2# ~ka-deferred]
-     (if (md/deferred? d1#)
-       (listen'! d1# d2#)
-       (success'! d2# d1#))))
-
-
-(defmacro chain-listener [next on-succ]
-  `(reify manifold.deferred.IDeferredListener
-     (onSuccess [_ _#] ~on-succ)
-     (onError [_ e#] (.onError ~next e#))))
-
-
-(defn await-all!
+(defn await-all-array
   [^IDeferredListener ls, ^objects ds]
   (let [n (alength ds)]
     (case n
       0 (.onSuccess ls nil)
-      1 (maybe-listen'! (aget ds 0) ls)
+      1 (ji/kd-await ls (aget ds 0))
+      2 (ji/kd-await ls (aget ds 0) (aget ds 1))
+      3 (ji/kd-await ls (aget ds 0) (aget ds 1) (aget ds 2))
       (ji/kd-await-all ls ds)
       )))
 
@@ -76,15 +58,18 @@
   ([ls]
    `(.onSuccess ~ls nil))
   ([ls x1]
-   `(maybe-listen'! ~x1 ~ls))
+   `(ji/kd-await ~ls ~x1))
   ([ls x1 x2]
-   `(let [ls# ~ls]
-      (maybe-listen'! ~x2 (chain-listener ls# (maybe-listen'! ~x1 ls#)))))
-  ([ls x1 x2 & xs]
-   (let [xs (list* x1 x2 xs)
+   `(ji/kd-await ~ls ~x1 ~x2))
+  ([ls x1 x2 x3]
+   `(ji/kd-await ~ls ~x1 ~x2 ~x3))
+  ([ls x1 x2 x3 x4]
+   `(ji/kd-await ~ls ~x1 ~x2 ~x3 ~x4))
+  ([ls x1 x2 x3 x4 & xs]
+   (let [xs (list* x1 x2 x3 x4 xs)
          n (count xs)
          df (gensym)]
-     `(await-all!
+     `(ji/kd-await-all
        ~ls
        (let [~df (object-array ~n)]
          ~@(for [[i x] (map vector (range) xs)]
@@ -119,9 +104,8 @@
 
 (defn revoke' [^IDeferred d c]
   (let [d' (ji/create-kd)]
-    (connect-to-ka-deferred d d')
-    (md/add-listener! d' (RevokeListener. d c))
-    d'))
+    (listen! d' (RevokeListener. d c))
+    (ji/kd-chain-from d' d)))
 
 
 (deftype KaSuccess

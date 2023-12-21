@@ -106,7 +106,7 @@
    May capture variables from outer scope."
   [k & exprs]
   (if (empty? exprs)
-    `(impl/fail-always-yarn ~k ~(str "input-only yarn " k))
+    (impl/gen-yarn-input k)
     (let [bd (cons k exprs)
           cf (s/conform ::yarn bd)]
       (when (s/invalid? cf)
@@ -164,7 +164,7 @@
           spec (:spec m)
           bind (when bind (with-meta bind m))
           y (if (empty? body)
-              `(impl/fail-always-yarn ~k ~(str "input-only yarn " k))
+              (impl/gen-yarn-input k)
               `(yarn ~k ~bind ~@body))]
       (list
        `do

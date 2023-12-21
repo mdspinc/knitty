@@ -27,7 +27,8 @@ public final class MDM {
         return e;
     }
 
-    private static final KDeferred NONE = KDeferred.wrap(new Object() {});
+    private static final KDeferred NONE = new KDeferred();
+    static { NONE.success(NONE); }
 
     private static final int ASHIFT = 5;
     private static final int ASIZE = 1 << ASHIFT;
@@ -81,19 +82,9 @@ public final class MDM {
         }
     }
 
-    private final Associative init;
     private final KDeferred[][] a0;
+    private final Associative init;
     private volatile KVCons added;
-
-    public static class Result {
-        public final Object value;
-        public final boolean claimed;
-
-        public Result(boolean claimed, Object value) {
-            this.claimed = claimed;
-            this.value = value;
-        }
-    }
 
     private static class KVCons {
 
@@ -109,69 +100,72 @@ public final class MDM {
     }
 
     public MDM(Associative init) {
+        this.a0 = new KDeferred[(KID >> ASHIFT) + 1][];
         this.init = init;
-        int maxid;
-        maxid = KID;
-        this.a0 = new KDeferred[(maxid >> ASHIFT) + 1][];
     }
 
-    private KDeferred[] chunk(int k) {
-        int z = k >> ASHIFT;
-        KDeferred[] a1 = (KDeferred[]) AR0.getVolatile(a0, z);
-        if (a1 == null) {
-            a1 = new KDeferred[ASIZE];
-            KDeferred[] a1x = (KDeferred[]) AR0.compareAndExchange(a0, z, null, a1);
-            return a1x == null ? a1 : a1x;
-        } else {
-            return a1;
-        }
-    }
+    public KDeferred fetch(Keyword k, int i) {
 
-    public Result fetch(Keyword k, int i) {
-
-        KDeferred[] a1 = chunk(i);
+        int i0 = i >> ASHIFT;
         int i1 = i & AMASK;
 
+        KDeferred[] a1 = (KDeferred[]) AR0.getVolatile(a0, i0);
+        if (a1 == null) {
+            a1 = new KDeferred[ASIZE];
+            KDeferred[] a1x = (KDeferred[]) AR0.compareAndExchange(a0, i0, null, a1);
+            a1 = a1x == null ? a1 : a1x;
+        }
         KDeferred v = (KDeferred) AR1.getVolatile(a1, i1);
 
         if (v == null) {
-            Object vv = init.valAt(k, NONE);
-            if (vv != NONE) {
-                KDeferred d = KDeferred.wrap(vv);
-                AR1.setVolatile(a1, i1, d);
-                return new Result(false, d.unwrap());
+            Object x = init.valAt(k, NONE);
+            if (x != NONE) {
+                v = KDeferred.wrap(x);
+                AR1.setVolatile(a1, i1, v);
+                return v;
             }
         } else if (v != NONE) {
-            return new Result(false, v.unwrap());
+            return v;
         }
 
-        // new item, was prewarmed by calling mdmGet
-        KDeferred d = new KDeferred();
-        KDeferred d1 = (KDeferred) AR1.compareAndExchange(a1, i1, v, d);
-        if (d1 == v) {
-            while (true) {
-                KVCons a = added;
-                if (ADDED.compareAndSet(this, a, new KVCons(a, k, d))) break;
+        KDeferred r = new KDeferred();
+        while (true) {
+            KDeferred d = (KDeferred) AR1.compareAndExchange(a1, i1, v, r);
+            if (d == v) {
+                while (true) {
+                    KVCons a = added;
+                    if (ADDED.compareAndSet(this, a, new KVCons(a, k, r))) break;
+                }
+                return r;
             }
-            return new Result(true, d);
-        } else {
-            return new Result(false, d1.unwrap());
+            if (d == NONE) {
+                v = NONE;
+                continue;
+            }
+            return d;
         }
     }
 
     public Object get(Keyword k, int i) {
-        Object[] a1 = chunk(i);
+        int i0 = i >> ASHIFT;
         int i1 = i & AMASK;
+
+        KDeferred[] a1 = (KDeferred[]) AR0.getVolatile(a0, i0);
+        if (a1 == null) {
+            a1 = new KDeferred[ASIZE];
+            KDeferred[] a1x = (KDeferred[]) AR0.compareAndExchange(a0, i0, null, a1);
+            a1 = a1x == null ? a1 : a1x;
+        }
 
         KDeferred v = (KDeferred) AR1.getVolatile(a1, i1);
         if (v != null) {
-            return v.unwrap();
+            return v;
         }
 
         Object vv = init.valAt(k, NONE);
-        AR1.setVolatile(a1, i1, KDeferred.wrap(vv));
+        KDeferred kd = (KDeferred) AR1.compareAndExchange(a1, i1, null, KDeferred.wrap(vv));
 
-        return vv;
+        return kd == null ? vv : kd.unwrap();
     }
 
     public Associative freeze() {
@@ -190,9 +184,9 @@ public final class MDM {
         }
     }
 
-    public void cancel() {
+    public void cancel(Object token) {
         for (KVCons a = added; a != null; a = a.next) {
-            a.d.error(CANCEL_EX);
+            a.d.error(CANCEL_EX, token);
         }
     }
 }
