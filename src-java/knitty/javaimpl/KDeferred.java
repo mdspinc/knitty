@@ -2,7 +2,6 @@ package knitty.javaimpl;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -25,14 +24,6 @@ public final class KDeferred
         clojure.lang.IReference,
         IDeferred,
         IMutableDeferred {
-
-    private static final CancellationException CANCEL_EX = createCancelEx("cancelled");
-
-    private static CancellationException createCancelEx(String msg) {
-        CancellationException e = new CancellationException(msg);
-        e.setStackTrace(new StackTraceElement[0]);
-        return e;
-    }
 
     private static class FnListener implements IDeferredListener {
         private final IFn onSucc;
@@ -70,60 +61,49 @@ public final class KDeferred
         }
     }
 
-    static final class SuccCallback extends AFn {
-        private final IDeferredListener ls;
+    private final static class ChainFnSucc extends AFn {
 
-        public SuccCallback(IDeferredListener ls) {
-            this.ls = ls;
-        }
-
-        public Object invoke(Object x) {
-            return ls.onSuccess(x);
-        }
-    }
-
-    static final class FailCallback extends AFn {
-        private final IDeferredListener ls;
-
-        public FailCallback(IDeferredListener ls) {
-            this.ls = ls;
-        }
-
-        public Object invoke(Object x) {
-            return ls.onError(x);
-        }
-    }
-
-    private final class ChainFnSucc extends AFn {
+        private final KDeferred kd;
         private final Object token;
-        public ChainFnSucc(Object token) {
+
+        public ChainFnSucc(KDeferred kd, Object token) {
+            this.kd = kd;
             this.token = token;
         }
         public Object invoke(Object x) {
-            return success(x, token);
+            return kd.success(x, token);
         }
     }
 
-    private final class ChainFnErrr extends AFn {
+    private final static class ChainFnErrr extends AFn {
+
+        private final KDeferred kd;
         private final Object token;
-        public ChainFnErrr(Object token) {
+
+        public ChainFnErrr(KDeferred kd, Object token) {
+            this.kd = kd;
             this.token = token;
         }
+
         public Object invoke(Object x) {
-            return error(x, token);
+            return kd.error(x, token);
         }
     }
 
-    private final class ChainListener implements IDeferredListener {
+    private final static class ChainListener implements IDeferredListener {
+
+        private final KDeferred kd;
         private final Object token;
-        public ChainListener(Object token) {
+
+        public ChainListener(KDeferred kd, Object token) {
+            this.kd = kd;
             this.token = token;
         }
         public Object onSuccess(Object x) {
-            return success(x, token);
+            return kd.success(x, token);
         }
         public Object onError(Object x) {
-            return error(x, token);
+            return kd.error(x, token);
         }
     }
 
@@ -157,11 +137,12 @@ public final class KDeferred
         }
     }
 
-    private static final int STATE_LOCK = -1;
     private static final int STATE_INIT = 0;
+    private static final int STATE_LOCK = 1;
     private static final int STATE_LSTN = 2;
     private static final int STATE_SUCC = 4;
     private static final int STATE_ERRR = 8;
+    private static final int STATE_DONE_MASK = STATE_SUCC | STATE_ERRR;
     private static final Object WRAPTKN = new Object();
 
     private static final VarHandle STATE;
@@ -190,11 +171,11 @@ public final class KDeferred
 
     private volatile int state;
     private volatile Object token;
-    private Object value; // sync by 'state'
+    private Object value;
     private ListenersChunk lcFirst;
     private ListenersChunk lcLast;
     private IMutableDeferred revokee;
-    private IPersistentMap meta; // sychronized
+    private IPersistentMap meta;
 
     public KDeferred() {
         // do nothing
@@ -224,23 +205,6 @@ public final class KDeferred
         } catch (Throwable e0) {
             e.printStackTrace();
         }
-    }
-
-    public KDeferred chainFrom(Object x) {
-        return chainFrom(x, null);
-    }
-
-    public KDeferred chainFrom(Object x, Object token) {
-        if (x instanceof IDeferred) {
-            if (x instanceof IMutableDeferred) {
-                ((IMutableDeferred) x).addListener(new ChainListener(token));
-            } else {
-                ((IDeferred) x).onRealized(new ChainFnSucc(token), new ChainFnErrr(token));
-            }
-        } else {
-            this.success(x, token);
-        }
-        return this;
     }
 
     public Object success(Object x) {
@@ -496,14 +460,23 @@ public final class KDeferred
         return;
     }
 
-    public static KDeferred wrap(Object d) {
-        if (d instanceof KDeferred) {
-            return (KDeferred) d;
-        }
-        KDeferred kd = new KDeferred(WRAPTKN);
-        kd.setRevokee(d);
-        return kd.chainFrom(d, WRAPTKN);
+    public KDeferred chainFrom(Object x) {
+        return chainFrom(x, null);
     }
+
+    public KDeferred chainFrom(Object x, Object token) {
+        if (x instanceof IDeferred) {
+            if (x instanceof IMutableDeferred) {
+                ((IMutableDeferred) x).addListener(new ChainListener(this, token));
+            } else {
+                ((IDeferred) x).onRealized(new ChainFnSucc(this, token), new ChainFnErrr(this, token));
+            }
+        } else {
+            this.success(x, token);
+        }
+        return this;
+    }
+
     public Object onRealized(Object onSucc, Object onErr) {
         return this.addListener(new FnListener((IFn) onSucc, (IFn) onErr));
     }
@@ -543,44 +516,23 @@ public final class KDeferred
     }
 
     public boolean realized() {
-        switch (this.state) {
-            case STATE_SUCC:
-            case STATE_ERRR:
-                return true;
-            default:
-                return false;
-        }
+        return (this.state & STATE_DONE_MASK) != 0;
     }
 
     public boolean isRealized() {
-        return realized();
+        return (this.state & STATE_DONE_MASK) != 0;
     }
 
     public Object successValue(Object fallback) {
-        switch (this.state) {
-            case STATE_SUCC:
-                return value;
-            default:
-                return fallback;
-        }
+        return this.state == STATE_SUCC ? value : fallback;
     }
 
     public Object errorValue(Object fallback) {
-        switch (this.state) {
-            case STATE_ERRR:
-                return value;
-            default:
-                return fallback;
-        }
+        return this.state == STATE_ERRR ? value : fallback;
     }
 
     public Object unwrap() {
-        switch (this.state) {
-            case STATE_SUCC:
-                return value;
-            default:
-                return this;
-        }
+        return this.state == STATE_SUCC ? value : this;
     }
 
     public Object deref(long ms, Object timeoutValue) {
@@ -637,5 +589,43 @@ public final class KDeferred
         CountDownLatch cdl = new CountDownLatch(1);
         this.addListener(new CountDownListener(cdl));
         return cdl;
+    }
+
+    public static KDeferred create() {
+        return new KDeferred();
+    }
+
+    public static KDeferred create(Object token) {
+        return new KDeferred(token);
+    }
+
+    public static KDeferred wrapErr(Throwable e) {
+        KDeferred d = new KDeferred();
+        d.value = e;
+        STATE.setVolatile(d, STATE_ERRR);
+        return d;
+    }
+
+    public static KDeferred wrap(Object x) {
+        if (x instanceof IDeferred) {
+            if (x instanceof KDeferred) {
+                return (KDeferred) x;
+            } else if (x instanceof IMutableDeferred) {
+                KDeferred d = new KDeferred(WRAPTKN);
+                IMutableDeferred xx = d.revokee = (IMutableDeferred) x;
+                xx.addListener(new ChainListener(d, WRAPTKN));
+                return d;
+            } else {
+                KDeferred d = new KDeferred(WRAPTKN);
+                IDeferred xx = (IDeferred) x;
+                xx.onRealized(new ChainFnSucc(d, WRAPTKN), new ChainFnErrr(d, WRAPTKN));
+                return d;
+            }
+        } else {
+            KDeferred d = new KDeferred();
+            d.value = x;
+            STATE.setVolatile(d, STATE_SUCC);
+            return d;
+        }
     }
 }

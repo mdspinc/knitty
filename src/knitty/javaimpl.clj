@@ -16,23 +16,23 @@
   ([] `(KDeferred.))
   ([token] `(KDeferred. ~token)))
 
-(defmacro kd-await-all [ls ds]
-  `(KDeferredAwaiter/awaitAll ~ls ~ds))
+(defmacro kd-await-coll [ls ds]
+  `(KDeferredAwaiter/awaitColl ~ls ~ds))
 
 (defmacro kd-await [ls & ds]
   `(KDeferredAwaiter/await ~ls ~@ds))
 
 (definline kd-set-revokee [kd revokee]
-  (list '.setRevokee (with-meta kd {:tag "knitty.javaimpl.KDeferred"}) revokee))
+  `(let [^KDeferred x# ~kd] (.setRevokee x# ~revokee)))
 
 (definline kd-claim [kd token]
-  (list '.claim (with-meta kd {:tag "knitty.javaimpl.KDeferred"}) token))
+  `(let [^KDeferred x# ~kd] (.claim x# ~token)))
 
-(definline kd-chain-from [kd d]
-  (list '.chainFrom (with-meta kd {:tag "knitty.javaimpl.KDeferred"}) d))
+(definline kd-chain-from [kd d token]
+  `(let [^KDeferred x# ~kd] (.chainFrom x# ~d ~token)))
 
 (definline kd-unwrap [kd]
-  (list '.unwrap (with-meta kd {:tag "knitty.javaimpl.KDeferred"})))
+  `(let [^KDeferred x# ~kd] (.unwrap x#)))
 
 
 (defmethod print-method KDeferred [y ^java.io.Writer w]
@@ -74,9 +74,6 @@
 
 (definline mdm-get! [mdm kw kid]
   (list '.get (with-meta mdm {:tag "knitty.javaimpl.MDM"}) kw kid))
-
-(definline none? [x]
-  `(MDM/isNone ~x))
 
 (defn create-mdm [init]
   (MDM. init))

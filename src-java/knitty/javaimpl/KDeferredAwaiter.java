@@ -1,23 +1,19 @@
 package knitty.javaimpl;
 
-import clojure.lang.AFn;
-import knitty.javaimpl.KDeferred.FailCallback;
-import knitty.javaimpl.KDeferred.SuccCallback;
-import manifold.deferred.IDeferred;
+import java.util.Collection;
+
 import manifold.deferred.IDeferredListener;
-import manifold.deferred.IMutableDeferred;
 
 public final class KDeferredAwaiter implements IDeferredListener {
 
-    private final Object[] da;
+    private final KDeferred[] da;
     private final IDeferredListener ls;
     private int i;
-    private IDeferred cd;
 
-    private KDeferredAwaiter(Object[] da, IDeferredListener ls) {
+    private KDeferredAwaiter(KDeferred[] da, IDeferredListener ls) {
         this.da = da;
         this.ls = ls;
-        this.i = da.length;
+        this.i = da.length - 1;
     }
 
     public Object onError(Object e) {
@@ -25,31 +21,14 @@ public final class KDeferredAwaiter implements IDeferredListener {
     }
 
     public Object onSuccess(Object x) {
-        Object d = this.cd;
-
-        while (true) {
-
-            while (d instanceof IDeferred) {
-                IDeferred dd = (IDeferred) d;
-                Object ndd = dd.successValue(dd);
-                if (dd == ndd) {
-                    this.cd = dd;
-                    if (dd instanceof IMutableDeferred) {
-                        ((IMutableDeferred) d).addListener(this);
-                    } else {
-                        dd.onRealized(new SuccCallback(this), new FailCallback(this));
-                    }
-                    return null;
-                } else {
-                    d = ndd;
-                }
+        for (; i >= 0; --i) {
+            KDeferred d = da[i];
+            if (!d.realized()) {
+                --i;
+                d.addListener(this);
+                return null;
             }
-
-            if (i == 0)
-                break;
-            d = this.da[--i];
         }
-
         try {
             ls.onSuccess(null);
         } catch (Throwable e) {
@@ -58,8 +37,46 @@ public final class KDeferredAwaiter implements IDeferredListener {
         return null;
     }
 
+    private static final class L8 extends AChainedListener {
+
+        private final KDeferred x1;
+        private final KDeferred x2;
+        private final KDeferred x3;
+        private final KDeferred x4;
+        private final KDeferred x5;
+        private final KDeferred x6;
+        private final KDeferred x7;
+        private final KDeferred x8;
+
+        private L8(
+            IDeferredListener next,
+            KDeferred x1,
+            KDeferred x2,
+            KDeferred x3,
+            KDeferred x4,
+            KDeferred x5,
+            KDeferred x6,
+            KDeferred x7,
+            KDeferred x8) {
+            super(next);
+            this.x1 = x1;
+            this.x2 = x2;
+            this.x3 = x3;
+            this.x4 = x4;
+            this.x5 = x5;
+            this.x6 = x6;
+            this.x7 = x7;
+            this.x8 = x8;
+        }
+
+        public Object onSuccess(Object _x) {
+            await(next, x1, x2, x3, x4, x5, x6, x7, x8);
+            return null;
+        }
+    }
+
     abstract static class AChainedListener implements IDeferredListener {
-        private final IDeferredListener next;
+        final IDeferredListener next;
 
         public AChainedListener(IDeferredListener next) {
             this.next = next;
@@ -70,86 +87,278 @@ public final class KDeferredAwaiter implements IDeferredListener {
         }
     }
 
-    public static void awaitAll(IDeferredListener ls, Object... ds) {
+    public static void awaitColl(IDeferredListener ls, Collection<KDeferred> ds) {
+        new KDeferredAwaiter(ds.toArray(KDeferred[]::new), ls).onSuccess(null);
+    }
+
+    public static void awaitArr(IDeferredListener ls, KDeferred... ds) {
         new KDeferredAwaiter(ds, ls).onSuccess(null);
+    }
+
+    public static KDeferred[] createArr(int n) {
+        return new KDeferred[n];
+    }
+
+    public static void setArrItem(KDeferred[] a, int i, KDeferred d) {
+        a[i] = d;
     }
 
     public static void await(IDeferredListener ls) {
         ls.onSuccess(null);
     }
 
-    private static void addListener(Object x, IDeferredListener ls) {
-        if (x instanceof IMutableDeferred) {
-            ((IMutableDeferred) x).addListener(ls);
-        } else {
-            ((IDeferred) x).onRealized(
-                    new AFn() {
-                        public Object invoke(Object x) {
-                            return ls.onSuccess(x);
-                        }
-                    },
-                    new AFn() {
-                        public Object invoke(Object x) {
-                            return ls.onError(x);
-                        }
-                    });
-        }
-    }
-
-    public static void await(IDeferredListener ls, Object x1) {
-        if (x1 instanceof IDeferred) {
-           addListener(x1, ls);
-        } else {
+    public static void await(IDeferredListener ls, KDeferred x1) {
+        if (x1.realized()) {
             ls.onSuccess(null);
+        } else {
+            x1.addListener(ls);
         }
     }
 
-    public static void await(IDeferredListener ls, Object x1, Object x2) {
-        if (x2 instanceof IDeferred) {
-            addListener(x2, new AChainedListener(ls) {
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2) {
+        if (x2.realized()) {
+            if (x1.realized()) {
+                ls.onSuccess(null);
+            } else {
+                x1.addListener(ls);
+            }
+        } else {
+            x2.addListener(new AChainedListener(ls) {
                 public Object onSuccess(Object _x) {
                     await(ls, x1);
                     return null;
                 }
             });
-        } else {
-            await(ls, x1);
         }
     }
 
-    public static void await(IDeferredListener ls, Object x1, Object x2, Object x3) {
-        if (x3 instanceof IDeferred) {
-            addListener(x3, new AChainedListener(ls) {
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3) {
+        if (x3.realized()) {
+            if (x2.realized()) {
+                if (x1.realized()) {
+                    ls.onSuccess(null);
+                } else {
+                    x1.addListener(ls);
+                }
+            } else {
+                await(ls, x1, x2);
+            }
+        } else {
+            x3.addListener(new AChainedListener(ls) {
                 public Object onSuccess(Object _x) {
                     await(ls, x1, x2);
                     return null;
                 }
             });
-        } else {
-            await(ls, x1, x2);
         }
     }
 
-    public static void await(IDeferredListener ls, Object x1, Object x2, Object x3, Object x4) {
-        if (x4 instanceof IDeferred) {
-            addListener(x4, new AChainedListener(ls) {
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4) {
+        if (x4.realized()) {
+            if (x3.realized()) {
+                if (x2.realized()) {
+                    if (x1.realized()) {
+                        ls.onSuccess(null);
+                    } else {
+                        x1.addListener(ls);
+                    }
+                } else {
+                    await(ls, x1, x2);
+                }
+            } else {
+                await(ls, x1, x2, x3);
+            }
+        } else {
+            x4.addListener(new AChainedListener(ls) {
                 public Object onSuccess(Object _x) {
                     await(ls, x1, x2, x3);
                     return null;
                 }
             });
-        } else {
-            await(ls, x1, x2, x3);
         }
     }
 
-    public static void await(IDeferredListener ls, Object x1, Object x2, Object x3, Object x4, Object... xs) {
-        IDeferredListener lsx = new AChainedListener(ls) {
-            public Object onSuccess(Object _x) {
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5) {
+        if (x5.realized()) {
+            if (x4.realized()) {
+                if (x3.realized()) {
+                    if (x2.realized()) {
+                        if (x1.realized()) {
+                            ls.onSuccess(null);
+                        } else {
+                            x1.addListener(ls);
+                        }
+                    } else {
+                        await(ls, x1, x2);
+                    }
+                } else {
+                    await(ls, x1, x2, x3);
+                }
+            } else {
                 await(ls, x1, x2, x3, x4);
-                return null;
             }
-        };
-        awaitAll(lsx, xs);
+        } else {
+            x5.addListener(new AChainedListener(ls) {
+                public Object onSuccess(Object _x) {
+                    await(ls, x1, x2, x3, x4);
+                    return null;
+                }
+            });
+        }
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6) {
+        if (x6.realized()) {
+            if (x5.realized()) {
+                if (x4.realized()) {
+                    if (x3.realized()) {
+                        if (x2.realized()) {
+                            if (x1.realized()) {
+                                ls.onSuccess(null);
+                            } else {
+                                x1.addListener(ls);
+                            }
+                        } else {
+                            await(ls, x1, x2);
+                        }
+                    } else {
+                        await(ls, x1, x2, x3);
+                    }
+                } else {
+                    await(ls, x1, x2, x3, x4);
+                }
+            } else {
+                await(ls, x1, x2, x3, x4, x5);
+            }
+        } else {
+            x6.addListener(new AChainedListener(ls) {
+                public Object onSuccess(Object _x) {
+                    await(ls, x1, x2, x3, x4, x5);
+                    return null;
+                }
+            });
+        }
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6, KDeferred x7) {
+        if (x7.realized()) {
+            if (x6.realized()) {
+                if (x5.realized()) {
+                    if (x4.realized()) {
+                        if (x3.realized()) {
+                            if (x2.realized()) {
+                                if (x1.realized()) {
+                                    ls.onSuccess(null);
+                                } else {
+                                    x1.addListener(ls);
+                                }
+                            } else {
+                                await(ls, x1, x2);
+                            }
+                        } else {
+                            await(ls, x1, x2, x3);
+                        }
+                    } else {
+                        await(ls, x1, x2, x3, x4);
+                    }
+                } else {
+                    await(ls, x1, x2, x3, x4, x5);
+                }
+            } else {
+                await(ls, x1, x2, x3, x4, x5, x6);
+            }
+        } else {
+            x7.addListener(new AChainedListener(ls) {
+                public Object onSuccess(Object _x) {
+                    await(ls, x1, x2, x3, x4, x5, x6);
+                    return null;
+                }
+            });
+        }
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8) {
+        if (x8.realized()) {
+            if (x7.realized()) {
+                if (x6.realized()) {
+                    if (x5.realized()) {
+                        if (x4.realized()) {
+                            if (x3.realized()) {
+                                if (x2.realized()) {
+                                    if (x1.realized()) {
+                                        ls.onSuccess(null);
+                                    } else {
+                                        x1.addListener(ls);
+                                    }
+                                } else {
+                                    await(ls, x1, x2);
+                                }
+                            } else {
+                                await(ls, x1, x2, x3);
+                            }
+                        } else {
+                            await(ls, x1, x2, x3, x4);
+                        }
+                    } else {
+                        await(ls, x1, x2, x3, x4, x5);
+                    }
+                } else {
+                    await(ls, x1, x2, x3, x4, x5, x6);
+                }
+            } else {
+                await(ls, x1, x2, x3, x4, x5, x6, x7);
+            }
+        } else {
+            x8.addListener(new AChainedListener(ls) {
+                public Object onSuccess(Object _x) {
+                    await(ls, x1, x2, x3, x4, x5, x6, x7);
+                    return null;
+                }
+            });
+        }
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9) {
+        await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9);
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10) {
+        await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10);
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11) {
+        await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11);
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12) {
+        await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12);
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12, KDeferred x13) {
+        await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13);
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12, KDeferred x13, KDeferred x14) {
+        await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14);
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12, KDeferred x13, KDeferred x14, KDeferred x15) {
+        await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14, x15);
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12, KDeferred x13, KDeferred x14, KDeferred x15, KDeferred x16) {
+        await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14, x15, x16);
     }
 }

@@ -34,10 +34,6 @@ public final class MDM {
     private static final int ASIZE = 1 << ASHIFT;
     private static final int AMASK = ASIZE - 1;
 
-    public static boolean isNone(Object x) {
-        return x == NONE;
-    }
-
     public static int maxid() {
         synchronized (KLOCK) {
             return KID;
@@ -146,7 +142,7 @@ public final class MDM {
         }
     }
 
-    public Object get(Keyword k, int i) {
+    public KDeferred get(Keyword k, int i) {
         int i0 = i >> ASHIFT;
         int i1 = i & AMASK;
 
@@ -163,9 +159,14 @@ public final class MDM {
         }
 
         Object vv = init.valAt(k, NONE);
-        KDeferred kd = (KDeferred) AR1.compareAndExchange(a1, i1, null, KDeferred.wrap(vv));
-
-        return kd == null ? vv : kd.unwrap();
+        if (vv == NONE) {
+            boolean _b = AR1.compareAndSet(a1, i1, (KDeferred) null, NONE);
+            return null;
+        } else {
+            KDeferred nv = KDeferred.wrap(vv);
+            AR1.setVolatile(a1, i1, nv);
+            return nv;
+        }
     }
 
     public Associative freeze() {

@@ -42,18 +42,6 @@
        (.onRealized ^IDeferred d# (FnSucc. ls#) (FnErrr. ls#)))))
 
 
-(defn await-all-array
-  [^IDeferredListener ls, ^objects ds]
-  (let [n (alength ds)]
-    (case n
-      0 (.onSuccess ls nil)
-      1 (ji/kd-await ls (aget ds 0))
-      2 (ji/kd-await ls (aget ds 0) (aget ds 1))
-      3 (ji/kd-await ls (aget ds 0) (aget ds 1) (aget ds 2))
-      (ji/kd-await-all ls ds)
-      )))
-
-
 (defmacro await-ary*
   ([ls]
    `(.onSuccess ~ls nil))
@@ -65,15 +53,39 @@
    `(ji/kd-await ~ls ~x1 ~x2 ~x3))
   ([ls x1 x2 x3 x4]
    `(ji/kd-await ~ls ~x1 ~x2 ~x3 ~x4))
-  ([ls x1 x2 x3 x4 & xs]
-   (let [xs (list* x1 x2 x3 x4 xs)
+  ([ls x1 x2 x3 x4 x5]
+   `(ji/kd-await ~ls ~x1 ~x2 ~x3 ~x4 ~x5))
+  ([ls x1 x2 x3 x4 x5 x6]
+   `(ji/kd-await ~ls ~x1 ~x2 ~x3 ~x4 ~x5 ~x6))
+  ([ls x1 x2 x3 x4 x5 x6 x7]
+   `(ji/kd-await ~ls ~x1 ~x2 ~x3 ~x4 ~x5 ~x6 ~x7))
+  ([ls x1 x2 x3 x4 x5 x6 x7 x8]
+   `(ji/kd-await ~ls ~x1 ~x2 ~x3 ~x4 ~x5 ~x6 ~x7 ~x8))
+  ([ls x1 x2 x3 x4 x5 x6 x7 x8 x9]
+   `(ji/kd-await ~ls ~x1 ~x2 ~x3 ~x4 ~x5 ~x6 ~x7 ~x8 ~x9))
+  ([ls x1 x2 x3 x4 x5 x6 x7 x8 x9 x10]
+   `(ji/kd-await ~ls ~x1 ~x2 ~x3 ~x4 ~x5 ~x6 ~x7 ~x8 ~x9 ~x10))
+  ([ls x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11]
+   `(ji/kd-await ~ls ~x1 ~x2 ~x3 ~x4 ~x5 ~x6 ~x7 ~x8 ~x9 ~x10 ~x11 ))
+  ([ls x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12]
+   `(ji/kd-await ~ls ~x1 ~x2 ~x3 ~x4 ~x5 ~x6 ~x7 ~x8 ~x9 ~x10 ~x11 ~x12 ))
+  ([ls x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13]
+   `(ji/kd-await ~ls ~x1 ~x2 ~x3 ~x4 ~x5 ~x6 ~x7 ~x8 ~x9 ~x10 ~x11 ~x12 ~x13))
+  ([ls x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14]
+   `(ji/kd-await ~ls ~x1 ~x2 ~x3 ~x4 ~x5 ~x6 ~x7 ~x8 ~x9 ~x10 ~x11 ~x12 ~x13 ~x14))
+  ([ls x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15]
+   `(ji/kd-await ~ls ~x1 ~x2 ~x3 ~x4 ~x5 ~x6 ~x7 ~x8 ~x9 ~x10 ~x11 ~x12 ~x13 ~x14 ~x15))
+  ([ls x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16]
+   `(ji/kd-await ~ls ~x1 ~x2 ~x3 ~x4 ~x5 ~x6 ~x7 ~x8 ~x9 ~x10 ~x11 ~x12 ~x13 ~x14 ~x15 ~x16))
+  ([ls x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 & xs]
+   (let [xs (list* x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 xs)
          n (count xs)
          df (gensym)]
-     `(ji/kd-await-all
+     `(knitty.javaimpl.KDeferredAwaiter/awaitArr
        ~ls
-       (let [~df (object-array ~n)]
+       (let [~df (knitty.javaimpl.KDeferredAwaiter/createArr ~n)]
          ~@(for [[i x] (map vector (range) xs)]
-             `(aset ~df ~i ~x))
+             `(knitty.javaimpl.KDeferredAwaiter/setArrItem ~df ~i ~x))
          ~df)))))
 
 
@@ -105,7 +117,8 @@
 (defn revoke' [^IDeferred d c]
   (let [d' (ji/create-kd)]
     (listen! d' (RevokeListener. d c))
-    (ji/kd-chain-from d' d)))
+    (ji/kd-chain-from d' d nil)
+    ))
 
 
 (deftype KaSuccess

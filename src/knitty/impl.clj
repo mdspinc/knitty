@@ -126,35 +126,25 @@
 (defn yarn-get [^YankCtx ctx ^clojure.lang.Keyword ykey]
   (let [kid (ji/keyword->intid ykey)
         v (ji/mdm-get! (.mdm ctx) ykey kid)]
-    (if (ji/none? v)
-      ((registry-yankfn' (.-registry ctx) ykey kid) ctx)
-      v)))
+    (if v
+      v
+      ((registry-yankfn' (.-registry ctx) ykey kid) ctx))))
 
 
-(defmacro yarn-get-sync
+(defmacro yarn-get-impl
   ([yk ykey ctx]
-   `(yarn-get-sync ~yk ~ykey ~(ji/keyword->intid ykey) ~ctx))
+   `(yarn-get-impl ~yk ~ykey ~(ji/keyword->intid ykey) ~ctx))
   ([yk ykey ykeyi ctx]
    `(do
       (ctx-tracer-> ~ctx t/trace-dep ~yk ~ykey)
       (let [v# (ji/mdm-get! (.-mdm ~ctx) ~ykey ~ykeyi)]
-        (if (ji/none? v#)
-          ((registry-yankfn' (.-registry ~ctx) ~ykey ~ykeyi) ~ctx)
-          v#)))))
-
-
-(defmacro yarn-get-defer [yk ykey ctx]
-  `(do
-     (ctx-tracer-> ~ctx t/trace-dep ~yk ~ykey)
-     (kd/as-deferred
-      (let [v# (ji/mdm-get! (.-mdm ~ctx) ~ykey ~(ji/keyword->intid ykey))]
-        (if (ji/none? v#)
-          ((registry-yankfn' (.-registry ~ctx) ~ykey ~(ji/keyword->intid ykey)) ~ctx)
-          v#)))))
+        (if v#
+          v#
+          ((registry-yankfn' (.-registry ~ctx) ~ykey ~ykeyi) ~ctx))))))
 
 
 (deftype Lazy
-         [^AtomicReference value
+         [^knitty.javaimpl.KDeferred value
           ^YankCtx ctx
           ^clojure.lang.Keyword yk
           ^clojure.lang.Keyword ykey
@@ -162,20 +152,18 @@
 
   clojure.lang.IDeref
   (deref [_]
-    (if-let [v (.get value)]
-      v
-      (let [v (ji/create-kd)]
-        (if (.compareAndSet value nil v)
-          (do
-            (try
-              (ctx-tracer-> ctx t/trace-dep yk ykey)
-              (ji/kd-chain-from v (let [r (ji/mdm-get! (.-mdm ctx) yk ykeyi)]
-                                    (if (ji/none? r)
-                                      ((registry-yankfn' (.-registry ctx) ykey ykeyi) ctx)
-                                      r)))
-              (catch Throwable t (kd/error'! v t (.-token ctx))))
-            v)
-          (.get value)))))
+    (when (ji/kd-claim value (.-token ctx))
+      (try
+        (ctx-tracer-> ctx t/trace-dep yk ykey)
+        (ji/kd-chain-from
+         value
+         (let [r (ji/mdm-get! (.-mdm ctx) yk ykeyi)]
+           (if r
+             r
+             ((registry-yankfn' (.-registry ctx) ykey ykeyi) ctx)))
+         (.-token ctx))
+        (catch Throwable t (kd/error'! value t (.-token ctx)))))
+    value)
 
   Object
   (toString [_] (str "#knitty/Lazy[" ykey "]")))
@@ -183,7 +171,7 @@
 
 (defmacro yarn-get-lazy [yk ykey ctx]
   `(Lazy.
-    (AtomicReference.)
+    (ji/create-kd)
     ~ctx
     ~yk
     ~ykey
@@ -198,11 +186,10 @@
     (if-let [[i k] (yarns-map y)]
       (do
         (ctx-tracer-> ctx t/trace-dep yk k)
-        (kd/as-deferred
-         (let [v (ji/mdm-get! (.-mdm ctx) yk i)]
-           (if (ji/none? v)
-             ((registry-yankfn' (.-registry ctx) k i) ctx)
-             v))))
+        (let [v (ji/mdm-get! (.-mdm ctx) yk i)]
+          (if v
+            v
+            ((registry-yankfn' (.-registry ctx) k i) ctx))))
       (throw (ex-info "Invalid yank-fn arg" {:knitty/yankfn-arg y
                                              :knytty/yankfn-known-args (keys yarns-map)})))))
 
@@ -219,27 +206,14 @@
 
 
 (defn resolve-executor-var [e]
-  (when e
-    (when-let [ee (var-get e)]
-      (if (ifn? ee) (ee) ee))))
-
-
-(defn run-future [executor-var thefn]
-  (let [d (ji/create-kd)]
-    (manifold.utils/future-with
-     (resolve-executor-var executor-var)
-     (try
-       (let [v (thefn)]
-         (ji/kd-chain-from d v))
-       (catch Throwable e
-         (kd/error'! d e nil))))
-    d))
+  (when-let [ee (var-get e)]
+    (if (ifn? ee) (ee) ee)))
 
 
 (defmacro maybe-future-with [executor-var & body]
   (if-not executor-var
     `(do ~@body)
-    `(run-future ~executor-var (fn [] ~@body))))
+    `(manifold.utils/future-with (resolve-executor-var ~executor-var) ~@body)))
 
 
 (deftype ChainListener [^YankCtx ctx, ^knitty.javaimpl.KDeferred d ykey]
@@ -256,11 +230,11 @@
   `(if (instance? manifold.deferred.IDeferred ~result)
      (do
        (kd/listen! ~result (ChainListener. ~ctx ~mdm-deferred ~ykey))
-       (ji/kd-unwrap ~mdm-deferred))
+       ~mdm-deferred)
      (do
        (ctx-tracer-> ~ctx t/trace-finish ~ykey ~result nil false)
        (kd/success'! ~mdm-deferred ~result (.-token ~ctx))
-       ~result)))
+       ~mdm-deferred)))
 
 
 (defmacro connect-error-mdm [ctx ykey error mdm-deferred]
@@ -271,11 +245,10 @@
 
 
 (defn emit-yank-fns-impl
-  [the-fnv ykey bind deps yarn-meta]
+  [the-fn-body ykey bind yarn-meta]
   (let [{:keys [executor norevoke]} yarn-meta
 
         ctx (with-meta '_yank_ctx {:tag (str `YankCtx)})
-        kad (with-meta '_yank_kad {:tag (str `knitty.javaimpl.KDeferred)})
         kid (ji/keyword->intid ykey)
 
         yank-deps
@@ -283,8 +256,8 @@
                 (for [[ds dk] bind]
                   [ds
                    (case (bind-param-type ds)
-                     :sync   `(yarn-get-sync   ~ykey ~dk ~ctx)
-                     :defer  `(yarn-get-defer  ~ykey ~dk ~ctx)
+                     :sync   `(yarn-get-impl   ~ykey ~dk ~ctx)
+                     :defer  `(yarn-get-impl   ~ykey ~dk ~ctx)
                      :lazy   `(yarn-get-lazy   ~ykey ~dk ~ctx)
                      :yankfn `(yarn-get-yankfn ~ykey ~dk ~ctx))]))
 
@@ -297,22 +270,15 @@
 
         coerce-deferred (if (param-types :lazy)
                           `force-lazy-result
-                          `do)
-
-        some-syncs-unresolved (list* `or (for [d sync-deps] `(md/deferred? ~d)))
+                          `identity)
 
         deref-syncs
         (mapcat identity
                 (for [[ds _dk] bind
                       :when (#{:sync} (bind-param-type ds))]
-                  [ds `(md/unwrap' ~ds)]))
+                  [ds `(ji/kd-unwrap ~ds)]))
 
-        fn-args (if (> (count deps) 18)
-                  (let [[a b] (split-at 18 deps)]
-                    (conj (vec a) (vec b)))
-                  deps)
-
-        revoke (if norevoke [`comment] [`ji/kd-set-revokee kad])
+        revoke (if norevoke `comment `ji/kd-set-revokee)
 
         all-deps-tr (into
                      []
@@ -325,57 +291,38 @@
 
     `(fn ~(-> ykey name (str '--yank) symbol) [~ctx]
        (let [d# (ji/mdm-fetch! (.-mdm ~ctx) ~ykey ~kid)]
-         (if-not (ji/kd-claim d# (.-token ~ctx))
-
-           ;; got item from mdm
-           (ji/kd-unwrap d#)
-
-           ;; calculate & provide new value to mdm
+         (when (ji/kd-claim d# (.-token ~ctx))
            (maybe-future-with
             ~executor
-
             (ctx-tracer-> ~ctx t/trace-start  ~ykey :yarn ~all-deps-tr)
-            (let [~kad d#]
-              (try ;; d# is alsways deffered
-                (let [~@yank-deps]
-                  (if ~some-syncs-unresolved
-                    (do
-                      (kd/await-ary*
-
-                       (reify
-                         manifold.deferred.IDeferredListener
-                         (onSuccess
-                           [_# _#]
-                           (let [x# (let [~@deref-syncs]
-                                      (ctx-tracer-> ~ctx t/trace-call ~ykey)
-                                      (~coerce-deferred (~the-fnv ~@fn-args)))]
-                             (~@revoke x#)
-                             (connect-result-mdm ~ctx ~ykey x# ~kad)))
-                         (onError
-                           [_ e#]
-                           (connect-error-mdm ~ctx ~ykey e# ~kad)))
-
-                       ~@sync-deps)
-                      ~kad)
-
-                    (let [x# (do
-                               (ctx-tracer-> ~ctx t/trace-call ~ykey)
-                               (~coerce-deferred (~the-fnv ~@fn-args)))]
-                      (~@revoke x#)
-                      (connect-result-mdm ~ctx ~ykey x# ~kad))))
-
-                (catch Throwable e#
-                  (connect-error-mdm ~ctx ~ykey e# ~kad))))))))))
+            (try
+              (let [~@yank-deps]
+                (kd/await-ary*
+                 (reify
+                   manifold.deferred.IDeferredListener
+                   (onSuccess
+                     [_# _#]
+                     (let [z# (let [~@deref-syncs]
+                                (ctx-tracer-> ~ctx t/trace-call ~ykey)
+                                (~coerce-deferred ~the-fn-body))]
+                       (~revoke d# z#)
+                       (connect-result-mdm ~ctx ~ykey z# d#)))
+                   (onError
+                     [_ e#]
+                     (connect-error-mdm ~ctx ~ykey e# d#)))
+                 ~@sync-deps))
+              (catch Throwable e#
+                (connect-error-mdm ~ctx ~ykey e# d#)))))
+         d#))))
 
 
-(defn emit-yank-fns [thefn ykey bind]
+(defn emit-yank-fns [thefn-body ykey bind]
   (let [yarn-meta (meta bind)
-        deps (map first bind)
         {:keys [keep-deps-order]} yarn-meta
         bind (if keep-deps-order
                bind
                (sort-by (comp #(when (keyword? %) (ji/keyword->intid %)) second) bind))]
-    (emit-yank-fns-impl thefn ykey bind deps yarn-meta)))
+    (emit-yank-fns-impl thefn-body ykey bind yarn-meta)))
 
 
 (defn emit-yarn-ref-gtr [ykey orig-ykey]
@@ -387,7 +334,7 @@
            (do
              (ctx-tracer-> ctx# t/trace-start ~ykey :knot [[~orig-ykey :ref]])
              (try
-               (let [x# (yarn-get-sync ~ykey ~orig-ykey ctx#)]
+               (let [x# (ji/kd-unwrap (yarn-get-impl ~ykey ~orig-ykey ctx#))]
                  (ctx-tracer-> ctx# t/trace-call ~ykey)
                  (connect-result-mdm ctx# ~ykey x# d#))
                (catch Throwable e#
@@ -407,14 +354,8 @@
 
 (defn gen-yarn
   [ykey bind expr]
-  (let [deps (grab-yarn-bindmap-deps bind)
-        ff (gensym)
-        fargs (if (> (count bind) 18)
-                (let [[args1 args2] (split-at 18 (map first bind))]
-                  (vec (conj (vec args1) (vec args2))))
-                (mapv first bind))]
-    `(let [~ff (fn ~(-> ykey name symbol) [~@fargs] ~expr)
-           gtr# ~(emit-yank-fns ff ykey bind)]
+  (let [deps (grab-yarn-bindmap-deps bind)]
+    `(let [gtr# ~(emit-yank-fns expr ykey bind)]
        (Yarn. gtr# ~ykey '~deps))))
 
 
@@ -451,7 +392,7 @@
   (let [i (long (ji/keyword->intid k))]
     (fn yank-route-key [^YankCtx ctx]
       (ctx-tracer-> ctx t/trace-route-by ykey k)
-      (let [d (yarn-get-sync ykey k i ctx)]
+      (let [d (ji/kd-unwrap (yarn-get-impl ykey k i ctx))]
         (if (md/deferred? d)
           ::deferred
           d)))))
@@ -468,7 +409,7 @@
      (defmethod ~(yarn-multifn ykey) ::deferred
        ([] nil)
        ([^YankCtx ctx#]
-        (md/chain' (yarn-get-sync ~ykey ~route-key ctx#)
+        (md/chain' (yarn-get-impl ~ykey ~route-key ctx#)
                    (fn ~(symbol (str (name ykey) '--reyank)) [_#]
                      ((var ~(yarn-multifn ykey)) ctx#)) ;; call again
                    )))
@@ -498,9 +439,9 @@
   (let [kid (ji/keyword->intid ykey)]
     `(fn ~(-> ykey name (str "--yget") symbol) [^YankCtx ctx#]
        (let [d# (ji/mdm-fetch! (.-mdm ctx#) ~ykey ~kid)]
-         (if (ji/none? d#)
+         (if (ji/kd-claim d# (.-token ctx#))
            (connect-error-mdm ctx# ~ykey (java.lang.UnsupportedOperationException. ~(str "input-only yarn " ykey)) d#)
-           (ji/kd-unwrap d#))))))
+           d#)))))
 
 
 (defn gen-yarn-input
@@ -526,22 +467,11 @@
                                   (conj
                                    (-> poy meta :knitty/trace)
                                    (capture-trace! tracer))))
-                        e))
-        n (count yarns)
-        yks (java.util.ArrayList. n)]
+                        e))]
 
     (try
-      (doseq [y yarns]
-        (.add yks
-              (if (keyword? y)
-                (yarn-get ctx y)
-                (do
-                  (when (contains? registry (yarn-key y))
-                    (throw (ex-info "dynamic yarn is already in registry"
-                                    {:knitty/yarn (yarn-key y)})))
-                  ((yarn-yankfn y) ctx)))))
       (let [r (ji/create-kd token)]
-        (kd/await-all-array
+        (ji/kd-await-coll
          (reify manifold.deferred.IDeferredListener
            (onSuccess [_ _]
              (kd/success'! r
@@ -555,7 +485,16 @@
                            token))
            (onError [_ e]
              (kd/error'! r (errh e) token)))
-         (.toArray yks))
+         (map
+          (fn [y]
+            (if (keyword? y)
+              (yarn-get ctx y)
+              (do
+                (when (contains? registry (yarn-key y))
+                  (throw (ex-info "dynamic yarn is already in registry"
+                                  {:knitty/yarn (yarn-key y)})))
+                ((yarn-yankfn y) ctx))))
+          yarns))
         (kd/revoke' r (fn cancel-mdm [] (ji/mdm-cancel! mdm token))))
       (catch Throwable e
         (md/error-deferred (errh e))))))
