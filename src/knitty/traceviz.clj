@@ -1,6 +1,5 @@
 (ns knitty.traceviz
-  (:require [knitty.trace
-             :refer [find-traces merge-parsed-traces parse-trace]]
+  (:require [knitty.trace :as t]
             [clojure.datafy :refer [datafy]]
             [clojure.java.browse :as browse]
             [clojure.java.io :as io]
@@ -255,9 +254,9 @@
 (defn render-trace
   [traces & {:as options}]
   (binding [*options* (into *options* options)]
-    (when-let [traces (find-traces traces)]
-      (let [gs (map parse-trace traces)
-            g (merge-parsed-traces gs)]
+    (when-let [traces (t/find-traces traces)]
+      (let [gs (map t/parse-trace traces)
+            g (t/merge-parsed-traces gs)]
         (case (:format *options*)
           :raw g
           :edn (pr-str g)

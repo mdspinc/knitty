@@ -11,7 +11,7 @@
   {}         ;; no inputs
   0) ;; value, use explicit `do when needed
 
-@(yank {} [zero])
+(yank {} [zero])
 
 (defyarn one
   {_ zero}   ;; wait for zero, but don't use it

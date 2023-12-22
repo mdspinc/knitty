@@ -107,6 +107,27 @@ public final class KDeferred
         }
     }
 
+    private final static class RevokeListener implements IDeferredListener {
+
+        private final IDeferred d;
+        private final Runnable canceller;
+
+        public RevokeListener(IDeferred d, Runnable canceller) {
+            this.d = d;
+            this.canceller = canceller;
+        }
+
+        public Object onSuccess(Object x) {
+            if (!d.realized()) canceller.run();
+            return null;
+        }
+
+        public Object onError(Object x) {
+            if (!d.realized()) canceller.run();
+            return null;
+        }
+    }
+
     private static final class ListenersChunk {
 
         private static final int MAX_SIZE = 32;
@@ -626,6 +647,17 @@ public final class KDeferred
             d.value = x;
             STATE.setVolatile(d, STATE_SUCC);
             return d;
+        }
+    }
+
+    public static KDeferred revoke(IDeferred d, Runnable canceller) {
+        if (d.realized()) {
+            return wrap(d.successValue(d));
+        } else {
+            KDeferred kd = new KDeferred();
+            kd.pushListener1(new RevokeListener(d, canceller));
+            kd.chainFrom(d, null);
+            return kd;
         }
     }
 }

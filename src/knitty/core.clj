@@ -1,6 +1,6 @@
 (ns knitty.core
-  (:require [knitty.deferred :as kd]
-            [knitty.impl :as impl]
+  (:require [knitty.impl :as impl]
+            [knitty.javaimpl :as ji]
             [knitty.trace :as trace]
             [clojure.java.browse]
             [clojure.java.browse-ui]
@@ -244,9 +244,10 @@
   [poy binds & body]
   (let [k (keyword (-> *ns* ns-name name) (name (gensym "doyank")))]
     `(let [r# (yank ~poy [(yarn ~k ~binds (do ~@body))])]
-       (kd/revoke'
+       (ji/kd-revoke
         (md/chain' r# (juxt ~k identity))
-        #(kd/cancel! r#)))))
+        (fn ~'doyank-cancel [] (md/error! r# (java.util.concurrent.CancellationException.)))
+        ))))
 
 
 (defmacro doyank!

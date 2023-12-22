@@ -4,13 +4,13 @@ import java.util.Collection;
 
 import manifold.deferred.IDeferredListener;
 
-public final class KDeferredAwaiter implements IDeferredListener {
+public final class KAwaiter implements IDeferredListener {
 
     private final KDeferred[] da;
     private final IDeferredListener ls;
     private int i;
 
-    private KDeferredAwaiter(KDeferred[] da, IDeferredListener ls) {
+    private KAwaiter(KDeferred[] da, IDeferredListener ls) {
         this.da = da;
         this.ls = ls;
         this.i = da.length - 1;
@@ -21,15 +21,19 @@ public final class KDeferredAwaiter implements IDeferredListener {
     }
 
     public Object onSuccess(Object x) {
-        for (; i >= 0; --i) {
-            KDeferred d = da[i];
-            if (!d.realized()) {
-                --i;
-                d.addListener(this);
-                return null;
-            }
-        }
         try {
+            try {
+                for (; i >= 0; --i) {
+                    KDeferred d = da[i];
+                    if (!d.realized()) {
+                        --i;
+                        d.addListener(this);
+                        return null;
+                    }
+                }
+            } catch (Throwable e) {
+                ls.onError(e);
+            }
             ls.onSuccess(null);
         } catch (Throwable e) {
             KDeferred.logException(e);
@@ -49,15 +53,15 @@ public final class KDeferredAwaiter implements IDeferredListener {
         private final KDeferred x8;
 
         private L8(
-            IDeferredListener next,
-            KDeferred x1,
-            KDeferred x2,
-            KDeferred x3,
-            KDeferred x4,
-            KDeferred x5,
-            KDeferred x6,
-            KDeferred x7,
-            KDeferred x8) {
+                IDeferredListener next,
+                KDeferred x1,
+                KDeferred x2,
+                KDeferred x3,
+                KDeferred x4,
+                KDeferred x5,
+                KDeferred x6,
+                KDeferred x7,
+                KDeferred x8) {
             super(next);
             this.x1 = x1;
             this.x2 = x2;
@@ -88,11 +92,11 @@ public final class KDeferredAwaiter implements IDeferredListener {
     }
 
     public static void awaitColl(IDeferredListener ls, Collection<KDeferred> ds) {
-        new KDeferredAwaiter(ds.toArray(KDeferred[]::new), ls).onSuccess(null);
+        new KAwaiter(ds.toArray(new KDeferred[ds.size()]), ls).onSuccess(null);
     }
 
     public static void awaitArr(IDeferredListener ls, KDeferred... ds) {
-        new KDeferredAwaiter(ds, ls).onSuccess(null);
+        new KAwaiter(ds, ls).onSuccess(null);
     }
 
     public static KDeferred[] createArr(int n) {
@@ -338,27 +342,32 @@ public final class KDeferredAwaiter implements IDeferredListener {
     }
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
-            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12) {
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
+            KDeferred x12) {
         await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12);
     }
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
-            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12, KDeferred x13) {
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
+            KDeferred x12, KDeferred x13) {
         await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13);
     }
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
-            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12, KDeferred x13, KDeferred x14) {
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
+            KDeferred x12, KDeferred x13, KDeferred x14) {
         await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14);
     }
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
-            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12, KDeferred x13, KDeferred x14, KDeferred x15) {
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
+            KDeferred x12, KDeferred x13, KDeferred x14, KDeferred x15) {
         await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14, x15);
     }
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
-            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12, KDeferred x13, KDeferred x14, KDeferred x15, KDeferred x16) {
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
+            KDeferred x12, KDeferred x13, KDeferred x14, KDeferred x15, KDeferred x16) {
         await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14, x15, x16);
     }
 }
