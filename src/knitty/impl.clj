@@ -205,7 +205,7 @@
 
 (defn force-lazy-result [v]
   (if (instance? Lazy v)
-    (md/unwrap' @v)
+    @v
     v))
 
 
