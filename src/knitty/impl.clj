@@ -460,20 +460,7 @@
   (let [token (Object.)
         mdm (ji/create-mdm poy)
         result (ji/kd-create token)
-        ctx (YankCtx. mdm registry tracer token)
-        yss (java.util.ArrayList. 16)]
-
-    (doseq [y yarns]
-      (.add
-       yss
-       (if (keyword? y)
-         (yarn-get ctx y)
-         (do
-           (when (contains? registry (yarn-key y))
-             (throw (ex-info "dynamic yarn is already in registry"
-                             {:knitty/yarn (yarn-key y)})))
-           ((yarn-yankfn y) ctx)))))
-
+        ctx (YankCtx. mdm registry tracer token)]
     (ji/kd-await-coll
      (reify manifold.deferred.IDeferredListener
        (onSuccess [_ _]
@@ -499,7 +486,16 @@
                                            (t/capture-trace! tracer))))
                                 e)
                        token)))
-     yss)
+     (doall
+      (map (fn [y]
+             (if (keyword? y)
+               (yarn-get ctx y)
+               (do
+                 (when (contains? registry (yarn-key y))
+                   (throw (ex-info "dynamic yarn is already in registry"
+                                   {:knitty/yarn (yarn-key y)})))
+                 ((yarn-yankfn y) ctx))))
+           yarns)))
 
     (ji/kd-revoke result
                   (fn cancel-mdm [] (ji/mdm-cancel! mdm token)))))

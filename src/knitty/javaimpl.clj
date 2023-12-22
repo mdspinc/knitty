@@ -86,7 +86,7 @@
          ~df)))))
 
 (definline kd-await-coll [ls ds]
-  `(KAwaiter/awaitColl ~ls ~ds))
+  `(let [^java.lang.Iterable ds# ~ds] (KAwaiter/awaitIter ~ls (.iterator ds#))))
 
 
 (defmethod print-method KDeferred [y ^java.io.Writer w]

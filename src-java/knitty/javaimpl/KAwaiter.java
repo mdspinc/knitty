@@ -1,44 +1,120 @@
 package knitty.javaimpl;
 
 import java.util.Collection;
+import java.util.Iterator;
 
+import clojure.lang.AFn;
+
+import manifold.deferred.IDeferred;
 import manifold.deferred.IDeferredListener;
+import manifold.deferred.IMutableDeferred;
 
-public final class KAwaiter implements IDeferredListener {
+public final class KAwaiter {
 
-    private final KDeferred[] da;
-    private final IDeferredListener ls;
-    private int i;
+    private static class Arr implements IDeferredListener {
 
-    private KAwaiter(KDeferred[] da, IDeferredListener ls) {
-        this.da = da;
-        this.ls = ls;
-        this.i = da.length - 1;
-    }
+        private final KDeferred[] da;
+        private final IDeferredListener ls;
+        private int i;
 
-    public Object onError(Object e) {
-        return ls.onError(e);
-    }
-
-    public Object onSuccess(Object x) {
-        try {
-            try {
-                for (; i >= 0; --i) {
-                    KDeferred d = da[i];
-                    if (!d.realized()) {
-                        --i;
-                        d.addListener(this);
-                        return null;
-                    }
-                }
-            } catch (Throwable e) {
-                ls.onError(e);
-            }
-            ls.onSuccess(null);
-        } catch (Throwable e) {
-            KDeferred.logException(e);
+        private Arr(KDeferred[] da, IDeferredListener ls) {
+            this.da = da;
+            this.ls = ls;
+            this.i = da.length - 1;
         }
-        return null;
+
+        public Object onError(Object e) {
+            return ls.onError(e);
+        }
+
+        public Object onSuccess(Object x) {
+            try {
+                try {
+                    for (; i >= 0; --i) {
+                        KDeferred d = da[i];
+                        if (!d.realized()) {
+                            --i;
+                            d.addListener(this);
+                            return null;
+                        }
+                    }
+                } catch (Throwable e) {
+                    ls.onError(e);
+                }
+                ls.onSuccess(null);
+            } catch (Throwable e) {
+                KDeferred.logException(e);
+            }
+            return null;
+        }
+    }
+
+    private static class Iter extends AFn implements IDeferredListener {
+
+        private final static KDeferred PASS = KDeferred.wrap(new Object());
+
+        private class ErrFn extends AFn {
+            public Object invoke(Object x) {
+                return ls.onError(x);
+            }
+        };
+
+        private final Iterator<?> da;
+        private final IDeferredListener ls;
+        private IDeferred d1;
+        private AFn errfn;
+
+        private Iter(Iterator<?> da, IDeferredListener ls) {
+            this.da = da;
+            this.ls = ls;
+            this.d1 = PASS;
+        }
+
+        public Object onError(Object e) {
+            return ls.onError(e);
+        }
+
+        public Object invoke(Object x) {
+            return onSuccess(x);
+        }
+
+        public Object onSuccess(Object x) {
+            try {
+                try {
+
+                    outerloop: while (true) {
+
+                        if (!this.d1.realized()) {
+                            if (d1 instanceof IMutableDeferred) {
+                                ((IMutableDeferred) d1).addListener(this);
+                            } else {
+                                if (errfn == null) {
+                                    errfn = new ErrFn();
+                                }
+                                d1.onRealized(this, errfn);
+                            }
+                            return null;
+                        }
+
+                        while (da.hasNext()) {
+                            Object d = da.next();
+                            if (d instanceof IDeferred) {
+                                this.d1 = (IDeferred) d;
+                                continue outerloop;
+                            }
+                        }
+                        break;
+                    };
+
+                } catch (Throwable e) {
+                    ls.onError(e);
+                }
+                ls.onSuccess(null);
+            } catch (Throwable e) {
+                KDeferred.logException(e);
+            }
+            return null;
+        }
     }
 
     private static final class L8 extends AChainedListener {
@@ -91,12 +167,12 @@ public final class KAwaiter implements IDeferredListener {
         }
     }
 
-    public static void awaitColl(IDeferredListener ls, Collection<KDeferred> ds) {
-        new KAwaiter(ds.toArray(new KDeferred[ds.size()]), ls).onSuccess(null);
+    public static void awaitIter(IDeferredListener ls, Iterator<?> ds) {
+        new Iter(ds, ls).onSuccess(null);
     }
 
     public static void awaitArr(IDeferredListener ls, KDeferred... ds) {
-        new KAwaiter(ds, ls).onSuccess(null);
+        new Arr(ds, ls).onSuccess(null);
     }
 
     public static KDeferred[] createArr(int n) {
