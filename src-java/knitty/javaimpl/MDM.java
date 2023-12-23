@@ -28,7 +28,7 @@ public final class MDM {
     }
 
     private static final KDeferred NONE = new KDeferred();
-    static { NONE.success(NONE); }
+    static { NONE.success(new Object()); }
 
     private static final int ASHIFT = 5;
     private static final int ASIZE = 1 << ASHIFT;
@@ -155,7 +155,7 @@ public final class MDM {
 
         KDeferred v = (KDeferred) AR1.getVolatile(a1, i1);
         if (v != null) {
-            return v;
+            return v == NONE ? null : v;
         }
 
         Object vv = init.valAt(k, NONE);
