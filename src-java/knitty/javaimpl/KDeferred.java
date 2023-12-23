@@ -70,6 +70,7 @@ public final class KDeferred
             this.kd = kd;
             this.token = token;
         }
+
         public Object invoke(Object x) {
             return kd.success(x, token);
         }
@@ -99,9 +100,11 @@ public final class KDeferred
             this.kd = kd;
             this.token = token;
         }
+
         public Object onSuccess(Object x) {
             return kd.success(x, token);
         }
+
         public Object onError(Object x) {
             return kd.error(x, token);
         }
@@ -118,12 +121,14 @@ public final class KDeferred
         }
 
         public Object onSuccess(Object x) {
-            if (!d.realized()) canceller.run();
+            if (!d.realized())
+                canceller.run();
             return null;
         }
 
         public Object onError(Object x) {
-            if (!d.realized()) canceller.run();
+            if (!d.realized())
+                canceller.run();
             return null;
         }
     }
@@ -137,7 +142,7 @@ public final class KDeferred
         public ListenersChunk next;
 
         public ListenersChunk(IDeferredListener x) {
-            this.items = new IDeferredListener[] {x, null, null, null};
+            this.items = new IDeferredListener[] { x, null, null, null };
             this.pos = 1;
         }
 
@@ -254,7 +259,7 @@ public final class KDeferred
                     if (state == STATE_INIT) {
                         this.value = x;
                         STATE.setVolatile(this, STATE_SUCC);
-                        return null;
+                        return Boolean.TRUE;
                     }
                 }
                 case STATE_LSTN: {
@@ -265,7 +270,7 @@ public final class KDeferred
 
                     if (token != this.token) {
                         STATE.setVolatile(this, STATE_LSTN);
-                        return null;
+                        throw new IllegalStateException("invalid claim-token");
                     }
 
                     if (state == STATE_LSTN) {
@@ -297,13 +302,13 @@ public final class KDeferred
                             }
                         }
 
-                        return null;
+                        return Boolean.TRUE;
                     }
                 }
 
                 case STATE_SUCC:
                 case STATE_ERRR:
-                    return null;
+                    return Boolean.FALSE;
 
                 default:
                     throw new IllegalStateException();
@@ -331,13 +336,13 @@ public final class KDeferred
 
                     if (token != this.token) {
                         STATE.setVolatile(this, STATE_INIT);
-                        return null;
+                        throw new IllegalStateException("invalid claim-token");
                     }
 
                     if (state == STATE_INIT) {
                         this.value = x;
                         STATE.setVolatile(this, STATE_ERRR);
-                        return null;
+                        return Boolean.TRUE;
                     }
                 }
 
@@ -381,13 +386,13 @@ public final class KDeferred
                             }
                         }
 
-                        return null;
+                        return Boolean.TRUE;
                     }
                 }
 
                 case STATE_SUCC:
                 case STATE_ERRR:
-                    return null;
+                    return Boolean.FALSE;
 
                 default:
                     throw new IllegalStateException();
@@ -436,21 +441,36 @@ public final class KDeferred
                     continue;
                 case STATE_INIT:
                     if (this.pushListener1(ls))
-                        return null;
+                        return Boolean.TRUE;
                     else
                         continue;
                 case STATE_LSTN:
                     if (this.pushListener(ls))
-                        return null;
+                        return Boolean.TRUE;
                     else
                         continue;
                 case STATE_SUCC:
-                    return ls.onSuccess(value);
+                    ls.onSuccess(value);
+                    return Boolean.FALSE;
                 case STATE_ERRR:
-                    return ls.onError(value);
+                    ls.onError(value);
+                    return Boolean.FALSE;
                 default:
                     throw new IllegalStateException();
             }
+        }
+    }
+
+    boolean addAwaitListener(IDeferredListener ls) {
+        switch (state) {
+            case STATE_SUCC:
+                return false;
+            case STATE_ERRR:
+                ls.onError(this.value);
+                return true;
+            default:
+                this.addListener(ls);
+                return true;
         }
     }
 
@@ -486,6 +506,9 @@ public final class KDeferred
     }
 
     public KDeferred chainFrom(Object x, Object token) {
+        if (this.token != token) {
+            throw new IllegalStateException("invalid claim-token");
+        }
         if (x instanceof IDeferred) {
             if (x instanceof IMutableDeferred) {
                 ((IMutableDeferred) x).addListener(new ChainListener(this, token));

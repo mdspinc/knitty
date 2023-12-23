@@ -1,13 +1,7 @@
 package knitty.javaimpl;
 
-import java.util.Collection;
 import java.util.Iterator;
-
-import clojure.lang.AFn;
-
-import manifold.deferred.IDeferred;
 import manifold.deferred.IDeferredListener;
-import manifold.deferred.IMutableDeferred;
 
 public final class KAwaiter {
 
@@ -20,7 +14,7 @@ public final class KAwaiter {
         private Arr(KDeferred[] da, IDeferredListener ls) {
             this.da = da;
             this.ls = ls;
-            this.i = da.length - 1;
+            this.i = da.length;
         }
 
         public Object onError(Object e) {
@@ -29,17 +23,10 @@ public final class KAwaiter {
 
         public Object onSuccess(Object x) {
             try {
-                try {
-                    for (; i >= 0; --i) {
-                        KDeferred d = da[i];
-                        if (!d.realized()) {
-                            --i;
-                            d.addListener(this);
-                            return null;
-                        }
+                while (i > 0) {
+                    if (da[--i].addAwaitListener(this)) {
+                        return null;
                     }
-                } catch (Throwable e) {
-                    ls.onError(e);
                 }
                 ls.onSuccess(null);
             } catch (Throwable e) {
@@ -49,65 +36,27 @@ public final class KAwaiter {
         }
     }
 
-    private static class Iter extends AFn implements IDeferredListener {
+    private static class Iter implements IDeferredListener {
 
-        private final static KDeferred PASS = KDeferred.wrap(new Object());
-
-        private class ErrFn extends AFn {
-            public Object invoke(Object x) {
-                return ls.onError(x);
-            }
-        };
-
-        private final Iterator<?> da;
+        private final Iterator<KDeferred> da;
         private final IDeferredListener ls;
-        private IDeferred d1;
-        private AFn errfn;
 
-        private Iter(Iterator<?> da, IDeferredListener ls) {
+        private Iter(Iterator<KDeferred> da, IDeferredListener ls) {
             this.da = da;
             this.ls = ls;
-            this.d1 = PASS;
         }
 
         public Object onError(Object e) {
             return ls.onError(e);
         }
 
-        public Object invoke(Object x) {
-            return onSuccess(x);
-        }
-
         public Object onSuccess(Object x) {
             try {
-                try {
-
-                    outerloop: while (true) {
-
-                        if (!this.d1.realized()) {
-                            if (d1 instanceof IMutableDeferred) {
-                                ((IMutableDeferred) d1).addListener(this);
-                            } else {
-                                if (errfn == null) {
-                                    errfn = new ErrFn();
-                                }
-                                d1.onRealized(this, errfn);
-                            }
-                            return null;
-                        }
-
-                        while (da.hasNext()) {
-                            Object d = da.next();
-                            if (d instanceof IDeferred) {
-                                this.d1 = (IDeferred) d;
-                                continue outerloop;
-                            }
-                        }
-                        break;
-                    };
-
-                } catch (Throwable e) {
-                    ls.onError(e);
+                while (da.hasNext()) {
+                    KDeferred d = da.next();
+                    if (d.addAwaitListener(this)) {
+                        return null;
+                    }
                 }
                 ls.onSuccess(null);
             } catch (Throwable e) {
@@ -167,7 +116,7 @@ public final class KAwaiter {
         }
     }
 
-    public static void awaitIter(IDeferredListener ls, Iterator<?> ds) {
+    public static void awaitIter(IDeferredListener ls, Iterator<KDeferred> ds) {
         new Iter(ds, ls).onSuccess(null);
     }
 
