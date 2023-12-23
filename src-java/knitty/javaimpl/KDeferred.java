@@ -72,7 +72,11 @@ public final class KDeferred
         }
 
         public Object invoke(Object x) {
-            return kd.success(x, token);
+            if (x instanceof IDeferred) {
+                kd.chainFrom(x, token);
+            } else {
+                kd.success(x, token);
+            }
         }
     }
 
@@ -87,7 +91,12 @@ public final class KDeferred
         }
 
         public Object invoke(Object x) {
-            return kd.error(x, token);
+            if (x instanceof IDeferred) {
+                kd.chainFromDeferred((IDeferred) x, token);
+            } else {
+                kd.error(x, token);
+            }
+            return null;
         }
     }
 
@@ -102,11 +111,21 @@ public final class KDeferred
         }
 
         public Object onSuccess(Object x) {
-            return kd.success(x, token);
+            if (x instanceof IDeferred) {
+                kd.chainFromDeferred((IDeferred) x, token);
+            } else {
+                kd.success(x, token);
+            }
+            return null;
         }
 
         public Object onError(Object x) {
-            return kd.error(x, token);
+            if (x instanceof IDeferred) {
+                kd.chainFromDeferred((IDeferred) x, token);
+            } else {
+                kd.error(x, token);
+            }
+            return null;
         }
     }
 
@@ -169,7 +188,6 @@ public final class KDeferred
     private static final int STATE_SUCC = 4;
     private static final int STATE_ERRR = 8;
     private static final int STATE_DONE_MASK = STATE_SUCC | STATE_ERRR;
-    private static final Object WRAPTKN = new Object();
 
     private static final VarHandle STATE;
     private static final VarHandle TOKEN;
@@ -505,16 +523,17 @@ public final class KDeferred
         return chainFrom(x, null);
     }
 
-    public KDeferred chainFrom(Object x, Object token) {
-        if (this.token != token) {
-            throw new IllegalStateException("invalid claim-token");
+    private void chainFromDeferred(IDeferred x, Object token) {
+        if (x instanceof IMutableDeferred) {
+            ((IMutableDeferred) x).addListener(new ChainListener(this, token));
+        } else {
+            ((IDeferred) x).onRealized(new ChainFnSucc(this, token), new ChainFnErrr(this, token));
         }
+    }
+
+    public KDeferred chainFrom(Object x, Object token) {
         if (x instanceof IDeferred) {
-            if (x instanceof IMutableDeferred) {
-                ((IMutableDeferred) x).addListener(new ChainListener(this, token));
-            } else {
-                ((IDeferred) x).onRealized(new ChainFnSucc(this, token), new ChainFnErrr(this, token));
-            }
+            this.chainFromDeferred((IDeferred) x, token);
         } else {
             this.success(x, token);
         }
@@ -550,7 +569,7 @@ public final class KDeferred
                     Thread.onSpinWait();
                     continue;
                 default:
-
+                    return false;
             }
         }
     }
@@ -655,14 +674,14 @@ public final class KDeferred
             if (x instanceof KDeferred) {
                 return (KDeferred) x;
             } else if (x instanceof IMutableDeferred) {
-                KDeferred d = new KDeferred(WRAPTKN);
+                KDeferred d = new KDeferred(x);
                 IMutableDeferred xx = d.revokee = (IMutableDeferred) x;
-                xx.addListener(new ChainListener(d, WRAPTKN));
+                xx.addListener(new ChainListener(d, x));
                 return d;
             } else {
-                KDeferred d = new KDeferred(WRAPTKN);
+                KDeferred d = new KDeferred(x);
                 IDeferred xx = (IDeferred) x;
-                xx.onRealized(new ChainFnSucc(d, WRAPTKN), new ChainFnErrr(d, WRAPTKN));
+                xx.onRealized(new ChainFnSucc(d, x), new ChainFnErrr(d, x));
                 return d;
             }
         } else {
