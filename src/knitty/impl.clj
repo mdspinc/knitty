@@ -128,10 +128,9 @@
 
 
 (defn yarn-get [^YankCtx ctx ^clojure.lang.Keyword ykey]
-  (let [kid (ji/keyword->intid ykey)
-        v (ji/mdm-get! (.mdm ctx) ykey kid)]
-    (if v
-      v
+  (let [kid (ji/keyword->intid ykey)]
+    (or
+      (ji/mdm-get! (.mdm ctx) ykey kid)
       ((registry-yankfn' (.-registry ctx) ykey kid) ctx))))
 
 
@@ -141,33 +140,18 @@
   ([yk ykey ykeyi ctx]
    `(do
       (ctx-tracer-> ~ctx t/trace-dep ~yk ~ykey)
-      (let [v# (ji/mdm-get! (.-mdm ~ctx) ~ykey ~ykeyi)]
-        (if v#
-          v#
-          ((registry-yankfn' (.-registry ~ctx) ~ykey ~ykeyi) ~ctx))))))
+      (or (ji/mdm-get! (.-mdm ~ctx) ~ykey ~ykeyi)
+          ((registry-yankfn' (.-registry ~ctx) ~ykey ~ykeyi) ~ctx)))))
 
 
 (deftype Lazy
-         [^knitty.javaimpl.KDeferred value
-          ^YankCtx ctx
+         [^YankCtx ctx
           ^clojure.lang.Keyword yk
           ^clojure.lang.Keyword ykey
           ^long ykeyi]
 
   clojure.lang.IDeref
-  (deref [_]
-    (when (ji/kd-claim value (.-token ctx))
-      (try
-        (ctx-tracer-> ctx t/trace-dep yk ykey)
-        (ji/kd-chain-from
-         value
-         (let [r (ji/mdm-get! (.-mdm ctx) yk ykeyi)]
-           (if r
-             r
-             ((registry-yankfn' (.-registry ctx) ykey ykeyi) ctx)))
-         (.-token ctx))
-        (catch Throwable t (ji/kd-error! value t (.-token ctx)))))
-    value)
+  (deref [_] (yarn-get-impl yk ykey ykeyi ctx))
 
   Object
   (toString [_] (str "#knitty/Lazy[" ykey "]")))
@@ -175,7 +159,6 @@
 
 (defmacro yarn-get-lazy [yk ykey ctx]
   `(Lazy.
-    (ji/kd-create)
     ~ctx
     ~yk
     ~ykey
@@ -190,10 +173,8 @@
     (if-let [[i k] (yarns-map y)]
       (do
         (ctx-tracer-> ctx t/trace-dep yk k)
-        (let [v (ji/mdm-get! (.-mdm ctx) yk i)]
-          (if v
-            v
-            ((registry-yankfn' (.-registry ctx) k i) ctx))))
+        (or (ji/mdm-get! (.-mdm ctx) yk i)
+            ((registry-yankfn' (.-registry ctx) k i) ctx)))
       (throw (ex-info "Invalid yank-fn arg" {:knitty/yankfn-arg y
                                              :knytty/yankfn-known-args (keys yarns-map)})))))
 
@@ -463,7 +444,7 @@
         ctx (YankCtx. mdm registry tracer token)]
     (ji/kd-await-coll
      (reify manifold.deferred.IDeferredListener
-       (onSuccess [_ _]
+       (onSuccess [_ x]
          (ji/kd-success! result
                          (let [poy' (ji/mdm-freeze! mdm)]
                            (if tracer
@@ -496,6 +477,5 @@
                                    {:knitty/yarn (yarn-key y)})))
                  ((yarn-yankfn y) ctx))))
            yarns)))
-
     (ji/kd-revoke result
-                  (fn cancel-mdm [] (ji/mdm-cancel! mdm token)))))
+                    (fn cancel-mdm [] (ji/mdm-cancel! mdm token)))))
