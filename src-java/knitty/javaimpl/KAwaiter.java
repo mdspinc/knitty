@@ -66,8 +66,647 @@ public final class KAwaiter {
         }
     }
 
-    private static final class P8 extends Lx {
+    public static void awaitIter(IDeferredListener ls, Iterator<KDeferred> ds) {
+        new Iter(ds, ls).onSuccess(null);
+    }
 
+    public static void awaitArr(IDeferredListener ls, KDeferred... ds) {
+        new Arr(ds, ls).onSuccess(null);
+    }
+
+    public static KDeferred[] createArr(long n) {
+        return new KDeferred[(int) n];
+    }
+
+    public static void setArrItem(KDeferred[] a, long i, KDeferred d) {
+        a[(int) i] = d;
+    }
+
+    public static void await(IDeferredListener ls) {
+        ls.onSuccess(null);
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1) {
+        if (x1.awaitable()) {
+            x1.addListener(ls);
+        } else {
+            ls.onSuccess(null);
+        }
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2) {
+        if (x2.awaitable()) {
+            x2.addListener(new L1(ls, x1));
+        } else if (x1.awaitable()) {
+            x1.addListener(ls);
+        } else {
+            ls.onSuccess(null);
+        }
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3) {
+        if (x3.awaitable()) {
+            x3.addListener(new L2(ls, x1, x2));
+        } else if (x2.awaitable()) {
+            x2.addListener(new L1(ls, x1));
+        } else if (x1.awaitable()) {
+            x1.addListener(ls);
+        } else {
+            ls.onSuccess(null);
+        }
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4) {
+        if (x4.awaitable()) {
+            x4.addListener(new L3(ls, x1, x2, x3));
+        } else if (x3.awaitable()) {
+            x3.addListener(new L2(ls, x1, x2));
+        } else if (x2.awaitable()) {
+            x2.addListener(new L1(ls, x1));
+        } else if (x1.awaitable()) {
+            x1.addListener(ls);
+        } else {
+            ls.onSuccess(null);
+        }
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5) {
+        if (x5.awaitable()) {
+            x5.addListener(new L4(ls, x1, x2, x3, x4));
+        } else if (x4.awaitable()) {
+            x4.addListener(new L3(ls, x1, x2, x3));
+        } else if (x3.awaitable()) {
+            x3.addListener(new L2(ls, x1, x2));
+        } else if (x2.awaitable()) {
+            x2.addListener(new L1(ls, x1));
+        } else if (x1.awaitable()) {
+            x1.addListener(ls);
+        } else {
+            ls.onSuccess(null);
+        }
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6) {
+        if (x6.awaitable()) {
+            x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
+        } else if (x5.awaitable()) {
+            x5.addListener(new L4(ls, x1, x2, x3, x4));
+        } else if (x4.awaitable()) {
+            x4.addListener(new L3(ls, x1, x2, x3));
+        } else if (x3.awaitable()) {
+            x3.addListener(new L2(ls, x1, x2));
+        } else if (x2.awaitable()) {
+            x2.addListener(new L1(ls, x1));
+        } else if (x1.awaitable()) {
+            x1.addListener(ls);
+        } else {
+            ls.onSuccess(null);
+        }
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6, KDeferred x7) {
+        if (x7.awaitable()) {
+            x7.addListener(new L6(ls, x1, x2, x3, x4, x5, x6));
+        } else if (x6.awaitable()) {
+            x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
+        } else if (x5.awaitable()) {
+            x5.addListener(new L4(ls, x1, x2, x3, x4));
+        } else if (x4.awaitable()) {
+            x4.addListener(new L3(ls, x1, x2, x3));
+        } else if (x3.awaitable()) {
+            x3.addListener(new L2(ls, x1, x2));
+        } else if (x2.awaitable()) {
+            x2.addListener(new L1(ls, x1));
+        } else if (x1.awaitable()) {
+            x1.addListener(ls);
+        } else {
+            ls.onSuccess(null);
+        }
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8) {
+        if (x8.awaitable()) {
+            x8.addListener(new L7(ls, x1, x2, x3, x4, x5, x6, x7));
+        } else if (x7.awaitable()) {
+            x7.addListener(new L6(ls, x1, x2, x3, x4, x5, x6));
+        } else if (x6.awaitable()) {
+            x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
+        } else if (x5.awaitable()) {
+            x5.addListener(new L4(ls, x1, x2, x3, x4));
+        } else if (x4.awaitable()) {
+            x4.addListener(new L3(ls, x1, x2, x3));
+        } else if (x3.awaitable()) {
+            x3.addListener(new L2(ls, x1, x2));
+        } else if (x2.awaitable()) {
+            x2.addListener(new L1(ls, x1));
+        } else if (x1.awaitable()) {
+            x1.addListener(ls);
+        } else {
+            ls.onSuccess(null);
+        }
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9) {
+        if (x9.awaitable()) {
+            x9.addListener(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8));
+        } else if (x8.awaitable()) {
+            x8.addListener(new L7(ls, x1, x2, x3, x4, x5, x6, x7));
+        } else if (x7.awaitable()) {
+            x7.addListener(new L6(ls, x1, x2, x3, x4, x5, x6));
+        } else if (x6.awaitable()) {
+            x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
+        } else if (x5.awaitable()) {
+            x5.addListener(new L4(ls, x1, x2, x3, x4));
+        } else if (x4.awaitable()) {
+            x4.addListener(new L3(ls, x1, x2, x3));
+        } else if (x3.awaitable()) {
+            x3.addListener(new L2(ls, x1, x2));
+        } else if (x2.awaitable()) {
+            x2.addListener(new L1(ls, x1));
+        } else if (x1.awaitable()) {
+            x1.addListener(ls);
+        } else {
+            ls.onSuccess(null);
+        }
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10) {
+        if (x10.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10);
+        } else if (x9.awaitable()) {
+            x9.addListener(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8));
+        } else if (x8.awaitable()) {
+            x8.addListener(new L7(ls, x1, x2, x3, x4, x5, x6, x7));
+        } else if (x7.awaitable()) {
+            x7.addListener(new L6(ls, x1, x2, x3, x4, x5, x6));
+        } else if (x6.awaitable()) {
+            x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
+        } else if (x5.awaitable()) {
+            x5.addListener(new L4(ls, x1, x2, x3, x4));
+        } else if (x4.awaitable()) {
+            x4.addListener(new L3(ls, x1, x2, x3));
+        } else if (x3.awaitable()) {
+            x3.addListener(new L2(ls, x1, x2));
+        } else if (x2.awaitable()) {
+            x2.addListener(new L1(ls, x1));
+        } else if (x1.awaitable()) {
+            x1.addListener(ls);
+        } else {
+            ls.onSuccess(null);
+        }
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11) {
+        if (x11.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11);
+        } else if (x10.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10);
+        } else if (x9.awaitable()) {
+            x9.addListener(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8));
+        } else if (x8.awaitable()) {
+            x8.addListener(new L7(ls, x1, x2, x3, x4, x5, x6, x7));
+        } else if (x7.awaitable()) {
+            x7.addListener(new L6(ls, x1, x2, x3, x4, x5, x6));
+        } else if (x6.awaitable()) {
+            x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
+        } else if (x5.awaitable()) {
+            x5.addListener(new L4(ls, x1, x2, x3, x4));
+        } else if (x4.awaitable()) {
+            x4.addListener(new L3(ls, x1, x2, x3));
+        } else if (x3.awaitable()) {
+            x3.addListener(new L2(ls, x1, x2));
+        } else if (x2.awaitable()) {
+            x2.addListener(new L1(ls, x1));
+        } else if (x1.awaitable()) {
+            x1.addListener(ls);
+        } else {
+            ls.onSuccess(null);
+        }
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
+            KDeferred x12) {
+        if (x12.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12);
+        } else if (x11.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11);
+        } else if (x10.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10);
+        } else if (x9.awaitable()) {
+            x9.addListener(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8));
+        } else if (x8.awaitable()) {
+            x8.addListener(new L7(ls, x1, x2, x3, x4, x5, x6, x7));
+        } else if (x7.awaitable()) {
+            x7.addListener(new L6(ls, x1, x2, x3, x4, x5, x6));
+        } else if (x6.awaitable()) {
+            x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
+        } else if (x5.awaitable()) {
+            x5.addListener(new L4(ls, x1, x2, x3, x4));
+        } else if (x4.awaitable()) {
+            x4.addListener(new L3(ls, x1, x2, x3));
+        } else if (x3.awaitable()) {
+            x3.addListener(new L2(ls, x1, x2));
+        } else if (x2.awaitable()) {
+            x2.addListener(new L1(ls, x1));
+        } else if (x1.awaitable()) {
+            x1.addListener(ls);
+        } else {
+            ls.onSuccess(null);
+        }
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
+            KDeferred x12, KDeferred x13) {
+        if (x13.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13);
+        } else if (x12.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12);
+        } else if (x11.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11);
+        } else if (x10.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10);
+        } else if (x9.awaitable()) {
+            x9.addListener(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8));
+        } else if (x8.awaitable()) {
+            x8.addListener(new L7(ls, x1, x2, x3, x4, x5, x6, x7));
+        } else if (x7.awaitable()) {
+            x7.addListener(new L6(ls, x1, x2, x3, x4, x5, x6));
+        } else if (x6.awaitable()) {
+            x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
+        } else if (x5.awaitable()) {
+            x5.addListener(new L4(ls, x1, x2, x3, x4));
+        } else if (x4.awaitable()) {
+            x4.addListener(new L3(ls, x1, x2, x3));
+        } else if (x3.awaitable()) {
+            x3.addListener(new L2(ls, x1, x2));
+        } else if (x2.awaitable()) {
+            x2.addListener(new L1(ls, x1));
+        } else if (x1.awaitable()) {
+            x1.addListener(ls);
+        } else {
+            ls.onSuccess(null);
+        }
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
+            KDeferred x12, KDeferred x13, KDeferred x14) {
+        if (x14.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14);
+        } else if (x13.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13);
+        } else if (x12.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12);
+        } else if (x11.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11);
+        } else if (x10.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10);
+        } else if (x9.awaitable()) {
+            x9.addListener(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8));
+        } else if (x8.awaitable()) {
+            x8.addListener(new L7(ls, x1, x2, x3, x4, x5, x6, x7));
+        } else if (x7.awaitable()) {
+            x7.addListener(new L6(ls, x1, x2, x3, x4, x5, x6));
+        } else if (x6.awaitable()) {
+            x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
+        } else if (x5.awaitable()) {
+            x5.addListener(new L4(ls, x1, x2, x3, x4));
+        } else if (x4.awaitable()) {
+            x4.addListener(new L3(ls, x1, x2, x3));
+        } else if (x3.awaitable()) {
+            x3.addListener(new L2(ls, x1, x2));
+        } else if (x2.awaitable()) {
+            x2.addListener(new L1(ls, x1));
+        } else if (x1.awaitable()) {
+            x1.addListener(ls);
+        } else {
+            ls.onSuccess(null);
+        }
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
+            KDeferred x12, KDeferred x13, KDeferred x14, KDeferred x15) {
+        if (x15.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14, x15);
+        } else if (x14.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14);
+        } else if (x13.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13);
+        } else if (x12.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12);
+        } else if (x11.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11);
+        } else if (x10.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10);
+        } else if (x9.awaitable()) {
+            x9.addListener(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8));
+        } else if (x8.awaitable()) {
+            x8.addListener(new L7(ls, x1, x2, x3, x4, x5, x6, x7));
+        } else if (x7.awaitable()) {
+            x7.addListener(new L6(ls, x1, x2, x3, x4, x5, x6));
+        } else if (x6.awaitable()) {
+            x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
+        } else if (x5.awaitable()) {
+            x5.addListener(new L4(ls, x1, x2, x3, x4));
+        } else if (x4.awaitable()) {
+            x4.addListener(new L3(ls, x1, x2, x3));
+        } else if (x3.awaitable()) {
+            x3.addListener(new L2(ls, x1, x2));
+        } else if (x2.awaitable()) {
+            x2.addListener(new L1(ls, x1));
+        } else if (x1.awaitable()) {
+            x1.addListener(ls);
+        } else {
+            ls.onSuccess(null);
+        }
+    }
+
+    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
+            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
+            KDeferred x12, KDeferred x13, KDeferred x14, KDeferred x15, KDeferred x16) {
+        if (x16.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14, x15, x16);
+        } else if (x15.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14, x15);
+        } else if (x14.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14);
+        } else if (x13.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13);
+        } else if (x12.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12);
+        } else if (x11.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11);
+        } else if (x10.awaitable()) {
+            await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10);
+        } else if (x9.awaitable()) {
+            x9.addListener(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8));
+        } else if (x8.awaitable()) {
+            x8.addListener(new L7(ls, x1, x2, x3, x4, x5, x6, x7));
+        } else if (x7.awaitable()) {
+            x7.addListener(new L6(ls, x1, x2, x3, x4, x5, x6));
+        } else if (x6.awaitable()) {
+            x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
+        } else if (x5.awaitable()) {
+            x5.addListener(new L4(ls, x1, x2, x3, x4));
+        } else if (x4.awaitable()) {
+            x4.addListener(new L3(ls, x1, x2, x3));
+        } else if (x3.awaitable()) {
+            x3.addListener(new L2(ls, x1, x2));
+        } else if (x2.awaitable()) {
+            x2.addListener(new L1(ls, x1));
+        } else if (x1.awaitable()) {
+            x1.addListener(ls);
+        } else {
+            ls.onSuccess(null);
+        }
+    }
+
+    // Awaiters
+
+    private static final class L1 implements IDeferredListener {
+
+        private final IDeferredListener ls;
+        private final KDeferred x1;
+
+        private L1(
+            IDeferredListener ls,
+            KDeferred x1
+        ) {
+            this.ls = ls;
+            this.x1 = x1;
+        }
+
+        public Object onSuccess(Object _x) {
+            await(ls, x1);
+            return null;
+        }
+
+        public Object onError(Object e) {
+            ls.onError(e);
+            return null;
+        }
+    }
+
+    private static final class L2 implements IDeferredListener {
+
+        private final IDeferredListener ls;
+        private final KDeferred x1;
+        private final KDeferred x2;
+
+        private L2(
+            IDeferredListener ls,
+            KDeferred x1,
+            KDeferred x2
+        ) {
+            this.ls = ls;
+            this.x1 = x1;
+            this.x2 = x2;
+        }
+
+        public Object onSuccess(Object _x) {
+            await(ls, x1, x2);
+            return null;
+        }
+
+        public Object onError(Object e) {
+            ls.onError(e);
+            return null;
+        }
+    }
+
+    private static final class L3 implements IDeferredListener {
+
+        private final IDeferredListener ls;
+        private final KDeferred x1;
+        private final KDeferred x2;
+        private final KDeferred x3;
+
+        private L3(
+            IDeferredListener ls,
+            KDeferred x1,
+            KDeferred x2,
+            KDeferred x3
+        ) {
+            this.ls = ls;
+            this.x1 = x1;
+            this.x2 = x2;
+            this.x3 = x3;
+        }
+
+        public Object onSuccess(Object _x) {
+            await(ls, x1, x2, x3);
+            return null;
+        }
+
+        public Object onError(Object e) {
+            ls.onError(e);
+            return null;
+        }
+    }
+
+    private static final class L4 implements IDeferredListener {
+
+        private final IDeferredListener ls;
+        private final KDeferred x1;
+        private final KDeferred x2;
+        private final KDeferred x3;
+        private final KDeferred x4;
+
+        private L4(
+            IDeferredListener ls,
+            KDeferred x1,
+            KDeferred x2,
+            KDeferred x3,
+            KDeferred x4
+        ) {
+            this.ls = ls;
+            this.x1 = x1;
+            this.x2 = x2;
+            this.x3 = x3;
+            this.x4 = x4;
+        }
+
+        public Object onSuccess(Object _x) {
+            await(ls, x1, x2, x3, x4);
+            return null;
+        }
+
+        public Object onError(Object e) {
+            ls.onError(e);
+            return null;
+        }
+    }
+
+    private static final class L5 implements IDeferredListener {
+
+        private final IDeferredListener ls;
+        private final KDeferred x1;
+        private final KDeferred x2;
+        private final KDeferred x3;
+        private final KDeferred x4;
+        private final KDeferred x5;
+
+        private L5(
+            IDeferredListener ls,
+            KDeferred x1,
+            KDeferred x2,
+            KDeferred x3,
+            KDeferred x4,
+            KDeferred x5
+        ) {
+            this.ls = ls;
+            this.x1 = x1;
+            this.x2 = x2;
+            this.x3 = x3;
+            this.x4 = x4;
+            this.x5 = x5;
+        }
+
+        public Object onSuccess(Object _x) {
+            await(ls, x1, x2, x3, x4, x5);
+            return null;
+        }
+
+        public Object onError(Object e) {
+            ls.onError(e);
+            return null;
+        }
+    }
+
+    private static final class L6 implements IDeferredListener {
+
+        private final IDeferredListener ls;
+        private final KDeferred x1;
+        private final KDeferred x2;
+        private final KDeferred x3;
+        private final KDeferred x4;
+        private final KDeferred x5;
+        private final KDeferred x6;
+
+        private L6(
+            IDeferredListener ls,
+            KDeferred x1,
+            KDeferred x2,
+            KDeferred x3,
+            KDeferred x4,
+            KDeferred x5,
+            KDeferred x6
+        ) {
+            this.ls = ls;
+            this.x1 = x1;
+            this.x2 = x2;
+            this.x3 = x3;
+            this.x4 = x4;
+            this.x5 = x5;
+            this.x6 = x6;
+        }
+
+        public Object onSuccess(Object _x) {
+            await(ls, x1, x2, x3, x4, x5, x6);
+            return null;
+        }
+
+        public Object onError(Object e) {
+            ls.onError(e);
+            return null;
+        }
+    }
+
+    private static final class L7 implements IDeferredListener {
+
+        private final IDeferredListener ls;
+        private final KDeferred x1;
+        private final KDeferred x2;
+        private final KDeferred x3;
+        private final KDeferred x4;
+        private final KDeferred x5;
+        private final KDeferred x6;
+        private final KDeferred x7;
+
+        private L7(
+            IDeferredListener ls,
+            KDeferred x1,
+            KDeferred x2,
+            KDeferred x3,
+            KDeferred x4,
+            KDeferred x5,
+            KDeferred x6,
+            KDeferred x7
+        ) {
+            this.ls = ls;
+            this.x1 = x1;
+            this.x2 = x2;
+            this.x3 = x3;
+            this.x4 = x4;
+            this.x5 = x5;
+            this.x6 = x6;
+            this.x7 = x7;
+        }
+
+        public Object onSuccess(Object _x) {
+            await(ls, x1, x2, x3, x4, x5, x6, x7);
+            return null;
+        }
+
+        public Object onError(Object e) {
+            ls.onError(e);
+            return null;
+        }
+    }
+
+    private static final class L8 implements IDeferredListener {
+
+        private final IDeferredListener ls;
         private final KDeferred x1;
         private final KDeferred x2;
         private final KDeferred x3;
@@ -77,17 +716,18 @@ public final class KAwaiter {
         private final KDeferred x7;
         private final KDeferred x8;
 
-        private P8(
-                IDeferredListener next,
-                KDeferred x1,
-                KDeferred x2,
-                KDeferred x3,
-                KDeferred x4,
-                KDeferred x5,
-                KDeferred x6,
-                KDeferred x7,
-                KDeferred x8) {
-            super(next);
+        private L8(
+            IDeferredListener ls,
+            KDeferred x1,
+            KDeferred x2,
+            KDeferred x3,
+            KDeferred x4,
+            KDeferred x5,
+            KDeferred x6,
+            KDeferred x7,
+            KDeferred x8
+        ) {
+            this.ls = ls;
             this.x1 = x1;
             this.x2 = x2;
             this.x3 = x3;
@@ -99,300 +739,14 @@ public final class KAwaiter {
         }
 
         public Object onSuccess(Object _x) {
-            await(next, x1, x2, x3, x4, x5, x6, x7, x8);
+            await(ls, x1, x2, x3, x4, x5, x6, x7, x8);
+            return null;
+        }
+
+        public Object onError(Object e) {
+            ls.onError(e);
             return null;
         }
     }
 
-    abstract static class Lx implements IDeferredListener {
-        final IDeferredListener next;
-
-        public Lx(IDeferredListener next) {
-            this.next = next;
-        }
-
-        public Object onError(Object x) {
-            return next.onError(x);
-        }
-    }
-
-    public static void awaitIter(IDeferredListener ls, Iterator<KDeferred> ds) {
-        new Iter(ds, ls).onSuccess(null);
-    }
-
-    public static void awaitArr(IDeferredListener ls, KDeferred... ds) {
-        new Arr(ds, ls).onSuccess(null);
-    }
-
-    public static KDeferred[] createArr(int n) {
-        return new KDeferred[n];
-    }
-
-    public static void setArrItem(KDeferred[] a, int i, KDeferred d) {
-        a[i] = d;
-    }
-
-    public static void await(IDeferredListener ls) {
-        ls.onSuccess(null);
-    }
-
-    public static void await(IDeferredListener ls, KDeferred x1) {
-        if (x1.realized()) {
-            ls.onSuccess(null);
-        } else {
-            x1.addListener(ls);
-        }
-    }
-
-    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2) {
-        if (x2.realized()) {
-            if (x1.realized()) {
-                ls.onSuccess(null);
-            } else {
-                x1.addListener(ls);
-            }
-        } else {
-            x2.addListener(new Lx(ls) {
-                public Object onSuccess(Object _x) {
-                    await(ls, x1);
-                    return null;
-                }
-            });
-        }
-    }
-
-    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3) {
-        if (x3.realized()) {
-            if (x2.realized()) {
-                if (x1.realized()) {
-                    ls.onSuccess(null);
-                } else {
-                    x1.addListener(ls);
-                }
-            } else {
-                await(ls, x1, x2);
-            }
-        } else {
-            x3.addListener(new Lx(ls) {
-                public Object onSuccess(Object _x) {
-                    await(ls, x1, x2);
-                    return null;
-                }
-            });
-        }
-    }
-
-    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4) {
-        if (x4.realized()) {
-            if (x3.realized()) {
-                if (x2.realized()) {
-                    if (x1.realized()) {
-                        ls.onSuccess(null);
-                    } else {
-                        x1.addListener(ls);
-                    }
-                } else {
-                    await(ls, x1, x2);
-                }
-            } else {
-                await(ls, x1, x2, x3);
-            }
-        } else {
-            x4.addListener(new Lx(ls) {
-                public Object onSuccess(Object _x) {
-                    await(ls, x1, x2, x3);
-                    return null;
-                }
-            });
-        }
-    }
-
-    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
-            KDeferred x5) {
-        if (x5.realized()) {
-            if (x4.realized()) {
-                if (x3.realized()) {
-                    if (x2.realized()) {
-                        if (x1.realized()) {
-                            ls.onSuccess(null);
-                        } else {
-                            x1.addListener(ls);
-                        }
-                    } else {
-                        await(ls, x1, x2);
-                    }
-                } else {
-                    await(ls, x1, x2, x3);
-                }
-            } else {
-                await(ls, x1, x2, x3, x4);
-            }
-        } else {
-            x5.addListener(new Lx(ls) {
-                public Object onSuccess(Object _x) {
-                    await(ls, x1, x2, x3, x4);
-                    return null;
-                }
-            });
-        }
-    }
-
-    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
-            KDeferred x5, KDeferred x6) {
-        if (x6.realized()) {
-            if (x5.realized()) {
-                if (x4.realized()) {
-                    if (x3.realized()) {
-                        if (x2.realized()) {
-                            if (x1.realized()) {
-                                ls.onSuccess(null);
-                            } else {
-                                x1.addListener(ls);
-                            }
-                        } else {
-                            await(ls, x1, x2);
-                        }
-                    } else {
-                        await(ls, x1, x2, x3);
-                    }
-                } else {
-                    await(ls, x1, x2, x3, x4);
-                }
-            } else {
-                await(ls, x1, x2, x3, x4, x5);
-            }
-        } else {
-            x6.addListener(new Lx(ls) {
-                public Object onSuccess(Object _x) {
-                    await(ls, x1, x2, x3, x4, x5);
-                    return null;
-                }
-            });
-        }
-    }
-
-    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
-            KDeferred x5, KDeferred x6, KDeferred x7) {
-        if (x7.realized()) {
-            if (x6.realized()) {
-                if (x5.realized()) {
-                    if (x4.realized()) {
-                        if (x3.realized()) {
-                            if (x2.realized()) {
-                                if (x1.realized()) {
-                                    ls.onSuccess(null);
-                                } else {
-                                    x1.addListener(ls);
-                                }
-                            } else {
-                                await(ls, x1, x2);
-                            }
-                        } else {
-                            await(ls, x1, x2, x3);
-                        }
-                    } else {
-                        await(ls, x1, x2, x3, x4);
-                    }
-                } else {
-                    await(ls, x1, x2, x3, x4, x5);
-                }
-            } else {
-                await(ls, x1, x2, x3, x4, x5, x6);
-            }
-        } else {
-            x7.addListener(new Lx(ls) {
-                public Object onSuccess(Object _x) {
-                    await(ls, x1, x2, x3, x4, x5, x6);
-                    return null;
-                }
-            });
-        }
-    }
-
-    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
-            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8) {
-        if (x8.realized()) {
-            if (x7.realized()) {
-                if (x6.realized()) {
-                    if (x5.realized()) {
-                        if (x4.realized()) {
-                            if (x3.realized()) {
-                                if (x2.realized()) {
-                                    if (x1.realized()) {
-                                        ls.onSuccess(null);
-                                    } else {
-                                        x1.addListener(ls);
-                                    }
-                                } else {
-                                    await(ls, x1, x2);
-                                }
-                            } else {
-                                await(ls, x1, x2, x3);
-                            }
-                        } else {
-                            await(ls, x1, x2, x3, x4);
-                        }
-                    } else {
-                        await(ls, x1, x2, x3, x4, x5);
-                    }
-                } else {
-                    await(ls, x1, x2, x3, x4, x5, x6);
-                }
-            } else {
-                await(ls, x1, x2, x3, x4, x5, x6, x7);
-            }
-        } else {
-            x8.addListener(new Lx(ls) {
-                public Object onSuccess(Object _x) {
-                    await(ls, x1, x2, x3, x4, x5, x6, x7);
-                    return null;
-                }
-            });
-        }
-    }
-
-    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
-            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9) {
-        await(new P8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9);
-    }
-
-    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
-            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10) {
-        await(new P8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10);
-    }
-
-    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
-            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11) {
-        await(new P8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11);
-    }
-
-    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
-            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
-            KDeferred x12) {
-        await(new P8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12);
-    }
-
-    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
-            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
-            KDeferred x12, KDeferred x13) {
-        await(new P8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13);
-    }
-
-    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
-            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
-            KDeferred x12, KDeferred x13, KDeferred x14) {
-        await(new P8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14);
-    }
-
-    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
-            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
-            KDeferred x12, KDeferred x13, KDeferred x14, KDeferred x15) {
-        await(new P8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14, x15);
-    }
-
-    public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
-            KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
-            KDeferred x12, KDeferred x13, KDeferred x14, KDeferred x15, KDeferred x16) {
-        await(new P8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14, x15, x16);
-    }
 }
