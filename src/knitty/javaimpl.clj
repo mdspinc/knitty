@@ -4,7 +4,17 @@
 (ns knitty.javaimpl
   (:require [manifold.deferred :as md]
             [clojure.tools.logging :as log])
-  (:import [knitty.javaimpl MDM KDeferred KAwaiter]))
+  (:import [knitty.javaimpl MDM KDeferred KAwaiter Yarn]))
+
+
+(definline yarn-deps [y]
+  `(let [^Yarn y# ~y] (.deps y#)))
+
+(definline yarn-key [y]
+  `(let [^Yarn y# ~y] (.key y#)))
+
+(definline yarn-yank [y mdm dest]
+  `(let [^Yarn y# ~y] (.yank y# ~mdm ~dest)))
 
 
 (KDeferred/setExceptionLogFn
@@ -118,17 +128,11 @@
 (definline keyword->intid [k]
   `(MDM/regkw ~k))
 
-(definline mdm-fetch! [mdm kw kid]
-  (list '.fetch (with-meta mdm {:tag "knitty.javaimpl.MDM"}) kw kid))
-
 (definline mdm-freeze! [mdm]
   (list '.freeze (with-meta mdm {:tag "knitty.javaimpl.MDM"})))
 
-(definline mdm-cancel! [mdm token]
-  (list '.cancel (with-meta mdm {:tag "knitty.javaimpl.MDM"}) token))
+(definline mdm-cancel! [mdm]
+  (list '.cancel (with-meta mdm {:tag "knitty.javaimpl.MDM"})))
 
-(definline mdm-get! [mdm kw kid]
-  (list '.get (with-meta mdm {:tag "knitty.javaimpl.MDM"}) kw kid))
-
-(defn create-mdm [init]
-  (MDM. init))
+(definline mdm-fetch! [mdm kid]
+  (list '.fetch (with-meta mdm {:tag "knitty.javaimpl.MDM"}) kid))

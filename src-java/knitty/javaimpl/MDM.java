@@ -3,6 +3,7 @@ package knitty.javaimpl;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
@@ -16,19 +17,17 @@ public final class MDM {
 
     private static Object KLOCK = new Object();
     private static Keyword[] KSA = new Keyword[1024];
-    private static volatile int KID;
-    private static Map<Keyword, Integer> KSM = new ConcurrentHashMap<>(1024);
+    private static Map<Keyword, Long> KSM = new ConcurrentHashMap<>(1024);
+    private static int KID;
 
     private static final CancellationException CANCEL_EX = createCancelEx("mdm is cancelled");
-
     private static CancellationException createCancelEx(String msg) {
         CancellationException e = new CancellationException(msg);
         e.setStackTrace(new StackTraceElement[0]);
         return e;
     }
 
-    private static final KDeferred NONE = new KDeferred();
-    static { NONE.success(new Object()); }
+    private static final Object NONE = new Object();
 
     private static final int ASHIFT = 5;
     private static final int ASIZE = 1 << ASHIFT;
@@ -40,18 +39,18 @@ public final class MDM {
         }
     }
 
-    public static int regkw(Keyword k) {
-        Integer v = KSM.get(k);
+    public static long regkw(Keyword k) {
+        Long v = KSM.get(k);
         if (v != null) {
-            return v;
+            return v.longValue();
         } else {
             synchronized (KLOCK) {
-                int res = ++KID;
+                long res = ++KID;
                 KSM.put(k, res);
                 if (res >= KSA.length) {
                     KSA = Arrays.copyOf(KSA, KSA.length * 2);
                 }
-                KSA[res] = k;
+                KSA[(int) res] = k;
                 return res;
             }
         }
@@ -59,14 +58,15 @@ public final class MDM {
 
     public static void resetKeywordsPoolForTests() {
         synchronized (KLOCK) {
+            KSM.clear();
             KID = 0;
             KSA = new Keyword[1024];
-            KSM = new ConcurrentHashMap<>(1024);
         }
     }
 
     private static final VarHandle AR0 = MethodHandles.arrayElementVarHandle(KDeferred[][].class);
     private static final VarHandle AR1 = MethodHandles.arrayElementVarHandle(KDeferred[].class);
+    private static final VarHandle YSC = MethodHandles.arrayElementVarHandle(Yarn[].class);
     private static final VarHandle ADDED;
 
     static {
@@ -78,9 +78,16 @@ public final class MDM {
         }
     }
 
+    private volatile KVCons added;
     private final KDeferred[][] a0;
     private final Associative init;
-    private volatile KVCons added;
+    private final Keyword[] ksa;
+    private final Yarn[] yarnsCache;
+    private final YarnProvider yankerProvider;
+    private final int kid;
+
+    public final Object tracer;
+    public final Object token;
 
     private static class KVCons {
 
@@ -95,78 +102,118 @@ public final class MDM {
         }
     }
 
-    public MDM(Associative init) {
-        this.a0 = new KDeferred[(KID >> ASHIFT) + 1][];
+    public MDM(Associative init, YarnProvider yp, Yarn[] yankersCache, Object tracer) {
         this.init = init;
+        this.ksa = KSA;
+        this.yankerProvider = yp;
+        this.yarnsCache = yankersCache;
+        this.tracer = tracer;
+        this.token = new Object();
+        this.kid = maxid();
+        this.a0 = new KDeferred[((this.kid + AMASK) >> ASHIFT)][];
     }
 
-    public KDeferred fetch(Keyword k, int i) {
+    private KDeferred[] createChunk(int i0) {
+        KDeferred[] a11 = new KDeferred[ASIZE];
+        KDeferred[] a1x = (KDeferred[]) AR0.compareAndExchange(a0, i0, null, a11);
+        return a1x == null ? a11 : a1x;
+    }
 
+    public KDeferred fetchK(Keyword k) {
+        Long i0 = KSM.get(k);
+        if (i0 == null) {
+            throw new IllegalArgumentException("unknown yarn " + k);
+        }
+        long i = i0;
+        if (i > this.kid) {
+            throw new IllegalArgumentException("unknown yarn " + k);
+        }
+        return fetch(i);
+    }
+
+    public KDeferred fetchY(Yarn y) {
+        long i = KSM.get(y.key());
+        return fetch(i, y);
+    }
+
+    public KDeferred fetch(long il) {
+
+        int i = (int) il;
         int i0 = i >> ASHIFT;
         int i1 = i & AMASK;
 
         KDeferred[] a1 = (KDeferred[]) AR0.getVolatile(a0, i0);
         if (a1 == null) {
-            a1 = new KDeferred[ASIZE];
-            KDeferred[] a1x = (KDeferred[]) AR0.compareAndExchange(a0, i0, null, a1);
-            a1 = a1x == null ? a1 : a1x;
+            a1 = this.createChunk(i0);
         }
         KDeferred v = (KDeferred) AR1.getVolatile(a1, i1);
-
-        if (v == null) {
-            Object x = init.valAt(k, NONE);
-            if (x != NONE) {
-                v = KDeferred.wrap(x);
-                AR1.setVolatile(a1, i1, v);
-                return v;
-            }
-        } else if (v != NONE) {
+        if (v != null) {
             return v;
         }
 
-        KDeferred r = new KDeferred();
-        while (true) {
-            KDeferred d = (KDeferred) AR1.compareAndExchange(a1, i1, v, r);
-            if (d == v) {
-                while (true) {
-                    KVCons a = added;
-                    if (ADDED.compareAndSet(this, a, new KVCons(a, k, r))) break;
-                }
-                return r;
-            }
-            if (d == NONE) {
-                v = NONE;
-                continue;
-            }
-            return d;
+        KDeferred d = new KDeferred(token);
+        KDeferred d0 = (KDeferred) AR1.compareAndExchange(a1, i1, null, d);
+        if (d0 != null) {
+            return d0;
         }
+
+        Yarn y = yarn(i);
+        if (!fetchInput(i, d, y.key())) {
+            y.yank(this, d);
+        }
+
+        return d;
     }
 
-    public KDeferred get(Keyword k, int i) {
+    public KDeferred fetch(long il, Yarn y) {
+
+        int i = (int) il;
         int i0 = i >> ASHIFT;
         int i1 = i & AMASK;
 
         KDeferred[] a1 = (KDeferred[]) AR0.getVolatile(a0, i0);
         if (a1 == null) {
-            a1 = new KDeferred[ASIZE];
-            KDeferred[] a1x = (KDeferred[]) AR0.compareAndExchange(a0, i0, null, a1);
-            a1 = a1x == null ? a1 : a1x;
+            a1 = this.createChunk(i0);
         }
-
         KDeferred v = (KDeferred) AR1.getVolatile(a1, i1);
         if (v != null) {
-            return v == NONE ? null : v;
+            return v;
         }
 
-        Object vv = init.valAt(k, NONE);
-        if (vv == NONE) {
-            boolean _b = AR1.compareAndSet(a1, i1, (KDeferred) null, NONE);
-            return null;
-        } else {
-            KDeferred nv = KDeferred.wrap(vv);
-            AR1.setVolatile(a1, i1, nv);
-            return nv;
+        KDeferred d = new KDeferred(token);
+        KDeferred d0 = (KDeferred) AR1.compareAndExchange(a1, i1, null, d);
+        if (d0 != null) {
+            return d0;
         }
+
+        if (!fetchInput(i, d, y.key())) {
+            y.yank(this, d);
+        }
+        return d;
+    }
+
+    private boolean fetchInput(int i, KDeferred d, Keyword k) {
+        Object x = init.valAt(k, NONE);
+        if (x != NONE) {
+            d.chainFrom(x, token);
+            return true;
+        }
+        while (true) {
+            KVCons a = added;
+            if (ADDED.compareAndSet(this, a, new KVCons(a, k, d)))
+                break;
+        }
+        return false;
+    }
+
+    private Yarn yarn(int i) {
+        Yarn y = (Yarn) YSC.getVolatile(yarnsCache, i);
+        if (y != null) {
+            return y;
+        }
+        y = yankerProvider.yarn(ksa[i]);
+        YSC.setVolatile(yarnsCache, i, y);
+        return y;
     }
 
     public Associative freeze() {
@@ -185,7 +232,7 @@ public final class MDM {
         }
     }
 
-    public void cancel(Object token) {
+    public void cancel() {
         for (KVCons a = added; a != null; a = a.next) {
             a.d.error(CANCEL_EX, token);
         }

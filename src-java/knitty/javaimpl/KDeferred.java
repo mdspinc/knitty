@@ -601,6 +601,10 @@ public final class KDeferred
         return this.state == STATE_SUCC ? value : this;
     }
 
+    final boolean awaitable() {
+        return this.state != STATE_SUCC;
+    }
+
     public Object deref(long ms, Object timeoutValue) {
 
         switch (this.state) {

@@ -20,7 +20,7 @@
   ([yarn]
    (register-yarn yarn false))
   ([yarn no-override]
-   (let [k (impl/yarn-key yarn)]
+   (let [k (ji/yarn-key yarn)]
      (when-not (qualified-keyword? k)
        (throw (ex-info "yarn must be a qualified keyword" {::yarn k})))
      (if no-override
