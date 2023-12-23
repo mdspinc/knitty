@@ -35,18 +35,20 @@ public final class KDeferred
         }
 
         public Object onSuccess(Object x) {
-            return this.onSucc.invoke(x);
+            this.onSucc.invoke(x);
+            return null;
         }
 
         public Object onError(Object e) {
-            return this.onErr.invoke(e);
+            this.onErr.invoke(e);
+            return null;
         }
     }
 
-    private static class CountDownListener implements IDeferredListener {
+    private static class CdlListener implements IDeferredListener {
         final CountDownLatch cdl;
 
-        CountDownListener(CountDownLatch cdl) {
+        CdlListener(CountDownLatch cdl) {
             this.cdl = cdl;
         }
 
@@ -61,12 +63,12 @@ public final class KDeferred
         }
     }
 
-    private final static class ChainFnSucc extends AFn {
+    private final static class ChainSucFn extends AFn {
 
         private final KDeferred kd;
         private final Object token;
 
-        public ChainFnSucc(KDeferred kd, Object token) {
+        public ChainSucFn(KDeferred kd, Object token) {
             this.kd = kd;
             this.token = token;
         }
@@ -77,15 +79,16 @@ public final class KDeferred
             } else {
                 kd.success(x, token);
             }
+            return null;
         }
     }
 
-    private final static class ChainFnErrr extends AFn {
+    private final static class ChainErrFn extends AFn {
 
         private final KDeferred kd;
         private final Object token;
 
-        public ChainFnErrr(KDeferred kd, Object token) {
+        public ChainErrFn(KDeferred kd, Object token) {
             this.kd = kd;
             this.token = token;
         }
@@ -152,28 +155,28 @@ public final class KDeferred
         }
     }
 
-    private static final class ListenersChunk {
+    private static final class Listeners {
 
         private static final int MAX_SIZE = 32;
 
         public final IDeferredListener[] items;
         public int pos;
-        public ListenersChunk next;
+        public Listeners next;
 
-        public ListenersChunk(IDeferredListener x) {
+        public Listeners(IDeferredListener x) {
             this.items = new IDeferredListener[] { x, null, null, null };
             this.pos = 1;
         }
 
-        public ListenersChunk(int size, IDeferredListener x) {
+        public Listeners(int size, IDeferredListener x) {
             this.items = new IDeferredListener[size];
             this.items[0] = x;
             this.pos = 1;
         }
 
-        public ListenersChunk push(IDeferredListener ls) {
+        public Listeners push(IDeferredListener ls) {
             if (this.pos == this.items.length) {
-                this.next = new ListenersChunk(Math.min(MAX_SIZE, this.items.length * 2), ls);
+                this.next = new Listeners(Math.min(MAX_SIZE, this.items.length * 2), ls);
                 return next;
             } else {
                 this.items[pos++] = ls;
@@ -202,13 +205,7 @@ public final class KDeferred
         }
     }
 
-    private static volatile IFn LOG_EXCEPTION = new AFn() {
-        public Object invoke(Object ex) {
-            ((Throwable) ex).printStackTrace();
-            return null;
-        }
-    };
-
+    private static volatile IFn LOG_EXCEPTION;
     public static void setExceptionLogFn(IFn f) {
         LOG_EXCEPTION = f;
     }
@@ -216,8 +213,8 @@ public final class KDeferred
     private volatile int state;
     private volatile Object token;
     private Object value;
-    private ListenersChunk lcFirst;
-    private ListenersChunk lcLast;
+    private Listeners lcFirst;
+    private Listeners lcLast;
     private IMutableDeferred revokee;
     private IPersistentMap meta;
 
@@ -243,11 +240,17 @@ public final class KDeferred
         return m;
     }
 
-    static void logException(Throwable e) {
+    static void logException(Throwable e0) {
         try {
-            LOG_EXCEPTION.invoke(e);
-        } catch (Throwable e0) {
-            e.printStackTrace();
+            IFn log = LOG_EXCEPTION;
+            if (log != null) {
+                log.invoke(e0);
+            } else {
+                e0.printStackTrace();;
+            }
+        } catch (Throwable e1) {
+            e0.printStackTrace();
+            e1.printStackTrace();
         }
     }
 
@@ -292,7 +295,7 @@ public final class KDeferred
                     }
 
                     if (state == STATE_LSTN) {
-                        ListenersChunk node = this.lcFirst;
+                        Listeners node = this.lcFirst;
                         this.value = x;
                         STATE.setVolatile(this, STATE_SUCC);
 
@@ -376,7 +379,7 @@ public final class KDeferred
                     }
 
                     if (state == STATE_LSTN) {
-                        ListenersChunk node = this.lcFirst;
+                        Listeners node = this.lcFirst;
                         this.value = x;
                         STATE.setVolatile(this, STATE_ERRR);
 
@@ -425,7 +428,7 @@ public final class KDeferred
             Thread.onSpinWait();
 
         if (state == STATE_INIT) {
-            this.lcFirst = this.lcLast = new ListenersChunk(x);
+            this.lcFirst = this.lcLast = new Listeners(x);
             STATE.setVolatile(this, STATE_LSTN);
             return true;
         } else {
@@ -527,7 +530,7 @@ public final class KDeferred
         if (x instanceof IMutableDeferred) {
             ((IMutableDeferred) x).addListener(new ChainListener(this, token));
         } else {
-            ((IDeferred) x).onRealized(new ChainFnSucc(this, token), new ChainFnErrr(this, token));
+            ((IDeferred) x).onRealized(new ChainSucFn(this, token), new ChainErrFn(this, token));
         }
     }
 
@@ -650,7 +653,7 @@ public final class KDeferred
 
     private CountDownLatch acquireCountdDownLatch() {
         CountDownLatch cdl = new CountDownLatch(1);
-        this.addListener(new CountDownListener(cdl));
+        this.addListener(new CdlListener(cdl));
         return cdl;
     }
 
@@ -681,7 +684,7 @@ public final class KDeferred
             } else {
                 KDeferred d = new KDeferred(x);
                 IDeferred xx = (IDeferred) x;
-                xx.onRealized(new ChainFnSucc(d, x), new ChainFnErrr(d, x));
+                xx.onRealized(new ChainSucFn(d, x), new ChainErrFn(d, x));
                 return d;
             }
         } else {

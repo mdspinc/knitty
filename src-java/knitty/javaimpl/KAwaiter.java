@@ -66,7 +66,7 @@ public final class KAwaiter {
         }
     }
 
-    private static final class L8 extends AChainedListener {
+    private static final class P8 extends Lx {
 
         private final KDeferred x1;
         private final KDeferred x2;
@@ -77,7 +77,7 @@ public final class KAwaiter {
         private final KDeferred x7;
         private final KDeferred x8;
 
-        private L8(
+        private P8(
                 IDeferredListener next,
                 KDeferred x1,
                 KDeferred x2,
@@ -104,10 +104,10 @@ public final class KAwaiter {
         }
     }
 
-    abstract static class AChainedListener implements IDeferredListener {
+    abstract static class Lx implements IDeferredListener {
         final IDeferredListener next;
 
-        public AChainedListener(IDeferredListener next) {
+        public Lx(IDeferredListener next) {
             this.next = next;
         }
 
@@ -152,7 +152,7 @@ public final class KAwaiter {
                 x1.addListener(ls);
             }
         } else {
-            x2.addListener(new AChainedListener(ls) {
+            x2.addListener(new Lx(ls) {
                 public Object onSuccess(Object _x) {
                     await(ls, x1);
                     return null;
@@ -173,7 +173,7 @@ public final class KAwaiter {
                 await(ls, x1, x2);
             }
         } else {
-            x3.addListener(new AChainedListener(ls) {
+            x3.addListener(new Lx(ls) {
                 public Object onSuccess(Object _x) {
                     await(ls, x1, x2);
                     return null;
@@ -198,7 +198,7 @@ public final class KAwaiter {
                 await(ls, x1, x2, x3);
             }
         } else {
-            x4.addListener(new AChainedListener(ls) {
+            x4.addListener(new Lx(ls) {
                 public Object onSuccess(Object _x) {
                     await(ls, x1, x2, x3);
                     return null;
@@ -228,7 +228,7 @@ public final class KAwaiter {
                 await(ls, x1, x2, x3, x4);
             }
         } else {
-            x5.addListener(new AChainedListener(ls) {
+            x5.addListener(new Lx(ls) {
                 public Object onSuccess(Object _x) {
                     await(ls, x1, x2, x3, x4);
                     return null;
@@ -262,7 +262,7 @@ public final class KAwaiter {
                 await(ls, x1, x2, x3, x4, x5);
             }
         } else {
-            x6.addListener(new AChainedListener(ls) {
+            x6.addListener(new Lx(ls) {
                 public Object onSuccess(Object _x) {
                     await(ls, x1, x2, x3, x4, x5);
                     return null;
@@ -300,7 +300,7 @@ public final class KAwaiter {
                 await(ls, x1, x2, x3, x4, x5, x6);
             }
         } else {
-            x7.addListener(new AChainedListener(ls) {
+            x7.addListener(new Lx(ls) {
                 public Object onSuccess(Object _x) {
                     await(ls, x1, x2, x3, x4, x5, x6);
                     return null;
@@ -342,7 +342,7 @@ public final class KAwaiter {
                 await(ls, x1, x2, x3, x4, x5, x6, x7);
             }
         } else {
-            x8.addListener(new AChainedListener(ls) {
+            x8.addListener(new Lx(ls) {
                 public Object onSuccess(Object _x) {
                     await(ls, x1, x2, x3, x4, x5, x6, x7);
                     return null;
@@ -353,46 +353,46 @@ public final class KAwaiter {
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
             KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9) {
-        await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9);
+        await(new P8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9);
     }
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
             KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10) {
-        await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10);
+        await(new P8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10);
     }
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
             KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11) {
-        await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11);
+        await(new P8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11);
     }
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
             KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
             KDeferred x12) {
-        await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12);
+        await(new P8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12);
     }
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
             KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
             KDeferred x12, KDeferred x13) {
-        await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13);
+        await(new P8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13);
     }
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
             KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
             KDeferred x12, KDeferred x13, KDeferred x14) {
-        await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14);
+        await(new P8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14);
     }
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
             KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
             KDeferred x12, KDeferred x13, KDeferred x14, KDeferred x15) {
-        await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14, x15);
+        await(new P8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14, x15);
     }
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
             KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
             KDeferred x12, KDeferred x13, KDeferred x14, KDeferred x15, KDeferred x16) {
-        await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14, x15, x16);
+        await(new P8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14, x15, x16);
     }
 }
