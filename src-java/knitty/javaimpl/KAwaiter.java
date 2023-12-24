@@ -87,7 +87,7 @@ public final class KAwaiter {
     }
 
     public static void await(IDeferredListener ls, KDeferred x1) {
-        if (x1.awaitable()) {
+        if (x1.state != KDeferred.STATE_SUCC) {
             x1.addListener(ls);
         } else {
             ls.onSuccess(null);
@@ -95,9 +95,9 @@ public final class KAwaiter {
     }
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2) {
-        if (x2.awaitable()) {
+        if (x2.state != KDeferred.STATE_SUCC) {
             x2.addListener(new L1(ls, x1));
-        } else if (x1.awaitable()) {
+        } else if (x1.state != KDeferred.STATE_SUCC) {
             x1.addListener(ls);
         } else {
             ls.onSuccess(null);
@@ -105,11 +105,11 @@ public final class KAwaiter {
     }
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3) {
-        if (x3.awaitable()) {
+        if (x3.state != KDeferred.STATE_SUCC) {
             x3.addListener(new L2(ls, x1, x2));
-        } else if (x2.awaitable()) {
+        } else if (x2.state != KDeferred.STATE_SUCC) {
             x2.addListener(new L1(ls, x1));
-        } else if (x1.awaitable()) {
+        } else if (x1.state != KDeferred.STATE_SUCC) {
             x1.addListener(ls);
         } else {
             ls.onSuccess(null);
@@ -117,13 +117,13 @@ public final class KAwaiter {
     }
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4) {
-        if (x4.awaitable()) {
+        if (x4.state != KDeferred.STATE_SUCC) {
             x4.addListener(new L3(ls, x1, x2, x3));
-        } else if (x3.awaitable()) {
+        } else if (x3.state != KDeferred.STATE_SUCC) {
             x3.addListener(new L2(ls, x1, x2));
-        } else if (x2.awaitable()) {
+        } else if (x2.state != KDeferred.STATE_SUCC) {
             x2.addListener(new L1(ls, x1));
-        } else if (x1.awaitable()) {
+        } else if (x1.state != KDeferred.STATE_SUCC) {
             x1.addListener(ls);
         } else {
             ls.onSuccess(null);
@@ -132,15 +132,15 @@ public final class KAwaiter {
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
             KDeferred x5) {
-        if (x5.awaitable()) {
+        if (x5.state != KDeferred.STATE_SUCC) {
             x5.addListener(new L4(ls, x1, x2, x3, x4));
-        } else if (x4.awaitable()) {
+        } else if (x4.state != KDeferred.STATE_SUCC) {
             x4.addListener(new L3(ls, x1, x2, x3));
-        } else if (x3.awaitable()) {
+        } else if (x3.state != KDeferred.STATE_SUCC) {
             x3.addListener(new L2(ls, x1, x2));
-        } else if (x2.awaitable()) {
+        } else if (x2.state != KDeferred.STATE_SUCC) {
             x2.addListener(new L1(ls, x1));
-        } else if (x1.awaitable()) {
+        } else if (x1.state != KDeferred.STATE_SUCC) {
             x1.addListener(ls);
         } else {
             ls.onSuccess(null);
@@ -149,17 +149,17 @@ public final class KAwaiter {
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
             KDeferred x5, KDeferred x6) {
-        if (x6.awaitable()) {
+        if (x6.state != KDeferred.STATE_SUCC) {
             x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
-        } else if (x5.awaitable()) {
+        } else if (x5.state != KDeferred.STATE_SUCC) {
             x5.addListener(new L4(ls, x1, x2, x3, x4));
-        } else if (x4.awaitable()) {
+        } else if (x4.state != KDeferred.STATE_SUCC) {
             x4.addListener(new L3(ls, x1, x2, x3));
-        } else if (x3.awaitable()) {
+        } else if (x3.state != KDeferred.STATE_SUCC) {
             x3.addListener(new L2(ls, x1, x2));
-        } else if (x2.awaitable()) {
+        } else if (x2.state != KDeferred.STATE_SUCC) {
             x2.addListener(new L1(ls, x1));
-        } else if (x1.awaitable()) {
+        } else if (x1.state != KDeferred.STATE_SUCC) {
             x1.addListener(ls);
         } else {
             ls.onSuccess(null);
@@ -168,19 +168,19 @@ public final class KAwaiter {
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
             KDeferred x5, KDeferred x6, KDeferred x7) {
-        if (x7.awaitable()) {
+        if (x7.state != KDeferred.STATE_SUCC) {
             x7.addListener(new L6(ls, x1, x2, x3, x4, x5, x6));
-        } else if (x6.awaitable()) {
+        } else if (x6.state != KDeferred.STATE_SUCC) {
             x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
-        } else if (x5.awaitable()) {
+        } else if (x5.state != KDeferred.STATE_SUCC) {
             x5.addListener(new L4(ls, x1, x2, x3, x4));
-        } else if (x4.awaitable()) {
+        } else if (x4.state != KDeferred.STATE_SUCC) {
             x4.addListener(new L3(ls, x1, x2, x3));
-        } else if (x3.awaitable()) {
+        } else if (x3.state != KDeferred.STATE_SUCC) {
             x3.addListener(new L2(ls, x1, x2));
-        } else if (x2.awaitable()) {
+        } else if (x2.state != KDeferred.STATE_SUCC) {
             x2.addListener(new L1(ls, x1));
-        } else if (x1.awaitable()) {
+        } else if (x1.state != KDeferred.STATE_SUCC) {
             x1.addListener(ls);
         } else {
             ls.onSuccess(null);
@@ -189,21 +189,21 @@ public final class KAwaiter {
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
             KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8) {
-        if (x8.awaitable()) {
+        if (x8.state != KDeferred.STATE_SUCC) {
             x8.addListener(new L7(ls, x1, x2, x3, x4, x5, x6, x7));
-        } else if (x7.awaitable()) {
+        } else if (x7.state != KDeferred.STATE_SUCC) {
             x7.addListener(new L6(ls, x1, x2, x3, x4, x5, x6));
-        } else if (x6.awaitable()) {
+        } else if (x6.state != KDeferred.STATE_SUCC) {
             x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
-        } else if (x5.awaitable()) {
+        } else if (x5.state != KDeferred.STATE_SUCC) {
             x5.addListener(new L4(ls, x1, x2, x3, x4));
-        } else if (x4.awaitable()) {
+        } else if (x4.state != KDeferred.STATE_SUCC) {
             x4.addListener(new L3(ls, x1, x2, x3));
-        } else if (x3.awaitable()) {
+        } else if (x3.state != KDeferred.STATE_SUCC) {
             x3.addListener(new L2(ls, x1, x2));
-        } else if (x2.awaitable()) {
+        } else if (x2.state != KDeferred.STATE_SUCC) {
             x2.addListener(new L1(ls, x1));
-        } else if (x1.awaitable()) {
+        } else if (x1.state != KDeferred.STATE_SUCC) {
             x1.addListener(ls);
         } else {
             ls.onSuccess(null);
@@ -212,23 +212,23 @@ public final class KAwaiter {
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
             KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9) {
-        if (x9.awaitable()) {
+        if (x9.state != KDeferred.STATE_SUCC) {
             x9.addListener(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8));
-        } else if (x8.awaitable()) {
+        } else if (x8.state != KDeferred.STATE_SUCC) {
             x8.addListener(new L7(ls, x1, x2, x3, x4, x5, x6, x7));
-        } else if (x7.awaitable()) {
+        } else if (x7.state != KDeferred.STATE_SUCC) {
             x7.addListener(new L6(ls, x1, x2, x3, x4, x5, x6));
-        } else if (x6.awaitable()) {
+        } else if (x6.state != KDeferred.STATE_SUCC) {
             x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
-        } else if (x5.awaitable()) {
+        } else if (x5.state != KDeferred.STATE_SUCC) {
             x5.addListener(new L4(ls, x1, x2, x3, x4));
-        } else if (x4.awaitable()) {
+        } else if (x4.state != KDeferred.STATE_SUCC) {
             x4.addListener(new L3(ls, x1, x2, x3));
-        } else if (x3.awaitable()) {
+        } else if (x3.state != KDeferred.STATE_SUCC) {
             x3.addListener(new L2(ls, x1, x2));
-        } else if (x2.awaitable()) {
+        } else if (x2.state != KDeferred.STATE_SUCC) {
             x2.addListener(new L1(ls, x1));
-        } else if (x1.awaitable()) {
+        } else if (x1.state != KDeferred.STATE_SUCC) {
             x1.addListener(ls);
         } else {
             ls.onSuccess(null);
@@ -237,25 +237,25 @@ public final class KAwaiter {
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
             KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10) {
-        if (x10.awaitable()) {
+        if (x10.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10);
-        } else if (x9.awaitable()) {
+        } else if (x9.state != KDeferred.STATE_SUCC) {
             x9.addListener(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8));
-        } else if (x8.awaitable()) {
+        } else if (x8.state != KDeferred.STATE_SUCC) {
             x8.addListener(new L7(ls, x1, x2, x3, x4, x5, x6, x7));
-        } else if (x7.awaitable()) {
+        } else if (x7.state != KDeferred.STATE_SUCC) {
             x7.addListener(new L6(ls, x1, x2, x3, x4, x5, x6));
-        } else if (x6.awaitable()) {
+        } else if (x6.state != KDeferred.STATE_SUCC) {
             x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
-        } else if (x5.awaitable()) {
+        } else if (x5.state != KDeferred.STATE_SUCC) {
             x5.addListener(new L4(ls, x1, x2, x3, x4));
-        } else if (x4.awaitable()) {
+        } else if (x4.state != KDeferred.STATE_SUCC) {
             x4.addListener(new L3(ls, x1, x2, x3));
-        } else if (x3.awaitable()) {
+        } else if (x3.state != KDeferred.STATE_SUCC) {
             x3.addListener(new L2(ls, x1, x2));
-        } else if (x2.awaitable()) {
+        } else if (x2.state != KDeferred.STATE_SUCC) {
             x2.addListener(new L1(ls, x1));
-        } else if (x1.awaitable()) {
+        } else if (x1.state != KDeferred.STATE_SUCC) {
             x1.addListener(ls);
         } else {
             ls.onSuccess(null);
@@ -264,27 +264,27 @@ public final class KAwaiter {
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
             KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11) {
-        if (x11.awaitable()) {
+        if (x11.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11);
-        } else if (x10.awaitable()) {
+        } else if (x10.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10);
-        } else if (x9.awaitable()) {
+        } else if (x9.state != KDeferred.STATE_SUCC) {
             x9.addListener(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8));
-        } else if (x8.awaitable()) {
+        } else if (x8.state != KDeferred.STATE_SUCC) {
             x8.addListener(new L7(ls, x1, x2, x3, x4, x5, x6, x7));
-        } else if (x7.awaitable()) {
+        } else if (x7.state != KDeferred.STATE_SUCC) {
             x7.addListener(new L6(ls, x1, x2, x3, x4, x5, x6));
-        } else if (x6.awaitable()) {
+        } else if (x6.state != KDeferred.STATE_SUCC) {
             x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
-        } else if (x5.awaitable()) {
+        } else if (x5.state != KDeferred.STATE_SUCC) {
             x5.addListener(new L4(ls, x1, x2, x3, x4));
-        } else if (x4.awaitable()) {
+        } else if (x4.state != KDeferred.STATE_SUCC) {
             x4.addListener(new L3(ls, x1, x2, x3));
-        } else if (x3.awaitable()) {
+        } else if (x3.state != KDeferred.STATE_SUCC) {
             x3.addListener(new L2(ls, x1, x2));
-        } else if (x2.awaitable()) {
+        } else if (x2.state != KDeferred.STATE_SUCC) {
             x2.addListener(new L1(ls, x1));
-        } else if (x1.awaitable()) {
+        } else if (x1.state != KDeferred.STATE_SUCC) {
             x1.addListener(ls);
         } else {
             ls.onSuccess(null);
@@ -294,29 +294,29 @@ public final class KAwaiter {
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
             KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
             KDeferred x12) {
-        if (x12.awaitable()) {
+        if (x12.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12);
-        } else if (x11.awaitable()) {
+        } else if (x11.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11);
-        } else if (x10.awaitable()) {
+        } else if (x10.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10);
-        } else if (x9.awaitable()) {
+        } else if (x9.state != KDeferred.STATE_SUCC) {
             x9.addListener(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8));
-        } else if (x8.awaitable()) {
+        } else if (x8.state != KDeferred.STATE_SUCC) {
             x8.addListener(new L7(ls, x1, x2, x3, x4, x5, x6, x7));
-        } else if (x7.awaitable()) {
+        } else if (x7.state != KDeferred.STATE_SUCC) {
             x7.addListener(new L6(ls, x1, x2, x3, x4, x5, x6));
-        } else if (x6.awaitable()) {
+        } else if (x6.state != KDeferred.STATE_SUCC) {
             x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
-        } else if (x5.awaitable()) {
+        } else if (x5.state != KDeferred.STATE_SUCC) {
             x5.addListener(new L4(ls, x1, x2, x3, x4));
-        } else if (x4.awaitable()) {
+        } else if (x4.state != KDeferred.STATE_SUCC) {
             x4.addListener(new L3(ls, x1, x2, x3));
-        } else if (x3.awaitable()) {
+        } else if (x3.state != KDeferred.STATE_SUCC) {
             x3.addListener(new L2(ls, x1, x2));
-        } else if (x2.awaitable()) {
+        } else if (x2.state != KDeferred.STATE_SUCC) {
             x2.addListener(new L1(ls, x1));
-        } else if (x1.awaitable()) {
+        } else if (x1.state != KDeferred.STATE_SUCC) {
             x1.addListener(ls);
         } else {
             ls.onSuccess(null);
@@ -326,31 +326,31 @@ public final class KAwaiter {
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
             KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
             KDeferred x12, KDeferred x13) {
-        if (x13.awaitable()) {
+        if (x13.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13);
-        } else if (x12.awaitable()) {
+        } else if (x12.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12);
-        } else if (x11.awaitable()) {
+        } else if (x11.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11);
-        } else if (x10.awaitable()) {
+        } else if (x10.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10);
-        } else if (x9.awaitable()) {
+        } else if (x9.state != KDeferred.STATE_SUCC) {
             x9.addListener(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8));
-        } else if (x8.awaitable()) {
+        } else if (x8.state != KDeferred.STATE_SUCC) {
             x8.addListener(new L7(ls, x1, x2, x3, x4, x5, x6, x7));
-        } else if (x7.awaitable()) {
+        } else if (x7.state != KDeferred.STATE_SUCC) {
             x7.addListener(new L6(ls, x1, x2, x3, x4, x5, x6));
-        } else if (x6.awaitable()) {
+        } else if (x6.state != KDeferred.STATE_SUCC) {
             x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
-        } else if (x5.awaitable()) {
+        } else if (x5.state != KDeferred.STATE_SUCC) {
             x5.addListener(new L4(ls, x1, x2, x3, x4));
-        } else if (x4.awaitable()) {
+        } else if (x4.state != KDeferred.STATE_SUCC) {
             x4.addListener(new L3(ls, x1, x2, x3));
-        } else if (x3.awaitable()) {
+        } else if (x3.state != KDeferred.STATE_SUCC) {
             x3.addListener(new L2(ls, x1, x2));
-        } else if (x2.awaitable()) {
+        } else if (x2.state != KDeferred.STATE_SUCC) {
             x2.addListener(new L1(ls, x1));
-        } else if (x1.awaitable()) {
+        } else if (x1.state != KDeferred.STATE_SUCC) {
             x1.addListener(ls);
         } else {
             ls.onSuccess(null);
@@ -360,33 +360,33 @@ public final class KAwaiter {
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
             KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
             KDeferred x12, KDeferred x13, KDeferred x14) {
-        if (x14.awaitable()) {
+        if (x14.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14);
-        } else if (x13.awaitable()) {
+        } else if (x13.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13);
-        } else if (x12.awaitable()) {
+        } else if (x12.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12);
-        } else if (x11.awaitable()) {
+        } else if (x11.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11);
-        } else if (x10.awaitable()) {
+        } else if (x10.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10);
-        } else if (x9.awaitable()) {
+        } else if (x9.state != KDeferred.STATE_SUCC) {
             x9.addListener(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8));
-        } else if (x8.awaitable()) {
+        } else if (x8.state != KDeferred.STATE_SUCC) {
             x8.addListener(new L7(ls, x1, x2, x3, x4, x5, x6, x7));
-        } else if (x7.awaitable()) {
+        } else if (x7.state != KDeferred.STATE_SUCC) {
             x7.addListener(new L6(ls, x1, x2, x3, x4, x5, x6));
-        } else if (x6.awaitable()) {
+        } else if (x6.state != KDeferred.STATE_SUCC) {
             x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
-        } else if (x5.awaitable()) {
+        } else if (x5.state != KDeferred.STATE_SUCC) {
             x5.addListener(new L4(ls, x1, x2, x3, x4));
-        } else if (x4.awaitable()) {
+        } else if (x4.state != KDeferred.STATE_SUCC) {
             x4.addListener(new L3(ls, x1, x2, x3));
-        } else if (x3.awaitable()) {
+        } else if (x3.state != KDeferred.STATE_SUCC) {
             x3.addListener(new L2(ls, x1, x2));
-        } else if (x2.awaitable()) {
+        } else if (x2.state != KDeferred.STATE_SUCC) {
             x2.addListener(new L1(ls, x1));
-        } else if (x1.awaitable()) {
+        } else if (x1.state != KDeferred.STATE_SUCC) {
             x1.addListener(ls);
         } else {
             ls.onSuccess(null);
@@ -396,35 +396,35 @@ public final class KAwaiter {
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
             KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
             KDeferred x12, KDeferred x13, KDeferred x14, KDeferred x15) {
-        if (x15.awaitable()) {
+        if (x15.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14, x15);
-        } else if (x14.awaitable()) {
+        } else if (x14.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14);
-        } else if (x13.awaitable()) {
+        } else if (x13.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13);
-        } else if (x12.awaitable()) {
+        } else if (x12.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12);
-        } else if (x11.awaitable()) {
+        } else if (x11.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11);
-        } else if (x10.awaitable()) {
+        } else if (x10.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10);
-        } else if (x9.awaitable()) {
+        } else if (x9.state != KDeferred.STATE_SUCC) {
             x9.addListener(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8));
-        } else if (x8.awaitable()) {
+        } else if (x8.state != KDeferred.STATE_SUCC) {
             x8.addListener(new L7(ls, x1, x2, x3, x4, x5, x6, x7));
-        } else if (x7.awaitable()) {
+        } else if (x7.state != KDeferred.STATE_SUCC) {
             x7.addListener(new L6(ls, x1, x2, x3, x4, x5, x6));
-        } else if (x6.awaitable()) {
+        } else if (x6.state != KDeferred.STATE_SUCC) {
             x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
-        } else if (x5.awaitable()) {
+        } else if (x5.state != KDeferred.STATE_SUCC) {
             x5.addListener(new L4(ls, x1, x2, x3, x4));
-        } else if (x4.awaitable()) {
+        } else if (x4.state != KDeferred.STATE_SUCC) {
             x4.addListener(new L3(ls, x1, x2, x3));
-        } else if (x3.awaitable()) {
+        } else if (x3.state != KDeferred.STATE_SUCC) {
             x3.addListener(new L2(ls, x1, x2));
-        } else if (x2.awaitable()) {
+        } else if (x2.state != KDeferred.STATE_SUCC) {
             x2.addListener(new L1(ls, x1));
-        } else if (x1.awaitable()) {
+        } else if (x1.state != KDeferred.STATE_SUCC) {
             x1.addListener(ls);
         } else {
             ls.onSuccess(null);
@@ -434,37 +434,37 @@ public final class KAwaiter {
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4,
             KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,
             KDeferred x12, KDeferred x13, KDeferred x14, KDeferred x15, KDeferred x16) {
-        if (x16.awaitable()) {
+        if (x16.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14, x15, x16);
-        } else if (x15.awaitable()) {
+        } else if (x15.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14, x15);
-        } else if (x14.awaitable()) {
+        } else if (x14.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13, x14);
-        } else if (x13.awaitable()) {
+        } else if (x13.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12, x13);
-        } else if (x12.awaitable()) {
+        } else if (x12.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11, x12);
-        } else if (x11.awaitable()) {
+        } else if (x11.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10, x11);
-        } else if (x10.awaitable()) {
+        } else if (x10.state != KDeferred.STATE_SUCC) {
             await(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8), x9, x10);
-        } else if (x9.awaitable()) {
+        } else if (x9.state != KDeferred.STATE_SUCC) {
             x9.addListener(new L8(ls, x1, x2, x3, x4, x5, x6, x7, x8));
-        } else if (x8.awaitable()) {
+        } else if (x8.state != KDeferred.STATE_SUCC) {
             x8.addListener(new L7(ls, x1, x2, x3, x4, x5, x6, x7));
-        } else if (x7.awaitable()) {
+        } else if (x7.state != KDeferred.STATE_SUCC) {
             x7.addListener(new L6(ls, x1, x2, x3, x4, x5, x6));
-        } else if (x6.awaitable()) {
+        } else if (x6.state != KDeferred.STATE_SUCC) {
             x6.addListener(new L5(ls, x1, x2, x3, x4, x5));
-        } else if (x5.awaitable()) {
+        } else if (x5.state != KDeferred.STATE_SUCC) {
             x5.addListener(new L4(ls, x1, x2, x3, x4));
-        } else if (x4.awaitable()) {
+        } else if (x4.state != KDeferred.STATE_SUCC) {
             x4.addListener(new L3(ls, x1, x2, x3));
-        } else if (x3.awaitable()) {
+        } else if (x3.state != KDeferred.STATE_SUCC) {
             x3.addListener(new L2(ls, x1, x2));
-        } else if (x2.awaitable()) {
+        } else if (x2.state != KDeferred.STATE_SUCC) {
             x2.addListener(new L1(ls, x1));
-        } else if (x1.awaitable()) {
+        } else if (x1.state != KDeferred.STATE_SUCC) {
             x1.addListener(ls);
         } else {
             ls.onSuccess(null);

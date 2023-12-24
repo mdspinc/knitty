@@ -185,12 +185,12 @@ public final class KDeferred
         }
     }
 
-    private static final int STATE_INIT = 0;
-    private static final int STATE_LOCK = 1;
-    private static final int STATE_LSTN = 2;
-    private static final int STATE_SUCC = 4;
-    private static final int STATE_ERRR = 8;
-    private static final int STATE_DONE_MASK = STATE_SUCC | STATE_ERRR;
+    static final int STATE_INIT = 0;
+    static final int STATE_SUCC = 1;
+    static final int STATE_ERRR = 2;
+    static final int STATE_LSTN = 4;
+    static final int STATE_LOCK = 8;
+    static final int STATE_DONE_MASK = STATE_SUCC | STATE_ERRR;
 
     private static final VarHandle STATE;
     private static final VarHandle TOKEN;
@@ -210,8 +210,9 @@ public final class KDeferred
         LOG_EXCEPTION = f;
     }
 
-    private volatile int state;
-    private volatile Object token;
+    volatile int state;
+    volatile Object token;
+
     private Object value;
     private Listeners lcFirst;
     private Listeners lcLast;
@@ -599,10 +600,6 @@ public final class KDeferred
 
     public Object unwrap() {
         return this.state == STATE_SUCC ? value : this;
-    }
-
-    final boolean awaitable() {
-        return this.state != STATE_SUCC;
     }
 
     public Object deref(long ms, Object timeoutValue) {
