@@ -580,6 +580,13 @@ public final class KDeferred
         return this.state == STATE_SUCC ? value : this;
     }
 
+    public Object get() {
+        if (this.state != STATE_SUCC) {
+            throw new IllegalStateException();
+        }
+        return this.value;
+    }
+
     public Object deref(long ms, Object timeoutValue) {
 
         switch (this.state) {

@@ -37,6 +37,9 @@
 (definline kd-unwrap [kd]
   `(let [^KDeferred x# ~kd] (.unwrap x#)))
 
+(definline kd-get [kd]
+  `(let [^KDeferred x# ~kd] (.get x#)))
+
 (definline kd-revoke [d c]
   `(KDeferred/revoke ~d ~c))
 

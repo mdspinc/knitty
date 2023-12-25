@@ -211,7 +211,7 @@
         (mapcat identity
                 (for [[ds _dk] bind
                       :when (#{:sync} (bind-param-type ds))]
-                  [ds `(ji/kd-unwrap ~ds)]))
+                  [ds `(ji/kd-get ~ds)]))
 
         all-deps-tr (into
                      []
