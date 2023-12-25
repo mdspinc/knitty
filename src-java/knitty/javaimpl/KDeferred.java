@@ -509,19 +509,6 @@ public final class KDeferred
         }
     }
 
-    boolean addAwaitListener(IDeferredListener ls) {
-        switch (state) {
-            case STATE_SUCC:
-                return false;
-            case STATE_ERRR:
-                ls.onError(this.value);
-                return true;
-            default:
-                this.addListener(ls);
-                return true;
-        }
-    }
-
     public Object onRealized(Object onSucc, Object onErr) {
         return this.addListener(new FnListener((IFn) onSucc, (IFn) onErr));
     }
@@ -685,21 +672,25 @@ public final class KDeferred
         return d;
     }
 
+    public static KDeferred wrapDeferred(Object x) {
+        if (x instanceof KDeferred) {
+             return (KDeferred) x;
+        } else if (x instanceof IMutableDeferred) {
+            KDeferred d = new KDeferred(x);
+            IMutableDeferred xx = (IMutableDeferred) x;
+            xx.addListener(new ChainListener(d, x));
+            return d;
+        } else {
+            KDeferred d = new KDeferred(x);
+            IDeferred xx = (IDeferred) x;
+            xx.onRealized(new ChainSucFn(d, x), new ChainErrFn(d, x));
+            return d;
+        }
+    }
+
     public static KDeferred wrap(Object x) {
         if (x instanceof IDeferred) {
-            if (x instanceof KDeferred) {
-                return (KDeferred) x;
-            } else if (x instanceof IMutableDeferred) {
-                KDeferred d = new KDeferred(x);
-                IMutableDeferred xx = (IMutableDeferred) x;
-                xx.addListener(new ChainListener(d, x));
-                return d;
-            } else {
-                KDeferred d = new KDeferred(x);
-                IDeferred xx = (IDeferred) x;
-                xx.onRealized(new ChainSucFn(d, x), new ChainErrFn(d, x));
-                return d;
-            }
+            return wrapDeferred(x);
         } else {
             KDeferred d = new KDeferred();
             d.value = x;

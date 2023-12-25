@@ -98,6 +98,8 @@
 (definline kd-await-coll [ls ds]
   `(let [^java.lang.Iterable ds# ~ds] (KAwaiter/awaitIter ~ls (.iterator ds#))))
 
+(definline kd-await-coll-any [ls ds]
+  `(let [^java.lang.Iterable ds# ~ds] (KAwaiter/awaitIterAny ~ls (.iterator ds#))))
 
 (defmethod print-method KDeferred [y ^java.io.Writer w]
   (.write w "#knitty/D[")
