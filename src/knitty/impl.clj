@@ -184,7 +184,7 @@
 
 (defn emit-yarn-impl
   [the-fn-body ykey bind yarn-meta deps]
-  (let [{:keys [executor norevoke]} yarn-meta
+  (let [{:keys [executor]} yarn-meta
         ctx '_yank_ctx
         yank-deps
         (mapcat identity
@@ -213,8 +213,6 @@
                       :when (#{:sync} (bind-param-type ds))]
                   [ds `(ji/kd-unwrap ~ds)]))
 
-        revoke (if norevoke `comment `ji/kd-set-revokee)
-
         all-deps-tr (into
                      []
                      (comp cat (distinct))
@@ -240,7 +238,6 @@
                    (let [z# (let [~@deref-syncs]
                               (ctx-tracer-> ~ctx t/trace-call ~ykey)
                               (~coerce-deferred ~the-fn-body))]
-                     (~revoke d# z#)
                      (connect-result-mdm ~ctx ~ykey z# d#)))
                  (onError
                    [_ e#]

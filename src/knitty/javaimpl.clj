@@ -28,8 +28,8 @@
   `(let [^KDeferred d# ~d] (.error d# ~x ~t)))
 
 (defmacro kd-create
-  ([] `(KDeferred.))
-  ([token] `(KDeferred. ~token)))
+  ([] `(KDeferred/create))
+  ([token] `(KDeferred/create ~token)))
 
 (definline kd-wrap [x]
   `(KDeferred/wrap ~x))
@@ -39,9 +39,6 @@
 
 (definline kd-revoke [d c]
   `(KDeferred/revoke ~d ~c))
-
-(definline kd-set-revokee [kd revokee]
-  `(let [^KDeferred x# ~kd] (.setRevokee x# ~revokee)))
 
 (definline kd-claim [kd token]
   `(let [^KDeferred x# ~kd] (.claim x# ~token)))
