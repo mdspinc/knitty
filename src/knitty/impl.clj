@@ -219,9 +219,9 @@
                          [[dk pt]])))]
 
     `(reify Yarn
-       (key [_] ~ykey)
-       (deps [_] #{~@deps})
-       (yank [_# ~mdm d#]
+       (~'key [_] ~ykey)
+       (~'deps [_] #{~@deps})
+       (~'yank [_# ~mdm d#]
          (maybe-future-with
           ~executor
           (tracer-> ~mdm t/trace-start ~ykey :yarn ~all-deps-tr)
@@ -229,13 +229,13 @@
             (let [~@yank-deps]
               (ji/kd-await
                (reify manifold.deferred.IDeferredListener
-                 (onSuccess
+                 (~'onSuccess
                    [_# _#]
                    (let [z# (let [~@deref-syncs]
                               (tracer-> ~mdm t/trace-call ~ykey)
                               (~coerce-deferred ~the-fn-body))]
                      (connect-result-mdm ~mdm ~ykey z# d#)))
-                 (onError
+                 (~'onError
                    [_ e#]
                    (connect-error-mdm ~mdm ~ykey e# d#)))
                ~@sync-deps))
@@ -270,9 +270,9 @@
   [ykey from]
   (MDM/regkw ykey)
   `(reify Yarn
-    (deps [_] #{~from})
-    (key [_] ~ykey)
-    (yank [_# mdm# d#]
+    (~'deps [_#] #{~from})
+    (~'key [_#] ~ykey)
+    (~'yank [_# mdm# d#]
       (tracer-> mdm# t/trace-start ~ykey :knot [[~from :ref]])
       (try
         (let [x# (ji/kd-unwrap (yarn-get-impl ~ykey ~from mdm#))]
@@ -291,7 +291,8 @@
 (defn make-multiyarn-route-key-fn [ykey k]
   (let [i (long (ji/regkw k))]
     (fn yank-route-key [^MDM mdm ^KDeferred _]
-      (ji/kd-get (yarn-get-impl ykey k i mdm)))))
+      (tracer-> mdm t/trace-route-by ykey k)
+      (ji/kd-get (.fetch mdm i)))))
 
 
 (defn yarn-multi-deps [multifn route-key]
@@ -311,18 +312,17 @@
        ~@mult-options)
      (let [multifn# ~(yarn-multifn ykey)]
        (reify Yarn
-         (deps [_]
+         (~'deps [_#]
            (yarn-multi-deps multifn# ~route-key))
-         (key [_]
+         (~'key [_#]
            ~ykey)
-         (yank [_ mdm# d#]
-           (let [r# (yarn-get-impl ~ykey ~route-key mdm)]
+         (~'yank [_ mdm# d#]
+           (let [r# (yarn-get-impl ~ykey ~route-key mdm#)]
              (ji/kd-await
               (reify manifold.deferred.IDeferredListener
                 (onSuccess [_# _#] (multifn# mdm# d#))
                 (onError [_ e#] (ji/kd-error! r# e# (.-token mdm#))))
-              r#)))
-         ~(yarn-multifn ykey) ~ykey ~route-key))))
+              r#)))))))
 
 
 (defn gen-reg-yarn-method
