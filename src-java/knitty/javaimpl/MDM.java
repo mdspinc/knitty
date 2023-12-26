@@ -102,11 +102,11 @@ public final class MDM {
         }
     }
 
-    public MDM(Associative init, YarnProvider yp, Yarn[] yankersCache, Object tracer) {
+    public MDM(Associative init, YarnProvider yp, Object tracer) {
         this.init = init;
         this.ksa = KSA;
         this.yankerProvider = yp;
-        this.yarnsCache = yankersCache;
+        this.yarnsCache = yp.ycache();
         this.tracer = tracer;
         this.token = new Object();
         this.kid = maxid();
@@ -119,21 +119,22 @@ public final class MDM {
         return a1x == null ? a11 : a1x;
     }
 
-    public KDeferred fetchK(Keyword k) {
-        Long i0 = KSM.get(k);
-        if (i0 == null) {
-            throw new IllegalArgumentException("unknown yarn " + k);
+    public KDeferred fetchRoot(Object x) {
+        if (x instanceof Keyword) {
+            Long i0 = KSM.get((Keyword) x);
+            if (i0 == null) {
+                throw new IllegalArgumentException("unknown yarn " + x);
+            }
+            long i = i0;
+            if (i > this.kid) {
+                throw new IllegalArgumentException("unknown yarn " + x);
+            }
+            return fetch(i);
+        } else {
+            Yarn y = (Yarn) x;
+            long i = KSM.get(y.key());
+            return fetch(i, y);
         }
-        long i = i0;
-        if (i > this.kid) {
-            throw new IllegalArgumentException("unknown yarn " + k);
-        }
-        return fetch(i);
-    }
-
-    public KDeferred fetchY(Yarn y) {
-        long i = KSM.get(y.key());
-        return fetch(i, y);
     }
 
     public KDeferred fetch(long il) {

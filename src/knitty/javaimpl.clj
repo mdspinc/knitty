@@ -7,19 +7,22 @@
   (:import [knitty.javaimpl MDM KDeferred KAwaiter Yarn]))
 
 
+(KDeferred/setExceptionLogFn
+ (fn log-ex [e] (log/error e "error in deferred handler")))
+
+
+
+(definline regkw [k]
+  `(MDM/regkw ~k))
+
 (definline yarn-deps [y]
   `(let [^Yarn y# ~y] (.deps y#)))
 
 (definline yarn-key [y]
   `(let [^Yarn y# ~y] (.key y#)))
 
-(definline yarn-yank [y mdm dest]
-  `(let [^Yarn y# ~y] (.yank y# ~mdm ~dest)))
-
-
-(KDeferred/setExceptionLogFn
- (fn log-ex [e] (log/error e "error in deferred handler")))
-
+(definline yarn-yank [y mdm d]
+  `(let [^Yarn y# ~y] (.yank y# ~mdm ~d)))
 
 (definline kd-success! [d x t]
   `(let [^KDeferred d# ~d] (.success d# ~x ~t)))
@@ -42,9 +45,6 @@
 
 (definline kd-revoke [d c]
   `(KDeferred/revoke ~d ~c))
-
-(definline kd-claim [kd token]
-  `(let [^KDeferred x# ~kd] (.claim x# ~token)))
 
 (definline kd-chain-from [kd d token]
   `(let [^KDeferred x# ~kd] (.chainFrom x# ~d ~token)))
@@ -120,21 +120,3 @@
       :else
       (.write w "…")))
   (.write w "]"))
-
-
-;; MDM
-
-(definline max-initd []
-  `(MDM/maxid))
-
-(definline keyword->intid [k]
-  `(MDM/regkw ~k))
-
-(definline mdm-freeze! [mdm]
-  (list '.freeze (with-meta mdm {:tag "knitty.javaimpl.MDM"})))
-
-(definline mdm-cancel! [mdm]
-  (list '.cancel (with-meta mdm {:tag "knitty.javaimpl.MDM"})))
-
-(definline mdm-fetch! [mdm kid]
-  (list '.fetch (with-meta mdm {:tag "knitty.javaimpl.MDM"}) kid))
