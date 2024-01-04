@@ -16,9 +16,13 @@
 
   :aot-include [#"knitty\.javaimpl\..*"]
   :aot [knitty.core]
+  :jvm-opts ["-Djdk.attach.allowAttachSelf"]
 
   :javac-options ["-target" "17" "-source" "17"]
-  :profiles {:dev {:dependencies [[criterium "0.4.6"]]
+
+  :profiles {:dev {:dependencies [[criterium "0.4.6"]
+                                  [com.clojure-goes-fast/clj-async-profiler "1.1.1"]
+                                  [prismatic/plumbing "0.6.0"]]
                    :global-vars {*warn-on-reflection* true}}}
 
   :prep-tasks [["javac"]
