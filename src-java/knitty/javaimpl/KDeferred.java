@@ -288,7 +288,7 @@ public final class KDeferred
             }
             this.value = x;
             this.state = STATE_SUCC;
-            return Boolean.TRUE;
+            return true;
         }
         return success0(x, null);
     }
@@ -302,7 +302,7 @@ public final class KDeferred
             }
             this.value = x;
             this.state = STATE_SUCC;
-            return Boolean.TRUE;
+            return true;
         }
         return success0(x, token);
     }
@@ -322,7 +322,7 @@ public final class KDeferred
 
                     this.value = x;
                     STATE.setVolatile(this, STATE_SUCC);
-                    return Boolean.TRUE;
+                    return true;
                 }
 
                 case STATE_LSTN: {
@@ -353,12 +353,12 @@ public final class KDeferred
                         }
                     }
 
-                    return Boolean.TRUE;
+                    return true;
                 }
 
                 case STATE_SUCC:
                 case STATE_ERRR:
-                    return Boolean.FALSE;
+                    return false;
             }
             Thread.onSpinWait();
         }
@@ -373,7 +373,7 @@ public final class KDeferred
             }
             this.value = x;
             this.state = STATE_ERRR;
-            return Boolean.TRUE;
+            return true;
         }
         return this.error0(x, null);
     }
@@ -387,7 +387,7 @@ public final class KDeferred
             }
             this.value = x;
             this.state = STATE_ERRR;
-            return Boolean.TRUE;
+            return true;
         }
         return this.error0(x, token);
     }
@@ -407,7 +407,7 @@ public final class KDeferred
 
                     this.value = x;
                     STATE.setVolatile(this, STATE_ERRR);
-                    return Boolean.TRUE;
+                    return true;
                 }
 
                 case STATE_LSTN: {
@@ -437,12 +437,12 @@ public final class KDeferred
                             }
                         }
                     }
-                    return Boolean.TRUE;
+                    return true;
                 }
 
                 case STATE_SUCC:
                 case STATE_ERRR:
-                    return Boolean.FALSE;
+                    return false;
             }
             Thread.onSpinWait();
         }
@@ -489,20 +489,20 @@ public final class KDeferred
                     continue;
                 case STATE_INIT:
                     if (this.pushListener1(ls))
-                        return Boolean.TRUE;
+                        return true;
                     else
                         continue;
                 case STATE_LSTN:
                     if (this.pushListener(ls))
-                        return Boolean.TRUE;
+                        return true;
                     else
                         continue;
                 case STATE_SUCC:
                     ls.onSuccess(value);
-                    return Boolean.FALSE;
+                    return false;
                 case STATE_ERRR:
                     ls.onError(value);
-                    return Boolean.FALSE;
+                    return false;
                 default:
                     throw new IllegalStateException();
             }
