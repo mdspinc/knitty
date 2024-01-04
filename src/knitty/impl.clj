@@ -167,8 +167,7 @@
           (md/add-listener! ~mdm-deferred (TraceListener. t# ~ykey)))))
      (do
        (tracer-> ~mdm t/trace-finish ~ykey ~result nil false)
-       (ji/kd-success! ~mdm-deferred ~result (.-token ~mdm))
-       )))
+       (ji/kd-success! ~mdm-deferred ~result (.-token ~mdm)))))
 
 
 (defmacro connect-error-mdm [mdm ykey error mdm-deferred]
@@ -263,22 +262,22 @@
         bind (if keep-deps-order
                bind
                (sort-by (comp #(when (keyword? %) (ji/regkw %)) second) bind))]
-      (emit-yarn-impl expr ykey bind yarn-meta deps)))
+    (emit-yarn-impl expr ykey bind yarn-meta deps)))
 
 
 (defn gen-yarn-ref
   [ykey from]
   (MDM/regkw ykey)
   `(reify Yarn
-    (~'deps [_#] #{~from})
-    (~'key [_#] ~ykey)
-    (~'yank [_# mdm# d#]
-      (tracer-> mdm# t/trace-start ~ykey :knot [[~from :ref]])
-      (try
-        (let [x# (ji/kd-unwrap (yarn-get-impl ~ykey ~from mdm#))]
-          (connect-result-mdm mdm# ~ykey x# d#))
-        (catch Throwable e#
-          (connect-error-mdm mdm# ~ykey e# d#))))))
+     (~'deps [_#] #{~from})
+     (~'key [_#] ~ykey)
+     (~'yank [_# mdm# d#]
+       (tracer-> mdm# t/trace-start ~ykey :knot [[~from :ref]])
+       (try
+         (let [x# (ji/kd-unwrap (yarn-get-impl ~ykey ~from mdm#))]
+           (connect-result-mdm mdm# ~ykey x# d#))
+         (catch Throwable e#
+           (connect-error-mdm mdm# ~ykey e# d#))))))
 
 
 (defn yarn-multifn [yarn-name]
@@ -327,13 +326,13 @@
 
 (defn gen-reg-yarn-method
   [yk yarn route-val]
-    `(let [y# ~yarn
-           rv# ~route-val]
-       (defmethod
-         ~(yarn-multifn yk)
-         rv#
-         ([] y#)
-         ([mdm# d#] (ji/yarn-yank y# mdm# d#)))))
+  `(let [y# ~yarn
+         rv# ~route-val]
+     (defmethod
+       ~(yarn-multifn yk)
+       rv#
+       ([] y#)
+       ([mdm# d#] (ji/yarn-yank y# mdm# d#)))))
 
 
 (defn fail-always-yarn [ykey msg]
@@ -350,37 +349,29 @@
 
 
 (defn yank0
-  [poy yarns registry tracer]
-  (let [mdm (MDM. poy registry tracer)
-        token (.-token mdm)
-        result (ji/kd-create token)
-        ry (fn yank-root [y] (.fetchRoot mdm y))
-        kds (map ry yarns)]
-    (run! identity kds)
-    (ji/kd-await-coll
-     (reify manifold.deferred.IDeferredListener
-       (onSuccess [_ _]
-         (ji/kd-success! result
-                         (let [poy' (.freeze mdm)]
-                           (if tracer
-                             (with-meta poy' (update (meta poy) :knitty/trace conj (t/capture-trace! tracer)))
-                             poy'))
-                         token))
-       (onError [_ e]
-         (ji/kd-error! result
-                       (ex-info "failed to yank"
-                                (if tracer
-                                  (assoc (ex-data e)
-                                         :knitty/yanked-poy poy
-                                         :knitty/failed-poy (.freeze mdm)
-                                         :knitty/yanked-yarns yarns
-                                         :knitty/trace (conj (-> poy meta :knitty/trace) (t/capture-trace! tracer)))
-                                  (assoc (ex-data e)
-                                         :knitty/yanked-poy poy
-                                         :knitty/failed-poy (.freeze mdm)
-                                         :knitty/yanked-yarns yarns))
-                                e)
-                       token)))
-     kds)
-    (ji/kd-revoke result
-                  (fn cancel-mdm [] (.cancel mdm)))))
+
+  ;; no tracing
+  ([poy yarns registry]
+   (let [mdm (MDM. poy registry nil)
+         ^java.lang.Iterable ycoll (if (instance? java.lang.Iterable yarns) yarns (vec yarns))]
+     (.yank0 mdm ycoll)))
+
+  ;; with tracing
+  ([poy yarns registry tracer]
+   (let [r (yank0 poy yarns registry)
+         d (ji/kd-revoke r (fn [] (md/error! r knitty.javaimpl.RevokeException/INSTANCE)))]
+     (md/add-listener!
+      r
+      (reify manifold.deferred.IDeferredListener
+        (onSuccess [_ r]
+          (ji/kd-success!
+           d
+           (vary-meta r update :knitty/trace conj (t/capture-trace! tracer))
+           nil))
+        (onError   [_ e]
+          (ji/kd-error!
+           d (ex-info (ex-message e)
+                      (update (ex-data e) :knitty/trace conj (t/capture-trace! tracer))
+                      (ex-cause e))
+           nil))))
+     d)))

@@ -213,13 +213,14 @@
 (defn yank
   "Computes and adds missing nodes into 'poy' map. Always returns deferred."
   [poy yarns]
-  (assert (map? poy) "poy should be a map")
-  (assert (sequential? yarns) "yarns should be vector/sequence")
-  (impl/yank0 poy
-              yarns
-              *registry*
-              (when *tracing*
-                (trace/create-tracer poy yarns))))
+  (if *tracing*
+    (impl/yank0 poy
+                yarns
+                *registry*
+                (trace/create-tracer poy yarns))
+    (impl/yank0 poy
+                yarns
+                *registry*)))
 
 
 (defn yank-error?
