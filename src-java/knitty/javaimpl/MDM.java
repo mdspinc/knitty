@@ -192,9 +192,13 @@ public final class MDM {
             }
         }
 
-        final KDeferred result = new KDeferred(token);
-        KAwaiter.awaitIter(new YankFreezer(result, yarns), ds.iterator());
-        return KDeferred.revoke(result, this::cancel);
+        if (ds.isEmpty()) {
+            return KDeferred.wrap(freeze());
+        } else {
+            KDeferred result = new KDeferred(token);
+            KAwaiter.awaitIter(new YankFreezer(result, yarns), ds.iterator());
+            return KDeferred.revoke(result, this::cancel);
+        }
     }
 
     public KDeferred fetch(long il) {
