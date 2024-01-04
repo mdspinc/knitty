@@ -167,7 +167,11 @@ public final class KAwaiter {
     }
 
     public static void awaitIter(IDeferredListener ls, Iterator<KDeferred> ds) {
-        new Iter(ds, ls).onSuccess(null);
+        if (ds.hasNext()) {
+            new Iter(ds, ls).onSuccess(null);
+        } else {
+            ls.onSuccess(null);
+        }
     }
 
     public static void awaitIterAny(IDeferredListener ls, Iterator<?> os) {
