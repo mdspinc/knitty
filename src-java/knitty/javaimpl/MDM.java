@@ -86,9 +86,9 @@ public final class MDM {
         }
     }
 
+    final Associative inputs;
     private volatile KVCons added;
     private final KDeferred[][] a0;
-    private final Associative init;
     private final Keyword[] ksa;
     private final Yarn[] yarnsCache;
     private final YarnProvider yankerProvider;
@@ -97,44 +97,46 @@ public final class MDM {
     public final Object tracer;
     public final Object token;
 
-    private final class YankFreezer implements IDeferredListener {
+    private static final class YankFreezer implements IDeferredListener {
 
         private static final Keyword YANKED_POY = Keyword.intern("knitty", "yanked-poy");
         private static final Keyword FAILED_POY = Keyword.intern("knitty", "failed-poy");
         private static final Keyword YANKED_YARNS = Keyword.intern("knitty", "yanked-yarns");
 
+        private final MDM mdm;
         private final KDeferred result;
         private final Object yarns;
 
-		private YankFreezer(KDeferred result, Object yarns) {
-			this.result = result;
+		private YankFreezer(MDM mdm, KDeferred result, Object yarns) {
+			this.mdm = mdm;
+            this.result = result;
             this.yarns = yarns;
 		}
 
 		public Object onSuccess(Object v) {
-		    result.success(freeze(), token);
+		    result.success(mdm.freeze(), mdm.token);
 		    return null;
 		}
 
 		public Object onError(Object e) {
-            Associative fpoy = freeze();
+            Associative fpoy = mdm.freeze();
 		    IPersistentMap exdata = (e instanceof IExceptionInfo) ? ((IExceptionInfo) e).getData() : null;
 
             if (exdata == null) {
                 exdata = new PersistentArrayMap(
                     new Object[] {
                         YANKED_YARNS, yarns,
-                        YANKED_POY, init,
+                        YANKED_POY, mdm.inputs,
                         FAILED_POY, fpoy,
                     });
             } else {
 		        exdata = exdata
                     .assoc(YANKED_YARNS, yarns)
-		            .assoc(YANKED_POY, init)
+		            .assoc(YANKED_POY, mdm.inputs)
                     .assoc(FAILED_POY, fpoy);
             }
 		    Throwable ex = new ExceptionInfo("failed to yank", exdata, (Throwable) e);
-		    result.error(ex, token);
+		    result.error(ex, mdm.token);
 		    return null;
 		}
 	}
@@ -152,8 +154,8 @@ public final class MDM {
         }
     }
 
-    public MDM(Associative init, YarnProvider yp, Object tracer) {
-        this.init = init;
+    public MDM(Associative inputs, YarnProvider yp, Object tracer) {
+        this.inputs = inputs;
         this.ksa = KSA;
         this.yankerProvider = yp;
         this.yarnsCache = yp.ycache();
@@ -169,7 +171,9 @@ public final class MDM {
         return a1x == null ? a11 : a1x;
     }
 
-    public KDeferred yank0(Iterable<?> yarns) {
+    public static KDeferred yank0(Associative inputs, YarnProvider yp, Iterable<?> yarns, Object tracer) {
+
+        MDM mdm = new MDM(inputs, yp, tracer);
         ArrayList<KDeferred> ds = new ArrayList<>();
 
         for (Object x : yarns) {
@@ -180,11 +184,11 @@ public final class MDM {
                 if (i0 == null) {
                     throw new IllegalArgumentException("unknown yarn " + x);
                 }
-                r = fetch(i0.longValue());
+                r = mdm.fetch(i0.longValue());
             } else {
                 Yarn y = (Yarn) x;
                 Long i0 = KSM.get(y.key());
-                r = fetch(i0.longValue(), y);
+                r = mdm.fetch(i0.longValue(), y);
             }
 
             if (r.state != KDeferred.STATE_SUCC) {
@@ -193,11 +197,11 @@ public final class MDM {
         }
 
         if (ds.isEmpty()) {
-            return KDeferred.wrap(freeze());
+            return KDeferred.wrap(mdm.freeze());
         } else {
-            KDeferred result = new KDeferred(token);
-            KAwaiter.awaitIter(new YankFreezer(result, yarns), ds.iterator());
-            return KDeferred.revoke(result, this::cancel);
+            KDeferred result = new KDeferred(mdm.token);
+            KAwaiter.awaitIter(new YankFreezer(mdm, result, yarns), ds.iterator());
+            return KDeferred.revoke(result, mdm::cancel);
         }
     }
 
@@ -258,7 +262,7 @@ public final class MDM {
     }
 
     private boolean fetchInput(int i, KDeferred d, Keyword k) {
-        Object x = init.valAt(k, NONE);
+        Object x = inputs.valAt(k, NONE);
         if (x != NONE) {
             d.chainFrom(x, token);
             return true;
@@ -282,14 +286,14 @@ public final class MDM {
     }
 
     Associative freeze() {
-        if (init instanceof IEditableCollection) {
-            ITransientAssociative t = (ITransientAssociative) ((IEditableCollection) init).asTransient();
+        if (inputs instanceof IEditableCollection) {
+            ITransientAssociative t = (ITransientAssociative) ((IEditableCollection) inputs).asTransient();
             for (KVCons a = added; a != null; a = a.next) {
                 t = t.assoc(a.k, a.d.unwrap());
             }
             return (Associative) t.persistent();
         } else {
-            Associative t = init;
+            Associative t = inputs;
             for (KVCons a = added; a != null; a = a.next) {
                 t = t.assoc(a.k, a.d.unwrap());
             }

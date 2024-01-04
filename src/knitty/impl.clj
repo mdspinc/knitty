@@ -352,9 +352,7 @@
 
   ;; no tracing
   ([poy yarns registry]
-   (let [mdm (MDM. poy registry nil)
-         ^java.lang.Iterable ycoll (if (instance? java.lang.Iterable yarns) yarns (vec yarns))]
-     (.yank0 mdm ycoll)))
+   (MDM/yank0 poy registry (if (instance? java.lang.Iterable yarns) yarns (vec yarns)) nil))
 
   ;; with tracing
   ([poy yarns registry tracer]
