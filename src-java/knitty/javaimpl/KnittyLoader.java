@@ -44,6 +44,7 @@ public class KnittyLoader extends DynamicClassLoader {
             cl.loadClass("knitty.javaimpl.YarnProvider");
             cl.loadClass("knitty.javaimpl.KDeferred");
             cl.loadClass("knitty.javaimpl.KAwaiter");
+            cl.loadClass("knitty.javaimpl.KwMapper");
             cl.loadClass("knitty.javaimpl.MDM");
         } catch (ClassNotFoundException | IOException e) {
             throw new IllegalStateException(e);

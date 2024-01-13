@@ -4,7 +4,7 @@
 (ns knitty.javaimpl
   (:require [manifold.deferred :as md]
             [clojure.tools.logging :as log])
-  (:import [knitty.javaimpl MDM KDeferred KAwaiter Yarn]))
+  (:import [knitty.javaimpl KDeferred KAwaiter Yarn KwMapper]))
 
 
 (KDeferred/setExceptionLogFn
@@ -12,7 +12,10 @@
 
 
 (definline regkw [k]
-  `(MDM/regkw ~k))
+  `(KwMapper/regkw ~k))
+
+(definline maxid []
+  `(KwMapper/maxi))
 
 (definline yarn-deps [y]
   `(let [^Yarn y# ~y] (.deps y#)))

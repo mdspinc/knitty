@@ -55,7 +55,7 @@
           (check-no-cycle k d [k] asmap)))
 
       (Registry.
-       (delay (make-array Yarn (inc (MDM/maxid))))
+       (delay (make-array Yarn (inc (ji/maxid))))
        (assoc asmap k v)
        all-deps'))))
 
@@ -255,7 +255,7 @@
 
 (defn gen-yarn
   [ykey bind expr]
-  (MDM/regkw ykey)
+  (ji/regkw ykey)
   (let [deps (grab-yarn-bindmap-deps bind)
         yarn-meta (meta bind)
         {:keys [keep-deps-order]} yarn-meta
@@ -267,7 +267,7 @@
 
 (defn gen-yarn-ref
   [ykey from]
-  (MDM/regkw ykey)
+  (ji/regkw ykey)
   `(reify Yarn
      (~'deps [_#] #{~from})
      (~'key [_#] ~ykey)
@@ -304,7 +304,7 @@
 
 (defn gen-yarn-multi
   [ykey route-key mult-options]
-  (MDM/regkw ykey)
+  (ji/regkw ykey)
   `(do
      (defmulti ~(yarn-multifn ykey)
        (make-multiyarn-route-key-fn ~ykey ~route-key)
@@ -336,7 +336,7 @@
 
 
 (defn fail-always-yarn [ykey msg]
-  (MDM/regkw ykey)
+  (ji/regkw ykey)
   (reify
     Yarn
     (key [_] ykey)

@@ -23,11 +23,6 @@ import manifold.deferred.IDeferredListener;
 
 public final class MDM {
 
-    private static Object KLOCK = new Object();
-    private static Keyword[] KSA = new Keyword[1024];
-    private static Map<Keyword, Long> KSM = new ConcurrentHashMap<>(1024);
-    private static int KID;
-
     private static final CancellationException CANCEL_EX = createCancelEx("mdm is cancelled");
     private static CancellationException createCancelEx(String msg) {
         CancellationException e = new CancellationException(msg);
@@ -40,37 +35,6 @@ public final class MDM {
     private static final int ASHIFT = 5;
     private static final int ASIZE = 1 << ASHIFT;
     private static final int AMASK = ASIZE - 1;
-
-    public static int maxid() {
-        synchronized (KLOCK) {
-            return KID;
-        }
-    }
-
-    public static long regkw(Keyword k) {
-        Long v = KSM.get(k);
-        if (v != null) {
-            return v.longValue();
-        } else {
-            synchronized (KLOCK) {
-                long res = ++KID;
-                KSM.put(k, res);
-                if (res >= KSA.length) {
-                    KSA = Arrays.copyOf(KSA, KSA.length * 2);
-                }
-                KSA[(int) res] = k;
-                return res;
-            }
-        }
-    }
-
-    public static void resetKeywordsPoolForTests() {
-        synchronized (KLOCK) {
-            KSM.clear();
-            KID = 0;
-            KSA = new Keyword[1024];
-        }
-    }
 
     private static final VarHandle AR0 = MethodHandles.arrayElementVarHandle(KDeferred[][].class);
     private static final VarHandle AR1 = MethodHandles.arrayElementVarHandle(KDeferred[].class);
@@ -89,10 +53,9 @@ public final class MDM {
     final Associative inputs;
     private volatile KVCons added;
     private final KDeferred[][] a0;
-    private final Keyword[] ksa;
+    private final KwMapper kwm;
     private final Yarn[] yarnsCache;
     private final YarnProvider yankerProvider;
-    private final int kid;
 
     public final Object tracer;
     public final Object token;
@@ -155,14 +118,13 @@ public final class MDM {
     }
 
     public MDM(Associative inputs, YarnProvider yp, Object tracer) {
+        this.kwm = KwMapper.getIntance();
         this.inputs = inputs;
-        this.ksa = KSA;
         this.yankerProvider = yp;
         this.yarnsCache = yp.ycache();
         this.tracer = tracer;
         this.token = new Object();
-        this.kid = maxid();
-        this.a0 = new KDeferred[((this.kid + AMASK) >> ASHIFT)][];
+        this.a0 = new KDeferred[((this.kwm.maxi() + AMASK) >> ASHIFT)][];
     }
 
     private KDeferred[] createChunk(int i0) {
@@ -180,15 +142,15 @@ public final class MDM {
 
             KDeferred r;
             if (x instanceof Keyword) {
-                Long i0 = KSM.get((Keyword) x);
-                if (i0 == null) {
-                    throw new IllegalArgumentException("unknown yarn " + x);
-                }
-                r = mdm.fetch(i0.longValue());
+                int i0 = mdm.kwm.getr((Keyword) x);
+                //if (i0 == null) {
+                //    throw new IllegalArgumentException("unknown yarn " + x);
+                //}
+                r = mdm.fetch(i0);
             } else {
                 Yarn y = (Yarn) x;
-                Long i0 = KSM.get(y.key());
-                r = mdm.fetch(i0.longValue(), y);
+                int i0 = mdm.kwm.getr(y.key());
+                r = mdm.fetch(i0, y);
             }
 
             if (r.state != KDeferred.STATE_SUCC) {
@@ -205,9 +167,8 @@ public final class MDM {
         }
     }
 
-    public KDeferred fetch(long il) {
+    public KDeferred fetch(int i) {
 
-        int i = (int) il;
         int i0 = i >> ASHIFT;
         int i1 = i & AMASK;
 
@@ -226,7 +187,7 @@ public final class MDM {
             return d0;
         }
 
-        if (!fetchInput(i, d, this.ksa[i])) {
+        if (!fetchInput(i, d, this.kwm.get(i))) {
             Yarn y = this.yarn(i);
             y.yank(this, d);
         }
@@ -234,9 +195,8 @@ public final class MDM {
         return d;
     }
 
-    public KDeferred fetch(long il, Yarn y) {
+    public KDeferred fetch(int i, Yarn y) {
 
-        int i = (int) il;
         int i0 = i >> ASHIFT;
         int i1 = i & AMASK;
 
@@ -280,7 +240,7 @@ public final class MDM {
         if (y != null) {
             return y;
         }
-        y = yankerProvider.yarn(ksa[i]);
+        y = yankerProvider.yarn(kwm.get(i));
         YSC.setVolatile(yarnsCache, i, y);
         return y;
     }
