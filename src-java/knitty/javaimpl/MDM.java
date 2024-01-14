@@ -42,11 +42,13 @@ public final class MDM implements ILookup {
     private static final VarHandle AR1 = MethodHandles.arrayElementVarHandle(KDeferred[].class);
     private static final VarHandle YSC = MethodHandles.arrayElementVarHandle(Yarn[].class);
     private static final VarHandle ADDED;
+    private static final VarHandle FROZEN;
 
     static {
         try {
             MethodHandles.Lookup l = MethodHandles.lookup();
             ADDED = l.findVarHandle(MDM.class, "added", KVCons.class);
+            FROZEN = l.findVarHandle(MDM.class, "frozen", Boolean.TYPE);
         } catch (ReflectiveOperationException var1) {
             throw new ExceptionInInitializerError(var1);
         }
@@ -54,6 +56,7 @@ public final class MDM implements ILookup {
 
     final Associative inputs;
     private volatile KVCons added;
+    private volatile boolean frozen;
     private final KDeferred[][] a0;
     private final KwMapper kwm;
     private final Yarn[] yarnsCache;
@@ -91,9 +94,8 @@ public final class MDM implements ILookup {
         return a1x == null ? a11 : a1x;
     }
 
-    public KDeferred yank(Iterable<?> yarns) {
+    public void yank(Iterable<?> yarns, IDeferredListener callback) {
         ArrayList<KDeferred> ds = new ArrayList<>();
-
         for (Object x : yarns) {
             KDeferred r;
             if (x instanceof Keyword) {
@@ -108,14 +110,7 @@ public final class MDM implements ILookup {
                 ds.add(r);
             }
         }
-
-        if (ds.isEmpty()) {
-            return KDeferred.wrap(this);
-        } else {
-            KDeferred result = new KDeferred(this.token);
-            KAwaiter.awaitIter(result.chainFromSupplierCallback(() -> this, token), ds.iterator());
-            return result;
-        }
+        KAwaiter.awaitIter(callback, ds.iterator());
     }
 
     public Object valAt(Object key) {
@@ -220,7 +215,18 @@ public final class MDM implements ILookup {
     }
 
     public Associative freeze() {
-        if (inputs instanceof IEditableCollection) {
+        if ((boolean) FROZEN.getAndSet(this, true)) {
+            throw new IllegalStateException("yankctx is already frozen");
+        }
+        KVCons added = this.added;
+        if (added == null) {
+            return inputs;
+        }
+
+        int c = 0;
+        for (KVCons a = added; c < 3 && a != null; a = a.next) c++;
+
+        if (c == 3 && inputs instanceof IEditableCollection) {
             ITransientAssociative t = (ITransientAssociative) ((IEditableCollection) inputs).asTransient();
             for (KVCons a = added; a != null; a = a.next) {
                 t = t.assoc(a.k, a.d.unwrap());
@@ -236,6 +242,11 @@ public final class MDM implements ILookup {
     }
 
     public void cancel() {
+        if ((boolean) FROZEN.getAndSet(this, true)) {
+            return;
+        }
+        System.err.println("cancel");
+        KVCons added = this.added;
         for (KVCons a = added; a != null; a = a.next) {
             a.d.error(CANCEL_EX, token);
         }
