@@ -65,10 +65,11 @@
 
 
 (defn bind-param-type [ds]
-  (let [{:keys [defer lazy yankfn]} (meta ds)]
+  (let [{:keys [defer lazy yankfn maybe]} (meta ds)]
     (cond
       lazy   :lazy
       defer  :defer
+      maybe  :maybe
       yankfn :yankfn
       :else  :sync)))
 
@@ -92,6 +93,12 @@
       (tracer-> ~mdm t/trace-dep ~yk ~ykey)
       (.fetch ~mdm ~ykeyi))))
 
+
+(defmacro yarn-get-maybe
+  [yk ykey mdm]
+  `(do
+     (tracer-> ~mdm t/trace-dep ~yk ~ykey)
+     (.pull ~mdm ~(ji/regkw ykey))))
 
 (deftype Lazy
          [^MDM mdm
@@ -187,8 +194,9 @@
                   [ds
                    (case (bind-param-type ds)
                      :sync   `(yarn-get-impl   ~ykey ~dk ~mdm)
-                     :defer  `(yarn-get-impl   ~ykey ~dk ~mdm)
                      :lazy   `(yarn-get-lazy   ~ykey ~dk ~mdm)
+                     :defer  `(yarn-get-impl   ~ykey ~dk ~mdm)
+                     :maybe  `(yarn-get-maybe  ~ykey ~dk ~mdm)
                      :yankfn `(yarn-get-yankfn ~ykey ~dk ~mdm))]))
 
         sync-deps
@@ -354,54 +362,50 @@
   ([poy yarns registry]
    (let [mdm (MDM. poy registry nil)
          res (ji/kd-create)]
-
-     (md/add-listener! res
-                       (reify manifold.deferred.IDeferredListener
-                         (onSuccess [_ _] (.cancel mdm))
-                         (onError [_ _] (.cancel mdm))))
-
+     (md/add-listener! res (.canceller mdm))
      (.yank
       mdm
       (if (instance? java.lang.Iterable yarns) yarns (vec yarns))
       (reify manifold.deferred.IDeferredListener
         (onSuccess [_ _]
-          (ji/kd-success! res (.freeze mdm) nil))
+          (when-not (ji/kd-realized? res)
+            (ji/kd-success! res (.freeze mdm) nil)))
         (onError [_ err]
-          (ji/kd-error! res
-                        (ex-info "failed to yank"
-                                 (assoc (ex-data err)
-                                        :knitty/yanked-poy poy
-                                        ;:knitty/failed-poy (.freeze mdm)
-                                        :knitty/yanked-yarns yarns)
-                                 err)
-                        nil))))
+          (when-not (ji/kd-realized? res)
+            (ji/kd-error! res
+                          (ex-info "failed to yank"
+                                   (assoc (ex-data err)
+                                          :knitty/yanked-poy poy
+                                          :knitty/failed-poy (.freeze mdm)
+                                          :knitty/yanked-yarns yarns)
+                                   err)
+                          nil)))))
      res))
 
+  ;; with tracing
   ([poy yarns registry tracer]
    (let [mdm (MDM. poy registry tracer)
          res (ji/kd-create)]
-
-     (md/add-listener! res
-                       (reify manifold.deferred.IDeferredListener
-                         (onSuccess [_ _] (.cancel mdm))
-                         (onError [_ _] (.cancel mdm))))
+     (md/add-listener! res (.canceller mdm))
      (.yank
       mdm
       (if (instance? java.lang.Iterable yarns) yarns (vec yarns))
       (reify manifold.deferred.IDeferredListener
         (onSuccess [_ _]
-          (ji/kd-success! res
-                          (-> (.freeze mdm)
-                              (vary-meta update :knitty/trace conj (t/capture-trace! tracer)))
-                          nil))
+          (when-not (ji/kd-realized? res)
+            (ji/kd-success! res
+                            (-> (.freeze mdm)
+                                (vary-meta update :knitty/trace conj (t/capture-trace! tracer)))
+                            nil)))
         (onError [_ err]
-          (ji/kd-error! res
-                        (ex-info "failed to yank"
-                                 (assoc (ex-data err)
-                                        :knitty/yanked-poy poy
-                                        :knitty/failed-poy (.freeze mdm)
-                                        ;:knitty/yanked-yarns yarns
-                                        :knitty/trace (t/capture-trace! tracer))
-                                 err)
-                        nil))))
+          (when-not (ji/kd-realized? res)
+            (ji/kd-error! res
+                          (ex-info "failed to yank"
+                                   (assoc (ex-data err)
+                                          :knitty/yanked-poy poy
+                                          :knitty/failed-poy (.freeze mdm)
+                                          :knitty/yanked-yarns yarns
+                                          :knitty/trace (t/capture-trace! tracer))
+                                   err)
+                          nil)))))
      res)))

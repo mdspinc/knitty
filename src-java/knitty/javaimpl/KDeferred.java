@@ -219,12 +219,14 @@ public final class KDeferred
 
     private static final VarHandle STATE;
     private static final VarHandle TOKEN;
+    private static final VarHandle OWNED;
 
     static {
         try {
             MethodHandles.Lookup l = MethodHandles.lookup();
             STATE = l.findVarHandle(KDeferred.class, "state", Integer.TYPE);
             TOKEN = l.findVarHandle(KDeferred.class, "token", Object.class);
+            OWNED = l.findVarHandle(KDeferred.class, "owned", Boolean.TYPE);
         } catch (ReflectiveOperationException var1) {
             throw new ExceptionInInitializerError(var1);
         }
@@ -237,6 +239,7 @@ public final class KDeferred
 
     volatile int state;
     volatile Object token;
+    boolean owned;
 
     private Object value;
     private Listeners lcFirst;
@@ -245,11 +248,14 @@ public final class KDeferred
     private boolean revokable;
 
     KDeferred() {
-        // do nothing
     }
 
     KDeferred(Object token) {
         this.token = token;
+    }
+
+    final boolean owned() {
+        return (boolean) OWNED.getAndSet(this, true);
     }
 
     public synchronized IPersistentMap meta() {

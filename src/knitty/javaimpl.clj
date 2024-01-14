@@ -32,6 +32,9 @@
 (definline kd-error! [d x t]
   `(let [^KDeferred d# ~d] (.error d# ~x ~t)))
 
+(definline kd-realized? [d]
+  `(let [^KDeferred d# ~d] (.realized d#)))
+
 (defmacro kd-create
   ([] `(KDeferred/create))
   ([token] `(KDeferred/create ~token)))

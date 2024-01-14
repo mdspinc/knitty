@@ -26,6 +26,7 @@ import manifold.deferred.IMutableDeferred;
 public final class MDM implements ILookup {
 
     private static final CancellationException CANCEL_EX = createCancelEx("mdm is cancelled");
+
     private static CancellationException createCancelEx(String msg) {
         CancellationException e = new CancellationException(msg);
         e.setStackTrace(new StackTraceElement[0]);
@@ -65,7 +66,7 @@ public final class MDM implements ILookup {
     public final Object tracer;
     public final Object token;
 
-	private static class KVCons {
+    private static class KVCons {
 
         public final KVCons next;
         public final Keyword k;
@@ -136,7 +137,7 @@ public final class MDM implements ILookup {
         return v == null ? inputs.valAt(key, fallback) : v.unwrap();
     }
 
-    public KDeferred fetch(int i) {
+    public KDeferred pull(int i) {
 
         int i0 = i >> ASHIFT;
         int i1 = i & AMASK;
@@ -152,56 +153,48 @@ public final class MDM implements ILookup {
 
         KDeferred d = new KDeferred(token);
         KDeferred d0 = (KDeferred) AR1.compareAndExchange(a1, i1, null, d);
-        if (d0 != null) {
-            return d0;
+        return d0 != null ? d0 : d;
+    }
+
+    public KDeferred fetch(int i) {
+
+        KDeferred d = pull(i);
+        if (d.owned || d.owned()) {
+            return d;
         }
 
-        if (!fetchInput(i, d, this.kwm.get(i))) {
-            Yarn y = this.yarn(i);
-            y.yank(this, d);
+        Keyword k = this.kwm.get(i);
+        Object x = inputs.valAt(k, NONE);
+        if (x != NONE) {
+            return d.chainFrom(x, token);
         }
 
+        Yarn y = this.yarn(i);
+        y.yank(this, d);
+
+        KVCons a = added;
+        while (!ADDED.compareAndSet(this, a, new KVCons(a, k, d))) a = added;
         return d;
     }
 
     public KDeferred fetch(int i, Yarn y) {
 
-        int i0 = i >> ASHIFT;
-        int i1 = i & AMASK;
-
-        KDeferred[] a1 = (KDeferred[]) AR0.getVolatile(a0, i0);
-        if (a1 == null) {
-            a1 = this.createChunk(i0);
-        }
-        KDeferred v = (KDeferred) AR1.getVolatile(a1, i1);
-        if (v != null) {
-            return v;
+        KDeferred d = pull(i);
+        if (d.owned || d.owned()) {
+            return d;
         }
 
-        KDeferred d = new KDeferred(token);
-        KDeferred d0 = (KDeferred) AR1.compareAndExchange(a1, i1, null, d);
-        if (d0 != null) {
-            return d0;
-        }
-
-        if (!fetchInput(i, d, y.key())) {
-            y.yank(this, d);
-        }
-        return d;
-    }
-
-    private boolean fetchInput(int i, KDeferred d, Keyword k) {
+        Keyword k = y.key();
         Object x = inputs.valAt(k, NONE);
         if (x != NONE) {
-            d.chainFrom(x, token);
-            return true;
+            return d.chainFrom(x, token);
         }
-        while (true) {
-            KVCons a = added;
-            if (ADDED.compareAndSet(this, a, new KVCons(a, k, d)))
-                break;
-        }
-        return false;
+
+        y.yank(this, d);
+
+        KVCons a = added;
+        while (!ADDED.compareAndSet(this, a, new KVCons(a, k, d))) a = added;
+        return d;
     }
 
     private Yarn yarn(int i) {
@@ -222,9 +215,9 @@ public final class MDM implements ILookup {
         if (added == null) {
             return inputs;
         }
-
         int c = 0;
-        for (KVCons a = added; c < 3 && a != null; a = a.next) c++;
+        for (KVCons a = added; c < 3 && a != null; a = a.next)
+            c++;
 
         if (c == 3 && inputs instanceof IEditableCollection) {
             ITransientAssociative t = (ITransientAssociative) ((IEditableCollection) inputs).asTransient();
@@ -241,11 +234,23 @@ public final class MDM implements ILookup {
         }
     }
 
+    public IDeferredListener canceller() {
+        return new IDeferredListener() {
+            public Object onSuccess(Object _v) {
+                if (!frozen) cancel();
+                return null;
+            }
+            public Object onError(Object _e) {
+                if (!frozen) cancel();
+                return null;
+            }
+        };
+    }
+
     public void cancel() {
         if ((boolean) FROZEN.getAndSet(this, true)) {
-            return;
+            throw new IllegalStateException("yankctx is already frozen");
         }
-        System.err.println("cancel");
         KVCons added = this.added;
         for (KVCons a = added; a != null; a = a.next) {
             a.d.error(CANCEL_EX, token);
