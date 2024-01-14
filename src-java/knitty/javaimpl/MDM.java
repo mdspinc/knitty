@@ -18,10 +18,12 @@ import clojure.lang.PersistentArrayMap;
 import clojure.lang.IExceptionInfo;
 import clojure.lang.ExceptionInfo;
 import clojure.lang.IPersistentMap;
+import clojure.lang.ILookup;
 
 import manifold.deferred.IDeferredListener;
+import manifold.deferred.IMutableDeferred;
 
-public final class MDM {
+public final class MDM implements ILookup {
 
     private static final CancellationException CANCEL_EX = createCancelEx("mdm is cancelled");
     private static CancellationException createCancelEx(String msg) {
@@ -60,50 +62,6 @@ public final class MDM {
     public final Object tracer;
     public final Object token;
 
-    private static final class YankFreezer implements IDeferredListener {
-
-        private static final Keyword YANKED_POY = Keyword.intern("knitty", "yanked-poy");
-        private static final Keyword FAILED_POY = Keyword.intern("knitty", "failed-poy");
-        private static final Keyword YANKED_YARNS = Keyword.intern("knitty", "yanked-yarns");
-
-        private final MDM mdm;
-        private final KDeferred result;
-        private final Object yarns;
-
-		private YankFreezer(MDM mdm, KDeferred result, Object yarns) {
-			this.mdm = mdm;
-            this.result = result;
-            this.yarns = yarns;
-		}
-
-		public Object onSuccess(Object v) {
-		    result.success(mdm.freeze(), mdm.token);
-		    return null;
-		}
-
-		public Object onError(Object e) {
-            Associative fpoy = mdm.freeze();
-		    IPersistentMap exdata = (e instanceof IExceptionInfo) ? ((IExceptionInfo) e).getData() : null;
-
-            if (exdata == null) {
-                exdata = new PersistentArrayMap(
-                    new Object[] {
-                        YANKED_YARNS, yarns,
-                        YANKED_POY, mdm.inputs,
-                        FAILED_POY, fpoy,
-                    });
-            } else {
-		        exdata = exdata
-                    .assoc(YANKED_YARNS, yarns)
-		            .assoc(YANKED_POY, mdm.inputs)
-                    .assoc(FAILED_POY, fpoy);
-            }
-		    Throwable ex = new ExceptionInfo("failed to yank", exdata, (Throwable) e);
-		    result.error(ex, mdm.token);
-		    return null;
-		}
-	}
-
 	private static class KVCons {
 
         public final KVCons next;
@@ -133,38 +91,54 @@ public final class MDM {
         return a1x == null ? a11 : a1x;
     }
 
-    public static KDeferred yank0(Associative inputs, YarnProvider yp, Iterable<?> yarns, Object tracer) {
-
-        MDM mdm = new MDM(inputs, yp, tracer);
+    public KDeferred yank(Iterable<?> yarns) {
         ArrayList<KDeferred> ds = new ArrayList<>();
 
         for (Object x : yarns) {
-
             KDeferred r;
             if (x instanceof Keyword) {
-                int i0 = mdm.kwm.getr((Keyword) x);
-                //if (i0 == null) {
-                //    throw new IllegalArgumentException("unknown yarn " + x);
-                //}
-                r = mdm.fetch(i0);
+                int i0 = this.kwm.getr((Keyword) x);
+                r = this.fetch(i0);
             } else {
                 Yarn y = (Yarn) x;
-                int i0 = mdm.kwm.getr(y.key());
-                r = mdm.fetch(i0, y);
+                int i0 = this.kwm.getr(y.key());
+                r = this.fetch(i0, y);
             }
-
             if (r.state != KDeferred.STATE_SUCC) {
                 ds.add(r);
             }
         }
 
         if (ds.isEmpty()) {
-            return KDeferred.wrap(mdm.freeze());
+            return KDeferred.wrap(this);
         } else {
-            KDeferred result = new KDeferred(mdm.token);
-            KAwaiter.awaitIter(new YankFreezer(mdm, result, yarns), ds.iterator());
-            return KDeferred.revoke(result, mdm::cancel);
+            KDeferred result = new KDeferred(this.token);
+            KAwaiter.awaitIter(result.chainFromSupplierCallback(() -> this, token), ds.iterator());
+            return result;
         }
+    }
+
+    public Object valAt(Object key) {
+        return this.valAt(key, null);
+    }
+
+    public Object valAt(Object key, Object fallback) {
+        if (!(key instanceof Keyword)) {
+            return inputs.valAt(key, fallback);
+        }
+
+        Keyword k = (Keyword) key;
+
+        int i = kwm.getr(k); // fixme
+        int i0 = i >> ASHIFT;
+        int i1 = i & AMASK;
+
+        KDeferred[] a1 = (KDeferred[]) AR0.getVolatile(a0, i0);
+        if (a1 == null) {
+            return fallback;
+        }
+        KDeferred v = (KDeferred) AR1.getVolatile(a1, i1);
+        return v == null ? inputs.valAt(key, fallback) : v.unwrap();
     }
 
     public KDeferred fetch(int i) {
@@ -245,7 +219,7 @@ public final class MDM {
         return y;
     }
 
-    Associative freeze() {
+    public Associative freeze() {
         if (inputs instanceof IEditableCollection) {
             ITransientAssociative t = (ITransientAssociative) ((IEditableCollection) inputs).asTransient();
             for (KVCons a = added; a != null; a = a.next) {
@@ -261,7 +235,7 @@ public final class MDM {
         }
     }
 
-    void cancel() {
+    public void cancel() {
         for (KVCons a = added; a != null; a = a.next) {
             a.d.error(CANCEL_EX, token);
         }

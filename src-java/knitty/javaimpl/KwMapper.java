@@ -66,10 +66,6 @@ public final class KwMapper {
 
     public int getr(Keyword k) {
 
-        if (ncol > 8) {
-            return getr0(k);
-        }
-
         int h = System.identityHashCode(k) & (ksar.length - 1);
         for (int i = ncol; i >= 0; i--) {
             int t = ksar[h];
@@ -82,7 +78,9 @@ public final class KwMapper {
             h = h < ksar.length ? h + 1 : 0;
         }
 
-        invalidateKsar();
+        if (ncol < 8) {
+            invalidateKsar();
+        }
         return getr0(k);
     }
 

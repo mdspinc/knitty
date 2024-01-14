@@ -51,6 +51,9 @@
 (definline kd-chain-from [kd d token]
   `(let [^KDeferred x# ~kd] (.chainFrom x# ~d ~token)))
 
+(definline kd-chain [d vf ef]
+  `(let [^KDeferred x# ~d] (.chain x# ~vf ~ef)))
+
 (defmacro kd-await
   ([ls]
    `(KAwaiter/await ~ls))

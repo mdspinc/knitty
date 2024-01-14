@@ -5,6 +5,7 @@ import java.lang.invoke.VarHandle;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 import clojure.lang.AFn;
 import clojure.lang.IFn;
@@ -655,6 +656,41 @@ public final class KDeferred
             this.success(x, token);
         }
         return this;
+    }
+
+    public KDeferred chain(IFn vf, IFn ef) {
+        KDeferred d = new KDeferred(this.token);
+        this.addListener(new IDeferredListener() {
+            public Object onSuccess(Object v) {
+                Object x;
+                try {
+                    x = vf.invoke(v);
+                } catch (Throwable e) {
+                    d.error(e, token);
+                    return null;
+                }
+                d.success(x, token);
+                return null;
+            }
+            public Object onError(Object e) {
+                d.error(ef.invoke(e), token);
+                return null;
+            }
+        });
+        return d;
+    }
+
+    public IDeferredListener chainFromSupplierCallback(Supplier<?> s, Object token) {
+        return new IDeferredListener() {
+            public Object onSuccess(Object e) {
+                KDeferred.this.success(s.get(), token);
+                return null;
+            }
+            public Object onError(Object e) {
+                KDeferred.this.error(e, token);
+                return null;
+            }
+        };
     }
 
     public static KDeferred create() {
