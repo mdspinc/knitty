@@ -139,10 +139,11 @@
     `(make-yankfn ~yctx ~yk ~args)))
 
 
-(defn force-lazy-result [v]
-  (if (instance? Lazy v)
-    @v
-    v))
+(defmacro force-lazy-result [v]
+  `(let [v# ~v]
+     (if (instance? Lazy v#)
+       @v#
+       v#)))
 
 
 (defn resolve-executor-var [e]
@@ -208,7 +209,7 @@
 
         coerce-deferred (if (param-types :lazy)
                           `force-lazy-result
-                          `identity)
+                          `do)
 
         deref-syncs
         (mapcat identity

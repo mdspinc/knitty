@@ -590,6 +590,10 @@ public final class KDeferred
                 throw Util.sneakyThrow((Throwable) value);
         }
 
+        if (ms <= 0) {
+            return timeoutValue;
+        }
+
         try {
             acquireCountdDownLatch().await(ms, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
