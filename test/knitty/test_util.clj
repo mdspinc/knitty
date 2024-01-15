@@ -67,6 +67,13 @@
       (finally (clear-known-yarns!)))))
 
 
+(defn tracing-enabled-fixture
+  [tracing-enabled]
+  (fn [t]
+    (binding [knitty.core/*tracing* (boolean tracing-enabled)]
+      (t))))
+
+
 (def benchmark-opts
   (->
    (if (some? (System/getenv "knitty_qb"))

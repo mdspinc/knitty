@@ -1,19 +1,22 @@
 (ns knitty.bench1
-  (:require [knitty.core :refer [yank]]
-            [knitty.javaimpl :as ji]
+  (:require [clojure.test :as t :refer [deftest  testing]]
+            [knitty.core :refer [yank]]
             [knitty.test-util :refer :all]
-            [clojure.test :as t :refer [deftest testing use-fixtures]]
-            [manifold.debug :as debug]
-            [manifold.deferred :as md]
-            [manifold.deferred :as d]))
+            [manifold.deferred :as md]))
 
 
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* true)
 
+(t/use-fixtures :once
+  (t/join-fixtures
+   [(tracing-enabled-fixture false)
+    (report-benchmark-fixture)]))
 
-(use-fixtures :once (report-benchmark-fixture))
-(use-fixtures :each (clear-known-yarns-fixture))
+
+(t/use-fixtures :each
+  (t/join-fixtures
+   [(clear-known-yarns-fixture)]))
 
 #_
 (deftest ^:benchmark bench-deferred
@@ -26,35 +29,35 @@
                (create-d))
         (bench :listener
                (let [d (create-d)]
-                 (d/add-listener! d (d/listener (fn [_]) nil))
-                 (d/success! d 1)))
+                 (md/add-listener! d (md/listener (fn [_]) nil))
+                 (md/success! d 1)))
         (bench :add-listener-3
                (let [d (create-d)]
-                 (d/add-listener! d (d/listener (fn [_]) nil))
-                 (d/add-listener! d (d/listener (fn [_]) nil))
-                 (d/add-listener! d (d/listener (fn [_]) nil))
-                 (d/success! d 1)))
+                 (md/add-listener! d (md/listener (fn [_]) nil))
+                 (md/add-listener! d (md/listener (fn [_]) nil))
+                 (md/add-listener! d (md/listener (fn [_]) nil))
+                 (md/success! d 1)))
         (bench :add-listener-10
                (let [d (create-d)]
                  (dotimes [_ 10]
-                   (d/add-listener! d (d/listener (fn [_]) nil)))
-                 (d/success! d 1)))
+                   (md/add-listener! d (md/listener (fn [_]) nil)))
+                 (md/success! d 1)))
         (bench :add-listener-33
                (let [d (create-d)]
                  (dotimes [_ 33]
-                   (d/add-listener! d (d/listener (fn [_]) nil)))
-                 (d/success! d 1)))
+                   (md/add-listener! d (md/listener (fn [_]) nil)))
+                 (md/success! d 1)))
         (bench :suc-add-listener
                (let [d (create-d)]
-                 (d/success! d 1)
-                 (d/add-listener! d (d/listener (fn [_]) nil))))
+                 (md/success! d 1)
+                 (md/add-listener! d (md/listener (fn [_]) nil))))
         (bench :success-get
                (let [d (create-d)]
-                 (d/success! d 1)
-                 (d/success-value d 2)))
+                 (md/success! d 1)
+                 (md/success-value d 2)))
         (bench :success-deref
                (let [d (create-d)]
-                 (d/success! d 1)
+                 (md/success! d 1)
                  @d)))))
   )
 
@@ -131,10 +134,10 @@
                       `(~f
                         (reduce
                          (fn [a# ~'x]
-                           (d/chain'
+                           (md/chain'
                             a#
                             (fn [aa#]
-                              (d/chain'
+                              (md/chain'
                                ~(if (= :lazy tt) `(deref ~'x) 'x)
                                (fn [xx#] (unchecked-add aa# xx#))))))
                          ~i

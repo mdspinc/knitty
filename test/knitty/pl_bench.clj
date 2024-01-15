@@ -1,12 +1,16 @@
 (ns knitty.pl-bench
-  (:require [clojure.test :refer [deftest]]
+  (:require [clj-async-profiler.core :as prof]
+            [clojure.test :as t :refer [deftest]]
             [knitty.core :refer [defyarn yank]]
-            [knitty.test-util :refer [bench]]
+            [knitty.test-util :refer [bench tracing-enabled-fixture]]
             [plumbing.core :as pc]
-            [plumbing.graph :as pg]
-            [clj-async-profiler.core :as prof]))
+            [plumbing.graph :as pg]))
 
-(alter-var-root #'knitty.core/*tracing* (constantly false))
+
+(t/use-fixtures :once
+  (t/join-fixtures
+   [(tracing-enabled-fixture false)]))
+
 
 (defn stats-fn
   [xs]
