@@ -118,6 +118,10 @@ Working with raw deferred may be useful to handle expected exceptions.
 
 ## TODO ...
 
+- Optional dependencies (:maybe)
+- Multiyarns & routing
+- Dynamic dependencies (:yankfn)
+- Revokation & cancelling
 - Execution model
 - Use with specs
 - Abstract yarns
@@ -125,3 +129,4 @@ Working with raw deferred may be useful to handle expected exceptions.
 - Tracing
 - View traces and debugging
 - Capture timings
+- ...
