@@ -23,18 +23,10 @@ import clojure.lang.ILookup;
 import manifold.deferred.IDeferredListener;
 import manifold.deferred.IMutableDeferred;
 
-public final class MDM implements ILookup {
-
-    private static final CancellationException CANCEL_EX = createCancelEx("mdm is cancelled");
-
-    private static CancellationException createCancelEx(String msg) {
-        CancellationException e = new CancellationException(msg);
-        e.setStackTrace(new StackTraceElement[0]);
-        return e;
-    }
+public final class YankCtx implements ILookup {
 
     private static final Object NONE = new Object();
-
+    private static final int NOTRANSIENT_SIZE = 3;
     private static final int ASHIFT = 5;
     private static final int ASIZE = 1 << ASHIFT;
     private static final int AMASK = ASIZE - 1;
@@ -48,8 +40,8 @@ public final class MDM implements ILookup {
     static {
         try {
             MethodHandles.Lookup l = MethodHandles.lookup();
-            ADDED = l.findVarHandle(MDM.class, "added", KVCons.class);
-            FROZEN = l.findVarHandle(MDM.class, "frozen", Boolean.TYPE);
+            ADDED = l.findVarHandle(YankCtx.class, "added", KVCons.class);
+            FROZEN = l.findVarHandle(YankCtx.class, "frozen", Boolean.TYPE);
         } catch (ReflectiveOperationException var1) {
             throw new ExceptionInInitializerError(var1);
         }
@@ -79,7 +71,7 @@ public final class MDM implements ILookup {
         }
     }
 
-    public MDM(Associative inputs, YarnProvider yp, Object tracer) {
+    public YankCtx(Associative inputs, YarnProvider yp, Object tracer) {
         this.kwm = KwMapper.getIntance();
         this.inputs = inputs;
         this.yankerProvider = yp;
@@ -215,11 +207,12 @@ public final class MDM implements ILookup {
         if (added == null) {
             return inputs;
         }
+
         int c = 0;
-        for (KVCons a = added; c < 3 && a != null; a = a.next)
+        for (KVCons a = added; c < NOTRANSIENT_SIZE && a != null; a = a.next)
             c++;
 
-        if (c == 3 && inputs instanceof IEditableCollection) {
+        if (c == NOTRANSIENT_SIZE && inputs instanceof IEditableCollection) {
             ITransientAssociative t = (ITransientAssociative) ((IEditableCollection) inputs).asTransient();
             for (KVCons a = added; a != null; a = a.next) {
                 t = t.assoc(a.k, a.d.unwrap());
@@ -237,23 +230,27 @@ public final class MDM implements ILookup {
     public IDeferredListener canceller() {
         return new IDeferredListener() {
             public Object onSuccess(Object _v) {
-                if (!frozen) cancel();
+                if (!frozen) cancel(null);
                 return null;
             }
-            public Object onError(Object _e) {
-                if (!frozen) cancel();
+            public Object onError(Object e) {
+                if (!frozen) cancel((Throwable) e);
                 return null;
             }
         };
     }
 
-    public void cancel() {
+    public void cancel(Throwable cause) {
         if ((boolean) FROZEN.getAndSet(this, true)) {
             throw new IllegalStateException("yankctx is already frozen");
         }
+        CancellationException ex = new CancellationException("mdm is cancelled");
+        if (cause != null) {
+            ex.addSuppressed(ex);
+        }
         KVCons added = this.added;
         for (KVCons a = added; a != null; a = a.next) {
-            a.d.error(CANCEL_EX, token);
+            a.d.error(ex, token);
         }
     }
 }
