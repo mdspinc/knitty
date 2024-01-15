@@ -15,6 +15,7 @@
   {:sync   ""
    :defer  "[defer]"
    :lazy   "[lazy]"
+   :maybe  "[maybe]"
    :ref    "[ref]"
    :yankfn "[yankfn]"})
 

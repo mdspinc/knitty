@@ -232,15 +232,17 @@
        :arrowhead (cond
                     (= :ref type)            "none"
                     (= :sync type)           "none"
-                    (= :defer type)          "odot"
+                    (= :defer type)          "dot"
+                    (= :maybe type)          "odot"
                     (= :route type)          "invempty"
-                    (= :lazy type)           "odiamond"
+                    (= :lazy type)           "diamond"
                     (= :changed-input type)  "none"
                     :else                    "none")
        :constraint  (not= type :changed-input)
        :style (cond
-                cause                   "bold"
                 (not used)              "dotted"
+                (= type :maybe)         "dashed"
+                cause                   "bold"
                 (= type :changed-input) "dotted"
                 :else                   "solid")})
                 }))
