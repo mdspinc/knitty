@@ -109,6 +109,9 @@
   clojure.lang.IDeref
   (deref [_] (yarn-get-impl yk ykey ykeyi yctx))
 
+  clojure.lang.IFn
+  (invoke [_] (yarn-get-impl yk ykey ykeyi yctx))
+
   Object
   (toString [_] (str "#knitty/Lazy[" ykey "]")))
 
