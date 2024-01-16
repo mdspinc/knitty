@@ -4,6 +4,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -26,8 +27,8 @@ import manifold.deferred.IMutableDeferred;
 public final class YankCtx implements ILookup {
 
     private static final Object NONE = new Object();
-    private static final int NOTRANSIENT_SIZE = 3;
-    private static final int ASHIFT = 5;
+    private static final int NOTRANSIENT_SIZE = 2;
+    private static final int ASHIFT = 4;
     private static final int ASIZE = 1 << ASHIFT;
     private static final int AMASK = ASIZE - 1;
 
@@ -88,22 +89,42 @@ public final class YankCtx implements ILookup {
     }
 
     public void yank(Iterable<?> yarns, IDeferredListener callback) {
-        ArrayList<KDeferred> ds = new ArrayList<>();
+
+        int di = 0;
+        KDeferred[] ds = null;
+
         for (Object x : yarns) {
             KDeferred r;
             if (x instanceof Keyword) {
-                int i0 = this.kwm.getr((Keyword) x);
+                int i0 = this.kwm.getr((Keyword) x, true);
+                if (i0 == -1) {
+                    callback.onError(new IllegalArgumentException("unknown yarn " + x));
+                    return;
+                }
                 r = this.fetch(i0);
             } else {
                 Yarn y = (Yarn) x;
-                int i0 = this.kwm.getr(y.key());
+                int i0 = this.kwm.getr(y.key(), true);
+                if (i0 == -1) {
+                    callback.onError(new IllegalArgumentException("unknown yarn " + y.key()));
+                    return;
+                }
                 r = this.fetch(i0, y);
             }
             if (r.state != KDeferred.STATE_SUCC) {
-                ds.add(r);
+                if (di == 0) {
+                    ds = new KDeferred[8];
+                } if (di == ds.length) {
+                    ds = Arrays.copyOf(ds, ds.length * 2);
+                }
+                ds[di++] = r;
             }
         }
-        KAwaiter.awaitIter(callback, ds.iterator());
+        switch (di) {
+            case 0:  callback.onSuccess(null); return;
+            case 1:  ds[0].addListener(callback); return;
+            default: KAwaiter.awaitArr(callback, ds, di); return;
+        }
     }
 
     public Object valAt(Object key) {
@@ -111,26 +132,27 @@ public final class YankCtx implements ILookup {
     }
 
     public Object valAt(Object key, Object fallback) {
-        if (!(key instanceof Keyword)) {
-            return inputs.valAt(key, fallback);
+        if ((key instanceof Keyword)) {
+            Keyword k = (Keyword) key;
+            if (k.getNamespace() != null) {
+                int i = kwm.getr(k, false);
+                if (i != -1) {
+                    int i0 = i >> ASHIFT;
+                    int i1 = i & AMASK;
+                    KDeferred[] a1 = (KDeferred[]) AR0.getVolatile(a0, i0);
+                    if (a1 != null) {
+                        KDeferred v = (KDeferred) AR1.getVolatile(a1, i1);
+                        if (v != null) {
+                            return v.unwrap();
+                        }
+                    }
+                }
+            }
         }
-
-        Keyword k = (Keyword) key;
-
-        int i = kwm.getr(k); // fixme
-        int i0 = i >> ASHIFT;
-        int i1 = i & AMASK;
-
-        KDeferred[] a1 = (KDeferred[]) AR0.getVolatile(a0, i0);
-        if (a1 == null) {
-            return fallback;
-        }
-        KDeferred v = (KDeferred) AR1.getVolatile(a1, i1);
-        return v == null ? inputs.valAt(key, fallback) : v.unwrap();
+        return inputs.valAt(key, fallback);
     }
 
     public KDeferred pull(int i) {
-
         int i0 = i >> ASHIFT;
         int i1 = i & AMASK;
 
@@ -244,7 +266,7 @@ public final class YankCtx implements ILookup {
         if ((boolean) FROZEN.getAndSet(this, true)) {
             throw new IllegalStateException("yankctx is already frozen");
         }
-        CancellationException ex = new CancellationException("mdm is cancelled");
+        CancellationException ex = new CancellationException("yankctx is cancelled");
         if (cause != null) {
             ex.addSuppressed(ex);
         }

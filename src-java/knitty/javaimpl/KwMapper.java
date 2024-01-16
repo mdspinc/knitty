@@ -9,7 +9,7 @@ import clojure.lang.Keyword;
 
 public final class KwMapper {
 
-    private static int INIT_SIZE = 4;
+    private static int INIT_SIZE = 4;  // pow of 2!
     private static KwMapper INSTANCE = new KwMapper();
 
     public static KwMapper getIntance() {
@@ -56,39 +56,38 @@ public final class KwMapper {
         return ksa[i];
     }
 
-    private int getr0(Keyword k) {
-        Integer r = ksm.get(k);
-        if (r == null) {
-            throw new IllegalArgumentException("unknown yarn " + k);
-        }
-        return r.intValue();
-    }
+    public int getr(Keyword k, boolean cache) {
 
-    public int getr(Keyword k) {
+        int m = ksar.length - 1;
+        int h = k.hasheq();
+        h = (h ^ (h >>> 16)) & m;
 
-        int h = System.identityHashCode(k) & (ksar.length - 1);
         for (int i = ncol; i >= 0; i--) {
             int t = ksar[h];
             if (ksa[t] == k) {
                 return t;
             }
             if (t == 0) {
-                return (ksar[h] = getr0(k));
+                int r = ksm.getOrDefault(k, -1).intValue();
+                if (cache && r != -1) ksar[h] = r;
+                return r;
             }
-            h = h < ksar.length ? h + 1 : 0;
+            h = (h + 1) & m;
         }
 
-        if (ncol < 8) {
+        if (cache && ncol < 8) {
+            // dont put items when >8 collisions, just fallback to map
             invalidateKsar();
         }
-        return getr0(k);
+
+        return ksm.getOrDefault(k, -1).intValue();
     }
 
     private synchronized void invalidateKsar() {
 
         int ncap = Integer.highestOneBit(ksar.length) * 2;
         int maxcap = Integer.highestOneBit(ksm.size() * 32);
-        int maxcol = Integer.max(0, (int) Math.log((float) ksar.length / maxcap) + 3);
+        int maxcol = Integer.max(0, (int) (Math.log((float) ksar.length / maxcap) + Math.E));
 
         if (ncol < maxcol || ncap >= maxcap) {
             ncol++;

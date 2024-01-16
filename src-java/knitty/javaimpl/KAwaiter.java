@@ -147,6 +147,17 @@ public final class KAwaiter {
         }
     }
 
+    public static void awaitArr(IDeferredListener ls, KDeferred[] ds, int len) {
+        for (int i = len - 1; i >= 0; --i) {
+            KDeferred d = ds[i];
+            if (d.state != OK) {
+                d.addListener(new Arr(i - 1, ls, ds));
+                return;
+            }
+        }
+        ls.onSuccess(null);
+    }
+
     public static void awaitArr(IDeferredListener ls, KDeferred... ds) {
         for (int i = ds.length - 1; i >= 0; --i) {
             KDeferred d = ds[i];
