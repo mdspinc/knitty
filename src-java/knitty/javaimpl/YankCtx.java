@@ -20,14 +20,15 @@ import clojure.lang.IExceptionInfo;
 import clojure.lang.ExceptionInfo;
 import clojure.lang.IPersistentMap;
 import clojure.lang.ILookup;
-
+import manifold.deferred.IDeferred;
 import manifold.deferred.IDeferredListener;
 import manifold.deferred.IMutableDeferred;
 
 public final class YankCtx implements ILookup {
 
     private static final Object NONE = new Object();
-    private static final int NOTRANSIENT_SIZE = 2;
+    private static final KVCons NIL = new KVCons(null, null, null);
+
     private static final int ASHIFT = 4;
     private static final int ASIZE = 1 << ASHIFT;
     private static final int AMASK = ASIZE - 1;
@@ -36,13 +37,10 @@ public final class YankCtx implements ILookup {
     private static final VarHandle AR1 = MethodHandles.arrayElementVarHandle(KDeferred[].class);
     private static final VarHandle YSC = MethodHandles.arrayElementVarHandle(Yarn[].class);
     private static final VarHandle ADDED;
-    private static final VarHandle FROZEN;
-
     static {
         try {
             MethodHandles.Lookup l = MethodHandles.lookup();
             ADDED = l.findVarHandle(YankCtx.class, "added", KVCons.class);
-            FROZEN = l.findVarHandle(YankCtx.class, "frozen", Boolean.TYPE);
         } catch (ReflectiveOperationException var1) {
             throw new ExceptionInInitializerError(var1);
         }
@@ -50,7 +48,7 @@ public final class YankCtx implements ILookup {
 
     final Associative inputs;
     private volatile KVCons added;
-    private volatile boolean frozen;
+
     private final KDeferred[][] a0;
     private final KwMapper kwm;
     private final Yarn[] yarnsCache;
@@ -79,6 +77,7 @@ public final class YankCtx implements ILookup {
         this.yarnsCache = yp.ycache();
         this.tracer = tracer;
         this.token = new Object();
+        this.added = NIL;
         this.a0 = new KDeferred[((this.kwm.maxi() + AMASK) >> ASHIFT)][];
     }
 
@@ -124,6 +123,23 @@ public final class YankCtx implements ILookup {
             case 0:  callback.onSuccess(null); return;
             case 1:  ds[0].addListener(callback); return;
             default: KAwaiter.awaitArr(callback, ds, di); return;
+        }
+    }
+
+    public KDeferred yank1(Object x) {
+        if (x instanceof Keyword) {
+            int i0 = this.kwm.getr((Keyword) x, true);
+            if (i0 == -1) {
+                return KDeferred.wrapErr(new IllegalArgumentException("unknown yarn " + x));
+            }
+            return this.fetch(i0);
+        } else {
+            Yarn y = (Yarn) x;
+            int i0 = this.kwm.getr(y.key(), true);
+            if (i0 == -1) {
+                return KDeferred.wrapErr(new IllegalArgumentException("unknown yarn " + y.key()));
+            }
+            return this.fetch(i0, y);
         }
     }
 
@@ -173,7 +189,7 @@ public final class YankCtx implements ILookup {
     public KDeferred fetch(int i) {
 
         KDeferred d = pull(i);
-        if (d.owned || d.owned()) {
+        if (d.owned()) {
             return d;
         }
 
@@ -184,17 +200,27 @@ public final class YankCtx implements ILookup {
         }
 
         Yarn y = this.yarn(i);
-        y.yank(this, d);
 
         KVCons a = added;
-        while (!ADDED.compareAndSet(this, a, new KVCons(a, k, d))) a = added;
+        while (a != null && !ADDED.compareAndSet(this, a, new KVCons(a, k, d))) a = added;
+
+        if (a == null) {
+            d.error(new IllegalStateException("yankctx is already frozen"), token);
+        } else {
+            y.yank(this, d);
+        }
+
         return d;
+    }
+
+    public Object token() {
+        return token;
     }
 
     public KDeferred fetch(int i, Yarn y) {
 
         KDeferred d = pull(i);
-        if (d.owned || d.owned()) {
+        if (d.owned()) {
             return d;
         }
 
@@ -204,10 +230,15 @@ public final class YankCtx implements ILookup {
             return d.chainFrom(x, token);
         }
 
-        y.yank(this, d);
-
         KVCons a = added;
-        while (!ADDED.compareAndSet(this, a, new KVCons(a, k, d))) a = added;
+        while (a != null && !ADDED.compareAndSet(this, a, new KVCons(a, k, d))) a = added;
+
+        if (a == null) {
+            d.error(new IllegalStateException("yankctx is already frozen"), token);
+        } else {
+            y.yank(this, d);
+        }
+
         return d;
     }
 
@@ -221,28 +252,32 @@ public final class YankCtx implements ILookup {
         return y;
     }
 
-    public Associative freeze() {
-        if ((boolean) FROZEN.getAndSet(this, true)) {
+    public KVCons freeze() {
+        KVCons a = (KVCons) ADDED.getAndSet(this, null);
+        if (a == null) {
             throw new IllegalStateException("yankctx is already frozen");
         }
-        KVCons added = this.added;
-        if (added == null) {
+        return a;
+    }
+
+    public boolean isFrozen() {
+        return added == null;
+    }
+
+    public Associative freezePoy() {
+        KVCons added = this.freeze();
+        if (added == NIL) {
             return inputs;
         }
-
-        int c = 0;
-        for (KVCons a = added; c < NOTRANSIENT_SIZE && a != null; a = a.next)
-            c++;
-
-        if (c == NOTRANSIENT_SIZE && inputs instanceof IEditableCollection) {
+        if (added.next.d != null && inputs instanceof IEditableCollection) {
             ITransientAssociative t = (ITransientAssociative) ((IEditableCollection) inputs).asTransient();
-            for (KVCons a = added; a != null; a = a.next) {
+            for (KVCons a = added; a.d != null; a = a.next) {
                 t = t.assoc(a.k, a.d.unwrap());
             }
             return (Associative) t.persistent();
         } else {
             Associative t = inputs;
-            for (KVCons a = added; a != null; a = a.next) {
+            for (KVCons a = added; a.d != null; a = a.next) {
                 t = t.assoc(a.k, a.d.unwrap());
             }
             return t;
@@ -252,26 +287,36 @@ public final class YankCtx implements ILookup {
     public IDeferredListener canceller() {
         return new IDeferredListener() {
             public Object onSuccess(Object _v) {
-                if (!frozen) cancel(null);
+                if (!isFrozen()) {
+                    cancel(null);
+                }
                 return null;
             }
             public Object onError(Object e) {
-                if (!frozen) cancel((Throwable) e);
+                if (!isFrozen()) {
+                    Throwable t;
+                    try {
+                        t = (Throwable) e;
+                    } catch (ClassCastException e1) {
+                        t = e1;
+                    }
+                    cancel(t);
+                }
                 return null;
             }
         };
     }
 
+    void cancel() {
+        cancel(null);
+    }
+
     public void cancel(Throwable cause) {
-        if ((boolean) FROZEN.getAndSet(this, true)) {
-            throw new IllegalStateException("yankctx is already frozen");
-        }
         CancellationException ex = new CancellationException("yankctx is cancelled");
         if (cause != null) {
             ex.addSuppressed(ex);
         }
-        KVCons added = this.added;
-        for (KVCons a = added; a != null; a = a.next) {
+        for (KVCons a = this.freeze(); a.d != null; a = a.next) {
             a.d.error(ex, token);
         }
     }
