@@ -54,6 +54,9 @@
 (definline kd-chain-from [kd d token]
   `(let [^KDeferred x# ~kd] (.chainFrom x# ~d ~token)))
 
+(defmacro kd-after* [d val]
+  `(let [^KDeferred x# ~d, f# (fn [_#] ~val)] (.chain x# f# f#)))
+
 (definline kd-chain [d vf ef]
   `(let [^KDeferred x# ~d] (.chain x# ~vf ~ef)))
 

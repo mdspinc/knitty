@@ -12,6 +12,13 @@
   (#{"1" "true" "yes"} (System/getProperty "knitty.elide-tracing")))
 
 
+(defmacro if-tracing
+  ([trace-body]
+   (when-not elide-tracing trace-body))
+  ([trace-body notrace-body]
+   (if elide-tracing notrace-body trace-body)))
+
+
 (defprotocol Tracer
   (trace-start [_ yk kind deps])
   (trace-call [_ yk])
@@ -303,11 +310,12 @@
     (or (-> poy meta :knitty/trace)
         (-> poy :knitty/trace))
 
-    (vector? poy)
-    (-> poy second meta :knitty/trace)
-
     (instance? clojure.lang.IExceptionInfo poy)
     (:knitty/trace (ex-data poy))
+
+    (and (md/deferred? poy)
+         (:knitty/trace (meta poy)))
+    (:knitty/trace (meta poy))
 
     (md/deferred? poy)
     @(md/catch (md/chain poy find-traces) find-traces)))

@@ -5,18 +5,24 @@
             [clojure.java.browse]
             [clojure.java.browse-ui]
             [clojure.java.shell]
-            [clojure.spec.alpha :as s]
-            [manifold.deferred :as md]))
+            [clojure.spec.alpha :as s]))
 
 
-;; mapping {keyword => Yarn}
 (def ^:dynamic *registry* (impl/create-registry))
-(def ^:dynamic *tracing* (not trace/elide-tracing))
+(def ^:dynamic *tracing* false)
+
+
+(defn enable-tracing!
+  "Globally enable knitty tracing."
+  ([]
+   (enable-tracing! true))
+  ([enable]
+    (alter-var-root #'*tracing* (constantly (boolean enable)))))
 
 
 (defn register-yarn
   "Registers Yarn into the global registry, do nothing when
-   yarn is already registed and no-override is true."
+   yarn is already registed and no-override flag is true."
   ([yarn]
    (register-yarn yarn false))
   ([yarn no-override]
@@ -69,9 +75,9 @@
   (let [k (keyword (or (namespace nm)
                        (-> *ns* ns-name name))
                    (name nm))]
-     `(do (register-yarn (impl/fail-always-yarn ~k ~(str "declared-only yarn " k)) true)
-          ~(when (simple-ident? nm) `(def ~nm ~k))
-          ~k)))
+    `(do (register-yarn (impl/fail-always-yarn ~k ~(str "declared-only yarn " k)) true)
+         ~(when (simple-ident? nm) `(def ~nm ~k))
+         ~k)))
 
 
 (defn link-yarn
@@ -84,7 +90,7 @@
 
 (defn- resolve-sym-or-kw
   ([env]
-    (partial resolve-sym-or-kw env))
+   (partial resolve-sym-or-kw env))
   ([env k]
    (if (keyword? k)
      k
@@ -92,13 +98,6 @@
        (when-not (qualified-keyword? v)
          (throw (ex-info "yarn bindings must be qualified keyword" {::binding k})))
        v))))
-
-
-(def update-vals'
-  (or
-   (requiring-resolve 'clojure.core/update-vals)
-   (fn update-vals [m f]
-     (into {} (map (fn [[k v]] [k (f v)])) m))))
 
 
 (defmacro yarn
@@ -110,13 +109,16 @@
     (let [bd (cons k exprs)
           cf (s/conform ::yarn bd)]
       (when (s/invalid? cf)
-        (throw (Exception. (s/explain-str ::yarn bd))))
+        (throw (Exception. (str (s/explain-str ::yarn bd)))))
       (let [{{:keys [bind body]} :bind-and-body} cf
-            bind (update-vals' bind (fn [[t k]]
-                         (case t
-                           :ident (resolve-sym-or-kw &env k)
-                           :yankfn-map (update-vals' k (resolve-sym-or-kw &env)))))
-            ]
+            bind (into {}
+                       (for [[k [vt vv]] bind]
+                         [k
+                          (case vt
+                            :ident (resolve-sym-or-kw &env vv)
+                            :yankfn-map (into {}
+                                              (for [[x y] vv]
+                                                [x (resolve-sym-or-kw &env y)])))]))]
         (impl/gen-yarn k bind `(do ~@body))))))
 
 
@@ -156,11 +158,11 @@
                    (clojure.core/name name))]
 
     (when (s/invalid? cf)
-      (throw (Exception. (s/explain-str ::defyarn bd))))
+      (throw (Exception. (str (s/explain-str ::defyarn bd)))))
 
     (let [{doc :doc, {:keys [bind body]} :bind-and-body} cf
           [nm m] (pick-yarn-meta name (meta bind) doc)
-          bind (update-vals' bind second)
+          bind (into {} (for [[k [_ y]] bind] [k y]))
           spec (:spec m)
           bind (when bind (with-meta bind m))
           y (if (empty? body)
@@ -184,7 +186,7 @@
          spec (:spec m)]
      (list
       `do
-       (when spec `(s/def ~k ~spec))
+      (when spec `(s/def ~k ~spec))
       `(register-yarn ~my)
       `(def ~name ~k)))))
 
@@ -198,61 +200,79 @@
        )))
 
 
-(defn- yarn-multifn
-  [yarn]
-  (impl/yarn-multifn (if (keyword? yarn) (get *registry* yarn) yarn)))
-
-
 (defn yarn-prefer-method
   "Causes the multiyarn to prefer matches of dispatch-val-x over dispatch-val-y"
   [yarn dispatch-val-x dispatch-val-y]
-  (prefer-method (yarn-multifn yarn)
-                 dispatch-val-x dispatch-val-y))
+  (let [y (if (keyword? yarn) (get *registry* yarn) yarn)
+        m (impl/yarn-multifn y)]
+    (prefer-method m dispatch-val-x dispatch-val-y)))
 
 
 (defn yank
   "Computes and adds missing nodes into 'poy' map. Always returns deferred."
   [poy yarns]
-  (if *tracing*
-    (impl/yank0 poy
-                yarns
-                *registry*
-                (trace/create-tracer poy yarns))
-    (impl/yank0 poy
-                yarns
-                *registry*)))
+  (let [yarns (condp instance? yarns
+                java.lang.Iterable   yarns
+                clojure.lang.Keyword [yarns]
+                knitty.javaimpl.Yarn [yarns]
+                (vec yarns))
+        t (trace/if-tracing (when *tracing* (trace/create-tracer poy yarns)))
+        r (impl/yank' poy yarns *registry* t)]
+    (trace/if-tracing
+     (if t
+       (let [td (delay (trace/capture-trace! t))]
+         (reset-meta! r {:knitty/trace (ji/kd-after* r @td)})
+         (ji/kd-chain r
+                      (fn [x] (vary-meta x update :knitty/trace conj @td))
+                      (fn [e] (throw (ex-info
+                                      (ex-message e)
+                                      (assoc (ex-data e) :knitty/trace @td)
+                                      (ex-cause e))))))
+       r)
+     r)))
+
+
+(defn yank1
+  "Computes and returns a single node. Logically similar to
+
+   ```clojure
+   (chain (yank poy [::yarn-key]) ::yarn-key)
+   ```
+   "
+  [poy yarn]
+  (let [t (trace/if-tracing (when *tracing* (trace/create-tracer poy [yarn])))
+        r (impl/yank1' poy yarn *registry* t)]
+    (trace/if-tracing
+     (if t
+       (let [td (delay (trace/capture-trace! t))]
+         (reset-meta! r {:knitty/trace (ji/kd-after* r @td)})
+         (ji/kd-chain r
+                      identity
+                      (fn [e] (throw (ex-info
+                                      (ex-message e)
+                                      (assoc (ex-data e) :knitty/trace @td)
+                                      (ex-cause e))))))
+       r)
+     r)))
 
 
 (defn yank-error?
   "Returns true when exception is rethrown by 'yank'."
   [ex]
-  (boolean (:knitty/yanked-yarns (ex-data ex))))
+  (:knitty/yank-error? (ex-data ex) false))
 
 
-(defmacro doyank
-  "Runs anonymous yarn, returns deferred with [map-of-yarns yarn-value].
-   Example:
-
-   (declare-yarn ::yarn1)
-   (defyarn yarn2 {x ::yarn1} (inc x))
-
-   @(doyank
-      {::yarn1 10}
-      {x ::yarn2}
-      (inc x))
-   ;; => [{::yarn1 10, ::yarn2 11, ::xxeayaes 12}, 12]
-   "
-  [poy binds & body]
-  (let [k (keyword (-> *ns* ns-name name) (name (gensym "doyank")))]
-    `(let [r# (yank ~poy [(yarn ~k ~binds (do ~@body))])]
-       (ji/kd-revoke
-        (md/chain' r# (juxt ~k identity))
-        (fn ~'doyank-cancel [] (md/error! r# (java.util.concurrent.CancellationException.)))
-        ))))
-
-
-(defmacro doyank!
-  "Similar to `doyank, but ruturn only deferred with yarns-map."
-  [poy binds & body]
-  (let [k (keyword (-> *ns* ns-name name) (name (gensym "doyank")))]
-    `(yank ~poy [(yarn ~k ~binds (do ~@body))])))
+(defn with-canceller
+  "Returns new deferred with attached canceller.
+   Canceller function is called when `yank` flow is stopped before source deferred is realized.
+  "
+  ([d cancel]
+   (ji/kd-revoke d
+                 (fn [_]
+                   (cancel))))
+  ([d cancel err-callback]
+   (ji/kd-revoke d
+                 (fn [x]
+                   (cancel)
+                   (when-not (nil? x)
+                     (err-callback x))))))
