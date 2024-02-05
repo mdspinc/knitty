@@ -9,7 +9,7 @@ import clojure.lang.Keyword;
 
 public final class KwMapper {
 
-    private static int INIT_SIZE = 4;  // pow of 2!
+    private static int INIT_SIZE = 64;  // pow of 2!
     private static KwMapper INSTANCE = new KwMapper();
 
     public static KwMapper getIntance() {

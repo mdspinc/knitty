@@ -7,7 +7,7 @@ import manifold.deferred.IDeferredListener;
 
 public final class KAwaiter {
 
-    private static int OK = KDeferred.STATE_SUCC;
+    private static byte OK = KDeferred.STATE_SUCC;
 
     public static void await(IDeferredListener ls) {
         ls.onSuccess(null);
