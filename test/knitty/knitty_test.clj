@@ -1,22 +1,12 @@
 (ns knitty.knitty-test
   {:clj-kondo/ignore [:inline-def]}
-  (:require [knitty.core :as knitty
-             :refer [defyarn doyank! yank yarn]]
-            [clojure.spec.alpha :as s]
+  (:require [clojure.spec.alpha :as s]
             [clojure.test :as t :refer [deftest is testing]]
+            [knitty.core :as knitty
+             :refer [defyarn yank yarn]]
+            [knitty.test-util :refer [do-defs]]
             [manifold.deferred :as md]
             [manifold.executor :as executor]))
-
-
-(defmacro do-defs
-  "eval forms one by one - allows to intermix defs"
-  [& body]
-    (list*
-     `do
-     (for [b body]
-       `(binding [*ns* *ns*]
-          (in-ns 'knitty.knitty-test)
-          (eval '~b)))))
 
 
 (deftest smoke-test
@@ -247,12 +237,7 @@
    (let [a (atom 0)]
      (is (= 3 (-> (yank {cnt a} [count3]) deref cnt deref))))
 
-   (let [a (atom 0)]
-     (is (= ::t @(-> (doyank! {cnt a} {x count3} x) (md/timeout! 30 ::t))))
-     (Thread/sleep 50)
-     (is (= 2 @a))))
-
-  )
+  ))
 
 
 (deftest yankfn-test

@@ -168,3 +168,14 @@
       (track-results (current-test-id)
                      (cc/benchmark-round-robin ~(mapv #(list `do %) (list* expr1 exprs))
                                                benchmark-opts)))))
+
+
+(defmacro do-defs
+  "eval forms one by one - allows to intermix defs"
+  [& body]
+  (list*
+   `do
+   (for [b body]
+     `(binding [*ns* *ns*]
+        (in-ns 'knitty.knitty-test)
+        (eval '~b)))))
