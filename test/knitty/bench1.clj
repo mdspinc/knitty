@@ -1,8 +1,10 @@
 (ns knitty.bench1
-  (:require [clojure.test :as t :refer [deftest  testing]]
-            [knitty.core :refer [yank]]
+  (:require [clojure.test :as t :refer [deftest testing]]
+            [knitty.core :refer [yank yank1]]
             [knitty.test-util :refer :all]
-            [manifold.deferred :as md]))
+            [manifold.debug :as debug]
+            [manifold.deferred :as md]
+            [knitty.javaimpl :as ji]))
 
 
 (set! *warn-on-reflection* true)
@@ -18,12 +20,11 @@
   (t/join-fixtures
    [(clear-known-yarns-fixture)]))
 
-#_
 (deftest ^:benchmark bench-deferred
 
   (binding [debug/*dropped-error-logging-enabled?* false]
     (doseq [[t create-d] [[:manifold #(md/deferred nil)]
-                          [:knitty #(ji/create-kd)]]]
+                          [:knitty #(ji/kd-create)]]]
       (testing t
         (bench :create
                (create-d))
@@ -81,10 +82,13 @@
 
 
 (defn- run-benchs [nodes]
-  (let [ps (map #(nth nodes %) (range 0 (count nodes) 20))]
+  (let [ps (map #(nth nodes %) (range 0 (count nodes) 20))
+        ls (last nodes)]
 
     (bench :yank-last
-           @(yank {} [(last nodes)]))
+           @(yank {} [ls]))
+    (bench :yank-last1
+           @(yank1 {} ls))
     (bench :yank-all
            @(yank {} nodes))
     (bench :seq-yank
@@ -161,8 +165,8 @@
    :deps linear-sync-deps
    :emit-body (fn [i & xs] `(mfut (reduce unchecked-add ~i [~@xs]) 10)))
 
-  (dotimes [i 100]
+  (dotimes [i 1000]
     (println ".. " i " / 100")
     (dotimes [_ 1000]
-      (binding [knitty.core/*tracing* false]
+      (binding [knitty.core/*tracing* (rand-nth [false true])]
         @(yank {} (random-sample 0.01 (nodes-range :node 0 500)))))))
