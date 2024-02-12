@@ -3,7 +3,7 @@
   :url "http://example.com/FIXME"
   :license {:name "MIT License" :url "http://opensource.org/licenses/MIT"}
 
-  :dependencies [[org.clojure/clojure "1.11.1"]
+  :dependencies [[org.clojure/clojure "1.10.0"]
                  [manifold/manifold "0.4.1"]
                  [org.hdrhistogram/HdrHistogram "2.1.12"]
                  [macroz/tangle "0.2.2"]]
