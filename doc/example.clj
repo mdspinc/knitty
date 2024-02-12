@@ -1,114 +1,166 @@
-(require 'manifold.deferred)
-(ns example
-  (:require [knitty.core :refer [defyarn defyarn-method defyarn-multi
-                                 doyank! link-yarn yank yarn]]
-            [knitty.tracetxt :refer [print-trace]]
-            [knitty.traceviz :refer [render-trace view-trace]]
-            [manifold.deferred :as md]))
+(require
+ '[manifold.deferred :as md])
+
+(require
+ '[knitty.core
+   :as kt
+   :refer [yarn
+           defyarn
+           defyarn-method
+           defyarn-multi
+           declare-yarn
+           link-yarn
+           yank
+           yank1]])
 
 
-(defyarn zero;; define "yarn" - single slot/value
-  {}         ;; no inputs
-  0) ;; value, use explicit `do when needed
+(defyarn zero    ;; define "yarn" - single slot/value
+  {}             ;; no dependencies
+  0)             ;; default value
+
+(type zero)
+;; => clojure.lang.Keyword
+
+(= zero ::zero)
+;; => true
 
 (yank {} [zero])
+;; => #knitty/D[#:user{:zero 0}]
+
+@(yank {} [zero])  ;; call 'deref
+;; => #:user{:zero 0}
+
+
 
 (defyarn one
-  {_ zero}   ;; wait for zero, but don't use it
-  1) ;; any manifold-like deferred can be finished
+  {z zero}   ;; assign value of ::zero yarn to local 'z
+  (inc z))   ;; any expression here
 
-(defyarn one-slooow
-  {}
-  (md/future (Thread/sleep (long (rand-int 20))) 1))
+@(yank {} [one])          ;; calc ::one
+;; => #:user{:zero 0, :one 1}
+
+@(yank {zero 0.0} [one])  ;; redefine ::zero value
+;; => #:user{:zero 0.0, :one 1.0}
+
+@(yank1 {zero 0.0} one)   ;; return only yanked yarn
+;; => 1.0
+
+
+
+(defyarn one-slow
+  {z zero}
+  (md/future              ;; expression may be deferred
+    (Thread/sleep (long (rand-int 20)))
+    (inc z)))
 
 (defyarn two
-  {^:defer x one
-   ^:defer y one-slooow}     ;; don't unwrap deferred (all values coerced to manifold/deffered)
-  (md/chain' (md/alt x y) inc))
+  {x one
+   y one-slow}            ;; knitty await and auto-deref deferreds
+  (+ x y))                ;; both x and y are numbers
+
+(defyarn three
+  {^:defer xd one-slow    ;; use raw 'deferred'
+   ^:defer yd one         ;; autowrap synchronous values via md/success-deferred
+   z two
+   }
+  (md/chain               ;; all functions from md/ can be used
+   (md/zip xd yd)         ;; including md/timeout!, md/let-flow, md/alt ...
+   (fn [[x y]]
+     (+ x y z))))
 
 
-(defyarn three-stategy {}
-  (rand-nth [::fast ::slow]))
 
-(defyarn-multi three three-stategy)
+(defyarn four-stategy     ;; how to compute "four"
+  {}
+  (condp < (rand)
+    0.8 "const"
+    0.5 "2*2"
+    0.1 "3+1"
+    ::unknown))
 
-(defyarn-method three ::fast {x one, y two}
-  (md/future
-    (Thread/sleep (long (rand-int 5))) (+ x y)))
+(defyarn-multi
+  four           ;; yarn name
+  four-stategy   ;; select implementation based on this value
+  )
 
-(defyarn-method three ::slow {x one, y two}
-  (md/future
-    (Thread/sleep (long (rand-int 10))) (+ x y)))
+(defyarn-method four "const" {} 4)
+(defyarn-method four "2*2" {x two} (md/future (* x x)))
+(defyarn-method four "3+1" {x one, y three} (+ x y))
+(defyarn-method four :default {s four-stategy} (throw (ex-info "unknown strategy" {::s s})))
+
+@(yank {four-stategy "2*2"} four)
+;; #:user{:four-stategy "2*2", :one-slow 1, :zero 0, :one 1, :two 2, :four 4}
+
+@(yank {four-stategy "const"} four)
+;; #:user{:four-stategy "const", :four 4}
 
 
-;; use raw keywords (not recommended)
-(defyarn four
-  {x ::one, y three}
-  (md/future (+ x y)))
 
+(declare-yarn five)  ;; define "abstract" yarn without implementation
 
-;; predeclare yarn without implementation
-(defyarn abs-three)
+(yank {} five)
+;; => #knitty/D[:err clojure.lang.ExceptionInfo "failed to yank"]
 
-;; link implementation
-(link-yarn abs-three three)
-
-(defyarn five
-  "doc string"               ;; doc
-  {x ::two, y abs-three}
-  (println "debug>>>" x y)
-  (+ x y))
-
-;; or
-
-(defyarn six
-  ^{:doc "doc string"}       ;; doc
-  ^{:spec number?}           ;; spec
-  {y ::three x ::two}
-  (println "debug>>>" x y)
+(defyarn ten
+  {x five       ;; but we can depend on it
+   y two}
   (* x y))
 
+(defyarn five-impl
+  {x one
+   y four}
+  (+ x y))
 
-@(yank {} [three])
+(link-yarn five five-impl)
 
-;; yank - ensure all keys are inside the map - finishs deferred
-@(yank {} [abs-three])
-@(yank {} [five])
-@(yank {one 1000} [four six])
+@(yank {} five)
+;; => #:user{:one-slow 1, :two 2, ...}
 
-@(yank {two 2000} [four five])
+
+
+@(yank1 {} ten)  ;; pick just one yarn, ignoring intermidiate results
+;; => 10
+
+;; override some yarns
+@(yank {two 2000, four 444} [ten])
 
 ;; dynamically create 'yarn - not recommended
-@(yank {} [(yarn ::eight {f ::four} (* f 2))])
+@(yank1 {} (yarn ::eight {f four} (* f 2)))
 
 ;; dynamically create 'yarn & capture locals
 (for [i (range 1 4)]
   @(yank {} [(yarn ::eight {s ::four} (* i s))]))
 
-(alter-var-root #'knitty.core/*tracing* (constantly true))
 
-(print-trace (yank {} [six]))
 
-;; recommended to insntall 'xdot' (via pkg maager or pip)
-(view-trace (yank {} [six]))
+;; globally enable tracing
+(knitty.core/enable-tracing!)
+
+(require '[knitty.tracetxt])  ;; render as text
+(knitty.tracetxt/print-trace (yank {} [ten]))
+
+
+(require '[knitty.traceviz])  ;; render via 'graphviz'
+
+;; recommended to install "xdot" (via 'pip')
+(knitty.traceviz/view-trace
+ (yank {zero 0.001
+        four-stategy "2*2"}
+       ten))
 
 ;; view all traces at once
-(view-trace
+(knitty.traceviz/view-trace
  (md/chain
   {}
   #(yank % [two])
   #(yank % [five])
-  #(assoc % ::two 222222)
-  #(yank % [six])))
+  #(assoc % two 222222)
+  #(yank % [ten])))
 
 ;; get raw format
-(render-trace (yank {} [six]), :format :raw)
+(knitty.traceviz/render-trace
+ (yank {} [ten]), :format :raw)
 
 ;; or graphviz dot
-(render-trace (yank {} [six]), :format :dot)
-
-;; yank & run code & return poy'
-@(doyank!
-  {one 10}
-  {x six}
-  (println "x =" x))
+(knitty.traceviz/render-trace
+ (yank {} [ten]), :format :dot)
