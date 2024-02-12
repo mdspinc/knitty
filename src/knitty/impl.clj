@@ -232,8 +232,8 @@
                          [[dk pt]])))]
 
     `(reify Yarn
-       (~'key [_] ~ykey)
-       (~'deps [_] #{~@deps})
+       (~'key [_#] ~ykey)
+       (~'deps [_#] #{~@deps})
        (~'yank [_# ~yctx d#]
          (maybe-future-with
           ~executor
@@ -329,12 +329,15 @@
            (yarn-multi-deps multifn# ~route-key))
          (~'key [_#]
            ~ykey)
-         (~'yank [_ yctx# d#]
+         (~'yank [_# yctx# d#]
            (let [r# (yarn-get-impl ~ykey ~route-key yctx#)]
              (ji/kd-await
               (reify manifold.deferred.IDeferredListener
-                (onSuccess [_# _#] (multifn# yctx# d#))
-                (onError [_ e#] (ji/kd-error! r# e# (.token yctx#))))
+                (onSuccess [_# _#] (try
+                                     (multifn# yctx# d#)
+                                     (catch Throwable e#
+                                       (ji/kd-error! d# e# (.token yctx#)))))
+                (onError [_ e#] (ji/kd-error! d# e# (.token yctx#))))
               r#)))))))
 
 
