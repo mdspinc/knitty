@@ -4,7 +4,6 @@
             [clojure.java.browse :as browse]
             [clojure.java.io :as io]
             [clojure.java.shell :as shell]
-            [clojure.math :as m]
             [clojure.pprint :as pp]
             [clojure.string :as str]
             [tangle.core :as tgl]))
@@ -67,9 +66,9 @@
 
 
 (defn p3-round [x]
-  (let [p (m/ceil (m/log10 x))
-        b (m/pow 10.0 (- p 3.0))]
-    (-> x (/ b) (m/round) (* b) (float))))
+  (let [p (Math/ceil (Math/log10 x))
+        b (Math/pow 10.0 (- p 3.0))]
+    (-> x (/ b) (Math/round) (* b) (float))))
 
 
 (defn- nice-time [t]
@@ -117,7 +116,7 @@
 
     :cluster->descriptor
     (fn [c]
-      (let [x (-> (parse-long c))
+      (let [x (-> (Long/valueOf ^String c))
             sg (-> g :clusters (get x))]
         {:label (str
                  (nice-time (or (:shift sg) 0))
@@ -280,7 +279,7 @@
 
 
 (defn- open-rendered-trace [poy options open-f]
-  (let [t (render-trace poy options)
+  (let [t (apply render-trace poy (mapcat identity options))
         f (java.io.File/createTempFile
            "knitty-"
            (str "." (name (:format options))))]

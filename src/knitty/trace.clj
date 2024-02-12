@@ -297,7 +297,7 @@
   (reduce merge-two-parsed-traces nil (reverse gs)))
 
 
-(defn find-traces [poy]
+(defn find-traces* [poy]
   (cond
     (instance? Trace poy)
     [poy]
@@ -318,4 +318,9 @@
     (:knitty/trace (meta poy))
 
     (md/deferred? poy)
-    @(md/catch (md/chain poy find-traces) find-traces)))
+    (md/catch (md/chain poy find-traces*) find-traces*)))
+
+
+(defn find-traces [poy]
+  (when-let [t (find-traces* poy)]
+    (if (md/deferred? t) @t t)))
