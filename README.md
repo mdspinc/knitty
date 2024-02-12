@@ -21,7 +21,7 @@ Macro `defyarn` defines a "node of computation" (referred to as "yarn").  Each n
   (+ a b))       ;; value expression
 ```
 
-The computation of nodes is started by running the function `yank`.  When requested nodes are already in the input map -- function just returns the same map. If some nodes are missing -- they are computed and values are assoc'ed to the resulting map.
+The computation of nodes is started by running the function `yank`.  When requested nodes are already in the input map -- function just returns the same map. If some nodes are missing - they are computed and values are assoc'ed to the resulting map.
 
 
 ```clojure
@@ -35,7 +35,7 @@ The computation of nodes is started by running the function `yank`.  When reques
 ;; => #:user{:node-a 10, :node-b 20, :node-c 30}
 ```
 
-Knitty also integrates with [clj-commons/manifild](https://github.com/clj-commons/manifold):
+Knitty also integrates with [clj-commons/manifold](https://github.com/clj-commons/manifold):
 
 
 ```clojure
