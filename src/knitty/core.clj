@@ -89,15 +89,16 @@
 
 
 (defn- resolve-sym-or-kw
-  ([env]
-   (partial resolve-sym-or-kw env))
-  ([env k]
-   (if (keyword? k)
-     k
-     (let [v @(resolve env k)]
-       (when-not (qualified-keyword? v)
-         (throw (ex-info "yarn bindings must be qualified keyword" {::binding k})))
-       v))))
+  [env k]
+  (if (keyword? k)
+    k
+    (let [v (resolve env k)]
+      (when-not v
+        (throw (ex-info "unable to resovlve yarn binding variable" {::binding-var v})))
+      (let [k @v]
+        (when-not (qualified-keyword? k)
+          (throw (ex-info "yarn binding must be a qualified keyword" {::binding k})))
+        k))))
 
 
 (defmacro yarn
@@ -220,14 +221,15 @@
         r (impl/yank' poy yarns *registry* t)]
     (trace/if-tracing
      (if t
-       (let [td (delay (trace/capture-trace! t))]
-         (reset-meta! r {:knitty/trace (ji/kd-after* r @td)})
-         (ji/kd-chain r
-                      (fn [x] (vary-meta x update :knitty/trace conj @td))
-                      (fn [e] (throw (ex-info
+       (let [td (delay (trace/capture-trace! t))
+             r' (ji/kd-chain r
+                             (fn [x] (vary-meta x update :knitty/trace conj @td))
+                             (fn [e] (ex-info
                                       (ex-message e)
-                                      (assoc (ex-data e) :knitty/trace @td)
-                                      (ex-cause e))))))
+                                      (assoc (ex-data e) :knitty/trace (conj (:knitty/trace poy) @td))
+                                      (ex-cause e))))]
+         (reset-meta! r' {:knitty/trace (ji/kd-after* r (conj (:knitty/trace poy) @td))})
+         r')
        r)
      r)))
 
@@ -244,14 +246,15 @@
         r (impl/yank1' poy yarn *registry* t)]
     (trace/if-tracing
      (if t
-       (let [td (delay (trace/capture-trace! t))]
-         (reset-meta! r {:knitty/trace (ji/kd-after* r @td)})
-         (ji/kd-chain r
-                      identity
-                      (fn [e] (throw (ex-info
+       (let [td (delay (trace/capture-trace! t))
+             r' (ji/kd-chain r
+                             identity
+                             (fn [e] (ex-info
                                       (ex-message e)
-                                      (assoc (ex-data e) :knitty/trace @td)
-                                      (ex-cause e))))))
+                                      (assoc (ex-data e) :knitty/trace (conj (:knitty/trace poy) @td))
+                                      (ex-cause e))))]
+         (reset-meta! r' {:knitty/trace (ji/kd-after* r (conj (:knitty/trace poy) @td))})
+         r')
        r)
      r)))
 
