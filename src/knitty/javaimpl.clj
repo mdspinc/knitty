@@ -48,8 +48,8 @@
 (definline kd-get [kd]
   `(let [^KDeferred x# ~kd] (.get x#)))
 
-(definline kd-revoke [d c]
-  `(KDeferred/revoke ~d ~c))
+(definline kd-revoke [d cancel err-handler]
+  `(KDeferred/revoke ~d ~cancel ~err-handler))
 
 (definline kd-chain-from [kd d token]
   `(let [^KDeferred x# ~kd] (.chainFrom x# ~d ~token)))

@@ -269,13 +269,7 @@
   "Returns new deferred with attached canceller.
    Canceller function is called when `yank` flow is stopped before source deferred is realized.
   "
-  ([d cancel]
-   (ji/kd-revoke d
-                 (fn [_]
-                   (cancel))))
-  ([d cancel err-callback]
-   (ji/kd-revoke d
-                 (fn [x]
-                   (cancel)
-                   (when-not (nil? x)
-                     (err-callback x))))))
+  ([d cancel-fn]
+   (ji/kd-revoke d cancel-fn nil))
+  ([d cancel-fn err-callback]
+   (ji/kd-revoke d cancel-fn err-callback)))

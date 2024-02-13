@@ -170,22 +170,29 @@ public final class KDeferred
     private final static class RevokeListener implements IDeferredListener {
 
         private final IDeferred d;
-        private final Consumer<? super Throwable> canceller;
+        private final IFn canceller;
+        private final IFn errCallback;
 
-        public RevokeListener(IDeferred d, Consumer<? super Throwable> canceller) {
+        public RevokeListener(IDeferred d, IFn canceller, IFn errCallback) {
             this.d = d;
             this.canceller = canceller;
+            this.errCallback = errCallback;
         }
 
         public Object onSuccess(Object x) {
-            if (!d.realized())
-                canceller.accept(null);
+            if (!d.realized()) {
+                canceller.invoke();
+            }
             return null;
         }
 
         public Object onError(Object x) {
-            if (!d.realized())
-                canceller.accept((Throwable) x);
+            if (!d.realized()) {
+                canceller.invoke();
+            }
+            if (errCallback != null) {
+                errCallback.invoke(x);
+            }
             return null;
         }
     }
@@ -739,7 +746,7 @@ public final class KDeferred
         return d;
     }
 
-    public static KDeferred wrapDeferred(Object x) {
+    public static KDeferred wrapDeferred(IDeferred x) {
         if (x instanceof KDeferred) {
              return (KDeferred) x;
         } else if (x instanceof IMutableDeferred) {
@@ -757,7 +764,7 @@ public final class KDeferred
 
     public static KDeferred wrap(Object x) {
         if (x instanceof IDeferred) {
-            return wrapDeferred(x);
+            return wrapDeferred((IDeferred) x);
         } else {
             KDeferred d = new KDeferred();
             d.value = x;
@@ -766,13 +773,13 @@ public final class KDeferred
         }
     }
 
-    public static KDeferred revoke(IDeferred d, Consumer<Throwable> canceller) {
+    public static KDeferred revoke(IDeferred d, IFn canceller, IFn errCallback) {
         if (d.realized()) {
-            return wrap(d.successValue(d));
+            return wrapDeferred(d);
         } else {
             KDeferred kd = new KDeferred();
             kd.revokable = true;
-            kd.pushListener1(new RevokeListener(d, canceller));
+            kd.pushListener1(new RevokeListener(d, canceller, errCallback));
             kd.chainFrom(d, null);
             return kd;
         }
