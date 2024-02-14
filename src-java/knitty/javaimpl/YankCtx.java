@@ -252,7 +252,7 @@ public final class YankCtx implements ILookup {
         return y;
     }
 
-    public KVCons freeze() {
+    private KVCons freeze() {
         KVCons a = (KVCons) ADDED.getAndSet(this, null);
         if (a == null) {
             throw new IllegalStateException("yankctx is already frozen");
@@ -264,6 +264,14 @@ public final class YankCtx implements ILookup {
         return added == null;
     }
 
+    public void freezeVoid() {
+        for (KVCons a = this.freeze(); a.d != null; a = a.next) {
+            if (!a.d.owned()) {
+                a.d.error(RevokeException.INSTANCE, this.token);
+            }
+        }
+    }
+
     public Associative freezePoy() {
         KVCons added = this.freeze();
         if (added == NIL) {
@@ -272,13 +280,21 @@ public final class YankCtx implements ILookup {
         if (added.next.d != null && inputs instanceof IEditableCollection) {
             ITransientAssociative t = (ITransientAssociative) ((IEditableCollection) inputs).asTransient();
             for (KVCons a = added; a.d != null; a = a.next) {
-                t = t.assoc(a.k, a.d.unwrap());
+                if (a.d.owned()) {
+                    t = t.assoc(a.k, a.d.unwrap());
+                } else {
+                    a.d.error(RevokeException.INSTANCE, this.token);
+                }
             }
             return (Associative) t.persistent();
         } else {
             Associative t = inputs;
             for (KVCons a = added; a.d != null; a = a.next) {
-                t = t.assoc(a.k, a.d.unwrap());
+                if (a.d.owned()) {
+                    t = t.assoc(a.k, a.d.unwrap());
+                } else {
+                    a.d.error(RevokeException.INSTANCE, this.token);
+                }
             }
             return t;
         }

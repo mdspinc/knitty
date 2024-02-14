@@ -399,7 +399,7 @@
 
             (onSuccess
               [_ x]
-              (.freeze yctx)
+              (.freezeVoid yctx)
               (ji/kd-success! r0 x nil))
 
             (onError
