@@ -17,6 +17,8 @@
 (definline maxid []
   `(KwMapper/maxi))
 
+(defrecord YarnInfo [type key deps body-sexp])
+
 (defmacro decl-yarn
   ([ykey deps bodyf]
    (assert (qualified-keyword? ykey))
@@ -25,18 +27,29 @@
   ([fnname ykey deps [_fn [ctx dst] & body]]
    `(fn
       ~fnname
-      ([] ~ykey)
-      ([_#] #{~@deps})
+      ([] ~(if (and (keyword? ykey)
+                    (set? deps))
+             (->YarnInfo
+              :knitty/yarn-info
+              ykey
+              deps
+              body)
+             (list
+              `->YarnInfo
+              :knitty/yarn-info
+              ykey
+              deps
+              (list `quote body))))
       ([~(vary-meta ctx assoc :tag "knitty.javaimpl.YankCtx")
         ~(vary-meta dst assoc :tag "knitty.javaimpl.KDeferred")]
        ~@body))))
 
 
 (definline yarn-deps [y]
-  `(~y nil))
+  `(:deps (~y)))
 
 (definline yarn-key [y]
-  `(~y))
+  `(:key (~y)))
 
 (definline yarn-yank [y ctx d]
   `(~y ~ctx ~d))

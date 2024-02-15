@@ -91,7 +91,7 @@
   ([yk ykey ykeyi yctx]
    `(do
       (tracer-> ~yctx t/trace-dep ~yk ~ykey)
-      (.fetch ~yctx ~ykeyi))))
+      (.fetch ~yctx ~ykeyi ~ykey))))
 
 
 (defmacro yarn-get-maybe
@@ -133,7 +133,7 @@
     (if-let [[i k] (yarns-map y)]
       (do
         (tracer-> yctx t/trace-dep yk k)
-        (.fetch yctx i))
+        (.fetch yctx i k))
       (throw (ex-info "Invalid yank-fn arg" {:knitty/yankfn-arg y
                                              :knytty/yankfn-known-args (keys yarns-map)})))))
 
@@ -234,7 +234,7 @@
                          [[dk pt]])))]
 
     `(ji/decl-yarn
-      ~ykey ~deps
+      ~ykey ~(set deps)
       (fn [~yctx d#]
         (maybe-future-with
          ~executor
@@ -283,7 +283,7 @@
 (defn gen-yarn-ref
   [ykey from]
   `(ji/decl-yarn
-    ~ykey ~from
+    ~ykey #{~from}
     (fn [yctx# d#]
       (tracer-> yctx# t/trace-start ~ykey :knot [[~from :ref]])
       (try
@@ -304,7 +304,7 @@
   (let [i (long (ji/regkw k))]
     (fn yank-route-key [^YankCtx yctx ^KDeferred _]
       (tracer-> yctx t/trace-route-by ykey k)
-      (ji/kd-get (.fetch yctx i)))))
+      (ji/kd-get (.fetch yctx i k)))))
 
 
 (defn yarn-multi-deps [multifn route-key]

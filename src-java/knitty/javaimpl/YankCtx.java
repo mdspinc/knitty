@@ -29,6 +29,7 @@ public final class YankCtx implements ILookup {
 
     private static final Object NONE = new Object();
     private static final KVCons NIL = new KVCons(null, null, null);
+    private static final IFn KEYFN = Keyword.find("key");
 
     private static final int ASHIFT = 4;
     private static final int ASIZE = 1 << ASHIFT;
@@ -96,15 +97,16 @@ public final class YankCtx implements ILookup {
         for (Object x : yarns) {
             KDeferred r;
             if (x instanceof Keyword) {
-                int i0 = this.kwm.getr((Keyword) x, true);
+                Keyword k = (Keyword) x;
+                int i0 = this.kwm.getr(k, true);
                 if (i0 == -1) {
                     callback.onError(new IllegalArgumentException("unknown yarn " + x));
                     return;
                 }
-                r = this.fetch(i0);
+                r = this.fetch(i0, k);
             } else {
                 IFn y = (IFn) x;
-                Keyword k = (Keyword) y.invoke();
+                Keyword k = (Keyword) KEYFN.invoke(y.invoke());
                 int i0 = this.kwm.getr(k, true);
                 if (i0 == -1) {
                     callback.onError(new IllegalArgumentException("unknown yarn " + k));
@@ -130,14 +132,15 @@ public final class YankCtx implements ILookup {
 
     public KDeferred yank1(Object x) {
         if (x instanceof Keyword) {
+            Keyword k = (Keyword) x;
             int i0 = this.kwm.getr((Keyword) x, true);
             if (i0 == -1) {
                 return KDeferred.wrapErr(new IllegalArgumentException("unknown yarn " + x));
             }
-            return this.fetch(i0);
+            return this.fetch(i0, k);
         } else {
             IFn y = (IFn) x;
-            Keyword k = (Keyword) y.invoke();
+            Keyword k = (Keyword) KEYFN.invoke(y.invoke());
             int i0 = this.kwm.getr(k, true);
             if (i0 == -1) {
                 return KDeferred.wrapErr(new IllegalArgumentException("unknown yarn " + k));
@@ -189,14 +192,13 @@ public final class YankCtx implements ILookup {
         return d0 != null ? d0 : d;
     }
 
-    public KDeferred fetch(int i) {
+    public KDeferred fetch(int i, Keyword k) {
 
         KDeferred d = pull(i);
         if (d.owned()) {
             return d;
         }
 
-        Keyword k = this.kwm.get(i);
         Object x = inputs.valAt(k, NONE);
         if (x != NONE) {
             return d.chainFrom(x, token);
