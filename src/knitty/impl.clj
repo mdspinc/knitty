@@ -361,55 +361,62 @@
   `(fail-always-yarn ~ykey ~(str "input-only yarn " ykey)))
 
 
+(deftype YankDoneListener [^YankCtx yctx
+                            ^KDeferred res
+                            poy
+                            yarns]
+  manifold.deferred.IDeferredListener
+  (onSuccess
+    [_ _]
+    (when-not (ji/kd-realized? res)
+      (ji/kd-success! res (.freezePoy yctx) nil)))
+  (onError
+    [_ e]
+    (when-not (ji/kd-realized? res)
+      (ji/kd-error! res
+                    (ex-info "failed to yank"
+                             (assoc (ex-data e)
+                                    :knitty/yank-error? true
+                                    :knitty/yanked-poy poy
+                                    :knitty/failed-poy (.freezePoy yctx)
+                                    :knitty/yanked-yarns yarns)
+                             e)
+                    nil))))
+
+(deftype Yank1DoneListener [^YankCtx yctx
+                            ^KDeferred res
+                            poy
+                            yarn]
+  manifold.deferred.IDeferredListener
+  (onSuccess
+    [_ x]
+    (.freezeVoid yctx)
+    (ji/kd-success! res x nil))
+  (onError
+    [_ e]
+    (when-not (ji/kd-realized? res)
+      (ji/kd-error! res
+                    (ex-info "failed to yank"
+                             (assoc (ex-data e)
+                                    :knitty/yank-error? true
+                                    :knitty/yanked-poy poy
+                                    :knitty/failed-poy (.freezePoy yctx)
+                                    :knitty/yanked-yarn yarn)
+                             e)
+                    nil))))
+
+
 (defn yank' [poy yarns registry tracer]
   (let [yctx (YankCtx. poy registry tracer)
-        res (ji/kd-create)
-        c (reify manifold.deferred.IDeferredListener
-
-            (onSuccess
-              [_ _]
-              (when-not (ji/kd-realized? res)
-                (ji/kd-success! res (.freezePoy yctx) nil)))
-
-            (onError
-              [_ e]
-              (when-not (ji/kd-realized? res)
-                (ji/kd-error! res
-                              (ex-info "failed to yank"
-                                       (assoc (ex-data e)
-                                              :knitty/yank-error? true
-                                              :knitty/yanked-poy poy
-                                              :knitty/failed-poy (.freezePoy yctx)
-                                              :knitty/yanked-yarns yarns)
-                                       e)
-                              nil))))]
+        res (ji/kd-create)]
     (md/add-listener! res (.canceller yctx))
-    (.yank yctx yarns c)
+    (.yank yctx yarns (YankDoneListener. yctx res poy yarns))
     res))
 
 
 (defn yank1' [poy yarn registry tracer]
   (let [yctx (YankCtx. poy registry tracer)
-        r0 (ji/kd-create)
-        c (reify manifold.deferred.IDeferredListener
-
-            (onSuccess
-              [_ x]
-              (.freezeVoid yctx)
-              (ji/kd-success! r0 x nil))
-
-            (onError
-              [_ e]
-              (when-not (ji/kd-realized? r0)
-                (ji/kd-error! r0
-                              (ex-info "failed to yank"
-                                       (assoc (ex-data e)
-                                              :knitty/yank-error? true
-                                              :knitty/yanked-poy poy
-                                              :knitty/failed-poy (.freezePoy yctx)
-                                              :knitty/yanked-yarn yarn)
-                                       e)
-                              nil))))]
-    (.addListener r0 (.canceller yctx))
-    (.addListener (.yank1 yctx yarn) c)
-    r0))
+        res (ji/kd-create)]
+    (.addListener res (.canceller yctx))
+    (.addListener (.yank1 yctx yarn) (Yank1DoneListener. yctx res poy yarn))
+    res))
