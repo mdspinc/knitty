@@ -40,7 +40,6 @@ public class KnittyLoader extends DynamicClassLoader {
         require.invoke(symbol.invoke("manifold.deferred"));
 
         try (KnittyLoader cl = new KnittyLoader()) {
-            cl.loadClass("knitty.javaimpl.Yarn");
             cl.loadClass("knitty.javaimpl.YarnProvider");
             cl.loadClass("knitty.javaimpl.KDeferred");
             cl.loadClass("knitty.javaimpl.KAwaiter");

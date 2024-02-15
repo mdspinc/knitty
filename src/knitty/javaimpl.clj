@@ -4,7 +4,7 @@
 (ns knitty.javaimpl
   (:require [manifold.deferred :as md]
             [clojure.tools.logging :as log])
-  (:import [knitty.javaimpl KDeferred KAwaiter Yarn KwMapper]))
+  (:import [knitty.javaimpl KDeferred KAwaiter YankCtx KwMapper]))
 
 
 (KDeferred/setExceptionLogFn
@@ -17,14 +17,29 @@
 (definline maxid []
   `(KwMapper/maxi))
 
+(defmacro decl-yarn
+  ([ykey deps bodyf]
+   (assert (qualified-keyword? ykey))
+   (regkw ykey)
+   `(decl-yarn ~(symbol (name ykey)) ~ykey ~deps ~bodyf))
+  ([fnname ykey deps [_fn [ctx dst] & body]]
+   `(fn
+      ~fnname
+      ([] ~ykey)
+      ([_#] #{~@deps})
+      ([~(vary-meta ctx assoc :tag "knitty.javaimpl.YankCtx")
+        ~(vary-meta dst assoc :tag "knitty.javaimpl.KDeferred")]
+       ~@body))))
+
+
 (definline yarn-deps [y]
-  `(let [^Yarn y# ~y] (.deps y#)))
+  `(~y nil))
 
 (definline yarn-key [y]
-  `(let [^Yarn y# ~y] (.key y#)))
+  `(~y))
 
-(definline yarn-yank [y mdm d]
-  `(let [^Yarn y# ~y] (.yank y# ~mdm ~d)))
+(definline yarn-yank [y ctx d]
+  `(~y ~ctx ~d))
 
 (definline kd-success! [d x t]
   `(let [^KDeferred d# ~d] (.success d# ~x ~t)))

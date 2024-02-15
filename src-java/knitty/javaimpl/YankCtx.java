@@ -20,6 +20,7 @@ import clojure.lang.IExceptionInfo;
 import clojure.lang.ExceptionInfo;
 import clojure.lang.IPersistentMap;
 import clojure.lang.ILookup;
+import clojure.lang.IFn;
 import manifold.deferred.IDeferred;
 import manifold.deferred.IDeferredListener;
 import manifold.deferred.IMutableDeferred;
@@ -35,7 +36,7 @@ public final class YankCtx implements ILookup {
 
     private static final VarHandle AR0 = MethodHandles.arrayElementVarHandle(KDeferred[][].class);
     private static final VarHandle AR1 = MethodHandles.arrayElementVarHandle(KDeferred[].class);
-    private static final VarHandle YSC = MethodHandles.arrayElementVarHandle(Yarn[].class);
+    private static final VarHandle YSC = MethodHandles.arrayElementVarHandle(IFn[].class);
     private static final VarHandle ADDED;
     static {
         try {
@@ -51,7 +52,7 @@ public final class YankCtx implements ILookup {
 
     private final KDeferred[][] a0;
     private final KwMapper kwm;
-    private final Yarn[] yarnsCache;
+    private final IFn[] yarnsCache;
     private final YarnProvider yankerProvider;
 
     public final Object tracer;
@@ -102,13 +103,14 @@ public final class YankCtx implements ILookup {
                 }
                 r = this.fetch(i0);
             } else {
-                Yarn y = (Yarn) x;
-                int i0 = this.kwm.getr(y.key(), true);
+                IFn y = (IFn) x;
+                Keyword k = (Keyword) y.invoke();
+                int i0 = this.kwm.getr(k, true);
                 if (i0 == -1) {
-                    callback.onError(new IllegalArgumentException("unknown yarn " + y.key()));
+                    callback.onError(new IllegalArgumentException("unknown yarn " + k));
                     return;
                 }
-                r = this.fetch(i0, y);
+                r = this.fetch(i0, k, y);
             }
             if (r.state != KDeferred.STATE_SUCC) {
                 if (di == 0) {
@@ -134,12 +136,13 @@ public final class YankCtx implements ILookup {
             }
             return this.fetch(i0);
         } else {
-            Yarn y = (Yarn) x;
-            int i0 = this.kwm.getr(y.key(), true);
+            IFn y = (IFn) x;
+            Keyword k = (Keyword) y.invoke();
+            int i0 = this.kwm.getr(k, true);
             if (i0 == -1) {
-                return KDeferred.wrapErr(new IllegalArgumentException("unknown yarn " + y.key()));
+                return KDeferred.wrapErr(new IllegalArgumentException("unknown yarn " + k));
             }
-            return this.fetch(i0, y);
+            return this.fetch(i0, k, y);
         }
     }
 
@@ -199,7 +202,7 @@ public final class YankCtx implements ILookup {
             return d.chainFrom(x, token);
         }
 
-        Yarn y = this.yarn(i);
+        IFn y = this.yarn(i);
 
         KVCons a = added;
         while (a != null && !ADDED.compareAndSet(this, a, new KVCons(a, k, d))) a = added;
@@ -207,7 +210,7 @@ public final class YankCtx implements ILookup {
         if (a == null) {
             d.error(new IllegalStateException("yankctx is already frozen"), token);
         } else {
-            y.yank(this, d);
+            y.invoke(this, d);
         }
 
         return d;
@@ -217,14 +220,13 @@ public final class YankCtx implements ILookup {
         return token;
     }
 
-    public KDeferred fetch(int i, Yarn y) {
+    public KDeferred fetch(int i, Keyword k, IFn y) {
 
         KDeferred d = pull(i);
         if (d.owned()) {
             return d;
         }
 
-        Keyword k = y.key();
         Object x = inputs.valAt(k, NONE);
         if (x != NONE) {
             return d.chainFrom(x, token);
@@ -236,14 +238,14 @@ public final class YankCtx implements ILookup {
         if (a == null) {
             d.error(new IllegalStateException("yankctx is already frozen"), token);
         } else {
-            y.yank(this, d);
+            y.invoke(this, d);
         }
 
         return d;
     }
 
-    private Yarn yarn(int i) {
-        Yarn y = (Yarn) YSC.getVolatile(yarnsCache, i);
+    private IFn yarn(int i) {
+        IFn y = (IFn) YSC.getVolatile(yarnsCache, i);
         if (y != null) {
             return y;
         }

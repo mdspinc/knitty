@@ -5,7 +5,9 @@
             [manifold.deferred :as md]
             [manifold.executor]
             [manifold.utils])
-  (:import [knitty.javaimpl YankCtx KDeferred Yarn YarnProvider]))
+  (:import
+   [clojure.lang IFn]
+   [knitty.javaimpl YankCtx KDeferred YarnProvider]))
 
 
 (set! *warn-on-reflection* true)
@@ -34,7 +36,7 @@
   (count [_] (count asmap))
   (cons [t x] (.assoc t (ji/yarn-key x) x))
   (equiv [_ o] (and (instance? Registry o) (= asmap (.-asmap ^Registry o))))
-  (empty [_] (Registry. (delay (make-array Yarn 0)) {} {}))
+  (empty [_] (Registry. (delay (make-array IFn 0)) {} {}))
 
   clojure.lang.ILookup
   (valAt [_ k] (asmap k))
@@ -58,13 +60,13 @@
           (check-no-cycle k d [k] asmap)))
 
       (Registry.
-       (delay (make-array Yarn (inc (ji/maxid))))
+       (delay (make-array IFn (inc (ji/maxid))))
        (assoc asmap k v)
        all-deps'))))
 
 
 (defn create-registry []
-  (Registry. (delay (make-array Yarn 0)) {} {}))
+  (Registry. (delay (make-array IFn 0)) {} {}))
 
 
 (defn bind-param-type [ds]
@@ -231,29 +233,28 @@
                          (for [[_ k] dk] [k :yankfn])
                          [[dk pt]])))]
 
-    `(reify Yarn
-       (~'key [_#] ~ykey)
-       (~'deps [_#] #{~@deps})
-       (~'yank [_# ~yctx d#]
-         (maybe-future-with
-          ~executor
-          (tracer-> ~yctx t/trace-start ~ykey :yarn ~all-deps-tr)
-          (try
-            (let [~@yank-deps]
-              (ji/kd-await
-               (reify manifold.deferred.IDeferredListener
-                 (~'onSuccess
-                   [_# _#]
-                   (let [z# (let [~@deref-syncs]
-                              (tracer-> ~yctx t/trace-call ~ykey)
-                              (~coerce-deferred ~the-fn-body))]
-                     (connect-result ~yctx ~ykey z# d#)))
-                 (~'onError
-                   [_ e#]
-                   (connect-error ~yctx ~ykey e# d#)))
-               ~@sync-deps))
-            (catch Throwable e#
-              (connect-error ~yctx ~ykey e# d#))))))))
+    `(ji/decl-yarn
+      ~ykey ~deps
+      (fn [~yctx d#]
+        (maybe-future-with
+         ~executor
+         (tracer-> ~yctx t/trace-start ~ykey :yarn ~all-deps-tr)
+         (try
+           (let [~@yank-deps]
+             (ji/kd-await
+              (reify manifold.deferred.IDeferredListener
+                (~'onSuccess
+                  [_# _#]
+                  (let [z# (let [~@deref-syncs]
+                             (tracer-> ~yctx t/trace-call ~ykey)
+                             (~coerce-deferred ~the-fn-body))]
+                    (connect-result ~yctx ~ykey z# d#)))
+                (~'onError
+                  [_ e#]
+                  (connect-error ~yctx ~ykey e# d#)))
+              ~@sync-deps))
+           (catch Throwable e#
+             (connect-error ~yctx ~ykey e# d#))))))))
 
 
 (defn- grab-yarn-bindmap-deps [bm]
@@ -281,17 +282,15 @@
 
 (defn gen-yarn-ref
   [ykey from]
-  (ji/regkw ykey)
-  `(reify Yarn
-     (~'deps [_#] #{~from})
-     (~'key [_#] ~ykey)
-     (~'yank [_# yctx# d#]
-       (tracer-> yctx# t/trace-start ~ykey :knot [[~from :ref]])
-       (try
-         (let [x# (ji/kd-unwrap (yarn-get-impl ~ykey ~from yctx#))]
-           (connect-result yctx# ~ykey x# d#))
-         (catch Throwable e#
-           (connect-error yctx# ~ykey e# d#))))))
+  `(ji/decl-yarn
+    ~ykey ~from
+    (fn [yctx# d#]
+      (tracer-> yctx# t/trace-start ~ykey :knot [[~from :ref]])
+      (try
+        (let [x# (ji/kd-unwrap (yarn-get-impl ~ykey ~from yctx#))]
+          (connect-result yctx# ~ykey x# d#))
+        (catch Throwable e#
+          (connect-error yctx# ~ykey e# d#))))))
 
 
 (defn yarn-multifn [yarn-name]
@@ -324,21 +323,19 @@
        (make-multiyarn-route-key-fn ~ykey ~route-key)
        ~@mult-options)
      (let [multifn# ~(yarn-multifn ykey)]
-       (reify Yarn
-         (~'deps [_#]
-           (yarn-multi-deps multifn# ~route-key))
-         (~'key [_#]
-           ~ykey)
-         (~'yank [_# yctx# d#]
-           (let [r# (yarn-get-impl ~ykey ~route-key yctx#)]
-             (ji/kd-await
-              (reify manifold.deferred.IDeferredListener
-                (onSuccess [_# _#] (try
-                                     (multifn# yctx# d#)
-                                     (catch Throwable e#
-                                       (ji/kd-error! d# e# (.token yctx#)))))
-                (onError [_ e#] (ji/kd-error! d# e# (.token yctx#))))
-              r#)))))))
+       (ji/decl-yarn
+        ~ykey
+        (yarn-multi-deps multifn# ~route-key)
+        (fn [yctx# d#]
+          (let [r# (yarn-get-impl ~ykey ~route-key yctx#)]
+            (ji/kd-await
+             (reify manifold.deferred.IDeferredListener
+               (onSuccess [_# _#] (try
+                                    (multifn# yctx# d#)
+                                    (catch Throwable e#
+                                      (ji/kd-error! d# e# (.token yctx#)))))
+               (onError [_ e#] (ji/kd-error! d# e# (.token yctx#))))
+             r#)))))))
 
 
 (defn gen-reg-yarn-method
@@ -353,12 +350,11 @@
 
 
 (defn fail-always-yarn [ykey msg]
-  (ji/regkw ykey)
-  (reify
-    Yarn
-    (key [_] ykey)
-    (deps [_] #{})
-    (yank [_ yctx d] (ji/kd-error! d (java.lang.UnsupportedOperationException. (str msg)) (.token yctx)))))
+  (ji/decl-yarn
+   fail-always-yarn
+   ykey
+   #{}
+   (fn [yctx d] (ji/kd-error! d (java.lang.UnsupportedOperationException. (str msg)) (.token yctx)))))
 
 
 (defn gen-yarn-input [ykey]

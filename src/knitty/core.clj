@@ -28,7 +28,7 @@
   ([yarn no-override]
    (let [k (ji/yarn-key yarn)]
      (when-not (qualified-keyword? k)
-       (throw (ex-info "yarn must be a qualified keyword" {::yarn k})))
+       (throw (ex-info "yarn must be a qualified keyword" {::yarn k, ::class (type k)})))
      (if no-override
        (alter-var-root #'*registry* #(if (contains? % k) % (assoc % k yarn)))
        (alter-var-root #'*registry* assoc k yarn)))))
@@ -215,7 +215,7 @@
   (let [yarns (condp instance? yarns
                 java.lang.Iterable   yarns
                 clojure.lang.Keyword [yarns]
-                knitty.javaimpl.Yarn [yarns]
+                clojure.lang.IFn [yarns]
                 (vec yarns))
         t (trace/if-tracing (when *tracing* (trace/create-tracer poy yarns)))
         r (impl/yank' poy yarns *registry* t)]
