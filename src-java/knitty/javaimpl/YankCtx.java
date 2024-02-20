@@ -210,7 +210,8 @@ public final class YankCtx implements ILookup {
         while (a != null && !ADDED.compareAndSet(this, a, new KVCons(a, k, d))) a = added;
 
         if (a == null) {
-            d.error(new IllegalStateException("yankctx is already frozen"), token);
+            d.error(YankFinishedException.INTANCE, token);
+
         } else {
             y.invoke(this, d);
         }
@@ -238,7 +239,7 @@ public final class YankCtx implements ILookup {
         while (a != null && !ADDED.compareAndSet(this, a, new KVCons(a, k, d))) a = added;
 
         if (a == null) {
-            d.error(new IllegalStateException("yankctx is already frozen"), token);
+            d.error(YankFinishedException.INTANCE, token);
         } else {
             y.invoke(this, d);
         }
@@ -334,7 +335,7 @@ public final class YankCtx implements ILookup {
     public void cancel(Throwable cause) {
         CancellationException ex = new CancellationException("yankctx is cancelled");
         if (cause != null) {
-            ex.addSuppressed(ex);
+            ex.initCause(ex);
         }
         for (KVCons a = this.freeze(); a.d != null; a = a.next) {
             a.d.error(ex, token);
