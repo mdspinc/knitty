@@ -125,22 +125,41 @@
     ~(ji/regkw ykey)))
 
 
+(defrecord YankFnParam
+           [^long ikey
+            ^clojure.lang.Keyword ykey])
+
+
 (defn make-yankfn
   [^YankCtx yctx
    yk
    yarns-map]
   (fn yankfn [y]
-    (if-let [[i k] (yarns-map y)]
-      (do
+    (if-let [^YankFnParam fp (yarns-map y)]
+      (let [i (.-ikey fp)
+            k (.-ykey fp)]
         (tracer-> yctx t/trace-dep yk k)
         (.fetch yctx i k))
       (throw (ex-info "Invalid yank-fn arg" {:knitty/yankfn-arg y
                                              :knytty/yankfn-known-args (keys yarns-map)})))))
 
-
 (defmacro yarn-get-yankfn [yk keys-map yctx]
-  (let [args (into {} (map (fn [[k v]] [k [(ji/regkw v) v]])) keys-map)]
-    `(make-yankfn ~yctx ~yk ~args)))
+  (let [keys-map (cond
+                   (map? keys-map)
+                   keys-map
+
+                   (or (vector? keys-map) (set? keys-map))
+                   (into {} (map vector keys-map keys-map))
+
+                   :else
+                   (throw (ex-info "invalid yank-fn args mapping"
+                                   {:knitty/yankfn-yarn yk
+                                    :knitty/yankfn-mapping keys-map})))
+        yarns-map
+        (into {}
+              (for [[k v] keys-map]
+                [k (->YankFnParam (ji/regkw v) v)]))]
+    `(make-yankfn ~yctx ~yk ~yarns-map)))
 
 
 (defmacro force-lazy-result [v]
@@ -269,15 +288,14 @@
 
 
 (defn gen-yarn
-  [ykey bind expr]
+  [ykey bind expr opts]
   (ji/regkw ykey)
   (let [deps (grab-yarn-bindmap-deps bind)
-        yarn-meta (meta bind)
-        {:keys [keep-deps-order]} yarn-meta
+        {:keys [keep-deps-order]} opts
         bind (if keep-deps-order
                bind
                (sort-by (comp #(when (keyword? %) (ji/regkw %)) second) bind))]
-    (emit-yarn-impl expr ykey bind yarn-meta deps)))
+    (emit-yarn-impl expr ykey bind opts deps)))
 
 
 (defn gen-yarn-ref

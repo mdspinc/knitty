@@ -2,9 +2,6 @@
   (:require [knitty.impl :as impl]
             [knitty.javaimpl :as ji]
             [knitty.trace :as trace]
-            [clojure.java.browse]
-            [clojure.java.browse-ui]
-            [clojure.java.shell]
             [clojure.spec.alpha :as s]))
 
 
@@ -41,7 +38,10 @@
 
 
 (s/def ::yarn-binding-yankfn-map
-  (s/map-of any? (some-fn qualified-keyword? symbol?)))
+  (s/or
+   :map (s/map-of any? (some-fn qualified-keyword? symbol?))
+   :seq (s/coll-of (some-fn qualified-keyword? symbol?))
+  ))
 
 (s/def ::yarn-bindind-var
   (s/and symbol? valid-bind-type?))
@@ -101,6 +101,30 @@
         k))))
 
 
+(defn- parse-yankfn-params-map
+  [env vv]
+  (let [[vv-t vv-val] vv]
+    (case vv-t
+      :map
+      (into {} (for [[x y] vv-val]
+                 [x (resolve-sym-or-kw env y)]))
+      :seq
+      (into {} (map (comp (juxt identity identity)
+                          (partial resolve-sym-or-kw env))) vv-val))))
+
+(defn ^:private emit-yarn
+  [env k cf mt]
+  (let [{{:keys [bind body]} :bind-and-body} cf
+        mt (merge mt (meta bind))
+        bind (into {}
+                   (for [[k [vt vv]] bind]
+                     [k
+                      (case vt
+                        :ident (resolve-sym-or-kw env vv)
+                        :yankfn-map (parse-yankfn-params-map env vv))]))]
+    (impl/gen-yarn k bind `(do ~@body) mt)))
+
+
 (defmacro yarn
   "Returns yarn object (without registering into a registry).
    May capture variables from outer scope."
@@ -111,16 +135,7 @@
           cf (s/conform ::yarn bd)]
       (when (s/invalid? cf)
         (throw (Exception. (str (s/explain-str ::yarn bd)))))
-      (let [{{:keys [bind body]} :bind-and-body} cf
-            bind (into {}
-                       (for [[k [vt vv]] bind]
-                         [k
-                          (case vt
-                            :ident (resolve-sym-or-kw &env vv)
-                            :yankfn-map (into {}
-                                              (for [[x y] vv]
-                                                [x (resolve-sym-or-kw &env y)])))]))]
-        (impl/gen-yarn k bind `(do ~@body))))))
+      (emit-yarn &env k cf nil))))
 
 
 (defn- pick-yarn-meta [obj ex-meta doc]
@@ -163,12 +178,11 @@
 
     (let [{doc :doc, {:keys [bind body]} :bind-and-body} cf
           [nm m] (pick-yarn-meta name (meta bind) doc)
-          bind (into {} (for [[k [_ y]] bind] [k y]))
           spec (:spec m)
-          bind (when bind (with-meta bind m))
           y (if (empty? body)
               (impl/gen-yarn-input k)
-              `(yarn ~k ~bind ~@body))]
+              (emit-yarn &env k cf m))]
+
       (list
        `do
        (when spec `(s/def ~k ~spec))

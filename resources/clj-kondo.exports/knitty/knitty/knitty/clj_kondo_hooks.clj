@@ -30,6 +30,16 @@
       :else :sync)))
 
 
+(defn check-yankfn-arg [v0]
+  (when-not (or
+             (and (api/token-node? v0) (ident? (:value v0)))
+             (and (api/keyword-node? v0) (or (:namespaced? v0) (qualified-keyword? (:k v0)))))
+    (api/reg-finding!
+     (assoc (meta v0)
+            :message "yankfn argument val must be a symbol or qualified keyword"
+            :type :knitty/invalid-yarn-binding))))
+
+
 (defn yarn* [[key bmap & body]]
 
   (cond
@@ -70,19 +80,20 @@
                 :type :knitty/invalid-yarn-binding)))
 
       (when (= :yankfn btype)
-        (if (not (api/map-node? v))
+        (cond
+          (or (api/set-node? v) (api/vector-node? v))
+          (doseq [v0 (:children v)]
+            (check-yankfn-arg v0))
+
+          (api/map-node? v)
+          (doseq [[_s0 v0] (partition-all 2 (:children v))]
+            (check-yankfn-arg v0))
+
+          :else
           (api/reg-finding!
            (assoc (meta v)
-                  :message "yarn dependency must be a map"
-                  :type :knitty/invalid-yarn-binding))
-          (doseq [[_s0 v0] (partition-all 2 (:children v))]
-            (when-not (or
-                       (api/token-node? v0) (ident? (:value v0))
-                       (api/keyword-node? v0) (or (:namespaced? v0) (qualified-keyword? (:k v0))))
-              (api/reg-finding!
-               (assoc (meta v0)
-                      :message "yankfn argument val must be a symbol or qualified keyword"
-                      :type :knitty/invalid-yarn-binding))))))
+                  :message "yarn dependency must be a map or set"
+                  :type :knitty/invalid-yarn-binding))))
 
       (when (and
              (not= :yankfn btype)
