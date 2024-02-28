@@ -80,7 +80,7 @@
          ~k)))
 
 
-(defn link-yarn
+(defn bind-yarn
   "Redeclares yarn as symlink to yarn-target."
   [yarn yarn-target]
   {:pre [(qualified-keyword? yarn)
@@ -279,7 +279,7 @@
   (:knitty/yank-error? (ex-data ex) false))
 
 
-(defn with-canceller
+(defn revoke
   "Returns new deferred with attached canceller.
    Canceller function is called when `yank` flow is stopped before source deferred is realized.
   "
