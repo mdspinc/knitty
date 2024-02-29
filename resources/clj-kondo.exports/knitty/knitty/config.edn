@@ -11,8 +11,6 @@
  {:analyze-call
   {knitty.core/yarn    knitty.clj-kondo-hooks/yarn
    knitty.core/defyarn knitty.clj-kondo-hooks/defyarn
-   knitty.core/doyank  knitty.clj-kondo-hooks/doyank*
-   knitty.core/doyank! knitty.clj-kondo-hooks/doyank*
    knitty.core/declare-yarn   knitty.clj-kondo-hooks/declare-yarn
    knitty.core/defyarn-multi  knitty.clj-kondo-hooks/defyarn-multi
    knitty.core/defyarn-method knitty.clj-kondo-hooks/defyarn-method

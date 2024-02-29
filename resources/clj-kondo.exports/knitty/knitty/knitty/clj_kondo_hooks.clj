@@ -130,7 +130,6 @@
   (cons x xs))
 
 
-
 (defn defyarn [{:keys [node]}]
 
   (let [node-child (rest (:children node))
@@ -175,20 +174,6 @@
        ])}))
 
 
-(defn doyank* [{:keys [node]}]
-  (let [[_ poy bmap & body] (:children node)]
-    ;; (doyank x {} body) => (do (yarn ::fake {} body) x)
-    {:node
-     (api/list-node
-      [(api/token-node `do)
-       (yarn*
-        [::fake
-         bmap
-         (api/list-node
-          (list* (api/token-node `do) body))])
-       poy])}))
-
-
 (defn declare-yarn [{:keys [node]}]
 
   (let [node-child (rest (:children node))
@@ -222,26 +207,26 @@
                                  node-child)]
     (when (seq exx)
       (api/reg-finding!
-        (assoc (meta (first exx))
-               :message "unexpected extra parameter"
-               :type :knitty/invalid-defyarn)))
-    {:node
-     (api/list-node
-      (list*
-       (api/token-node 'knitty.core/defyarn)
-       name
-       (api/map-node [(api/token-node '_) route-key])
-       (api/token-node nil)
-       ))}))
+       (assoc (meta (first exx))
+              :message "unexpected extra parameter"
+              :type :knitty/invalid-defyarn)))
+     (defyarn
+       {:node
+        (api/list-node
+         (list*
+          (api/token-node 'defyarn)
+          name
+          (api/map-node [(api/token-node '_) route-key])
+          (api/token-node nil)))})))
 
 
 (defn defyarn-method [{:keys [node]}]
   (let [node-child (rest (:children node))
         [name route-val bvec & body] node-child
         name' (if (and (api/token-node? name)
-                      (-> name :value symbol?))
-               (api/token-node ::SYMBOL)
-               name)]
+                       (-> name :value symbol?))
+                (api/token-node ::SYMBOL)
+                name)]
     {:node
      (api/list-node
       [(api/token-node 'do)
