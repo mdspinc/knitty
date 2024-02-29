@@ -264,10 +264,13 @@
               (reify manifold.deferred.IDeferredListener
                 (~'onSuccess
                   [_# _#]
-                  (let [z# (let [~@deref-syncs]
-                             (tracer-> ~yctx t/trace-call ~ykey)
-                             (~coerce-deferred ~the-fn-body))]
-                    (connect-result ~yctx ~ykey z# d#)))
+                  (try
+                    (let [z# (let [~@deref-syncs]
+                               (tracer-> ~yctx t/trace-call ~ykey)
+                               (~coerce-deferred ~the-fn-body))]
+                      (connect-result ~yctx ~ykey z# d#))
+                    (catch Throwable e#
+                      (connect-error ~yctx ~ykey e# d#))))
                 (~'onError
                   [_ e#]
                   (connect-error ~yctx ~ykey e# d#)))
