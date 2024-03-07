@@ -44,8 +44,14 @@ public final class KAwaiter {
     }
 
     public static void await(IDeferredListener ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4) {
-        if ((OK & x1.state & x2.state & x3.state & x4.state) == 0) {
-            awaitArr(ls, x1, x2, x3, x4);
+        if (x4.state != OK) {
+            x4.addListener(new L3(ls, x1, x2, x3));
+        } else if (x3.state != OK) {
+            x3.addListener(new L2(ls, x1, x2));
+        } else if (x2.state != OK) {
+            x2.addListener(new L1(ls, x1));
+        } else if (x1.state != OK) {
+            x1.addListener(ls);
         } else {
             ls.onSuccess(null);
         }
@@ -185,55 +191,30 @@ public final class KAwaiter {
         }
     }
 
-    public static void awaitIterAny(IDeferredListener ls, Iterator<?> os) {
-        awaitIter(ls, new OnlyKDs(os));
-    }
-
     // Awaiters
 
-    private static final class OnlyKDs implements Iterator<KDeferred> {
+    private static abstract class Lx implements IDeferredListener {
 
-        private final Iterator<?> os;
-        private KDeferred item;
+        protected final IDeferredListener ls;
 
-        private OnlyKDs(Iterator<?> os) {
-            this.os = os;
-            this.advance();
+        protected Lx(IDeferredListener ls) {
+            this.ls = ls;
         }
 
-        @Override
-        public boolean hasNext() {
-            return item != null;
-        }
-
-        @Override
-        public KDeferred next() {
-            KDeferred r = item;
-            advance();
-            return r;
-        }
-
-        private void advance() {
-            while (os.hasNext()) {
-                Object x = os.next();
-                if (x instanceof IDeferred) {
-                    this.item = KDeferred.wrap(x);
-                    return;
-                }
-            }
-            this.item = null;
+        public Object onError(Object e) {
+            ls.onError(e);
+            return null;
         }
     }
 
-    private static final class L1 implements IDeferredListener {
+    private static final class L1 extends Lx {
 
-        private final IDeferredListener ls;
         private final KDeferred x1;
 
         private L1(
                 IDeferredListener ls,
                 KDeferred x1) {
-            this.ls = ls;
+            super(ls);
             this.x1 = x1;
         }
 
@@ -245,16 +226,10 @@ public final class KAwaiter {
             }
             return null;
         }
-
-        public Object onError(Object e) {
-            ls.onError(e);
-            return null;
-        }
     }
 
-    private static final class L2 implements IDeferredListener {
+    private static final class L2 extends Lx {
 
-        private final IDeferredListener ls;
         private final KDeferred x1;
         private final KDeferred x2;
 
@@ -262,7 +237,7 @@ public final class KAwaiter {
                 IDeferredListener ls,
                 KDeferred x1,
                 KDeferred x2) {
-            this.ls = ls;
+            super(ls);
             this.x1 = x1;
             this.x2 = x2;
         }
@@ -277,27 +252,48 @@ public final class KAwaiter {
             }
             return null;
         }
+    }
 
-        public Object onError(Object e) {
-            ls.onError(e);
+    private static final class L3 extends Lx {
+
+        private final KDeferred x1;
+        private final KDeferred x2;
+        private final KDeferred x3;
+
+        private L3(
+                IDeferredListener ls,
+                KDeferred x1,
+                KDeferred x2,
+                KDeferred x3) {
+            super(ls);
+            this.x1 = x1;
+            this.x2 = x2;
+            this.x3 = x3;
+        }
+
+        public Object onSuccess(Object _x) {
+            if (x3.state != OK) {
+                x3.addListener(new L2(ls, x1, x2));
+            } else if (x2.state != OK) {
+                x2.addListener(new L1(ls, x1));
+            } else if (x1.state != OK) {
+                x1.addListener(ls);
+            } else {
+                ls.onSuccess(null);
+            }
             return null;
         }
     }
 
-    private static class Arr implements IDeferredListener {
+    private static class Arr extends Lx {
 
         private int i;
-        private final IDeferredListener ls;
         private final KDeferred[] ds;
 
         private Arr(int i, IDeferredListener ls, KDeferred[] ds) {
+            super(ls);
             this.i = i;
-            this.ls = ls;
             this.ds = ds;
-        }
-
-        public Object onError(Object e) {
-            return ls.onError(e);
         }
 
         public Object onSuccess(Object x) {
@@ -317,18 +313,13 @@ public final class KAwaiter {
         }
     }
 
-    private static class Iter implements IDeferredListener {
+    private static class Iter extends Lx {
 
         private final Iterator<KDeferred> da;
-        private final IDeferredListener ls;
 
         private Iter(Iterator<KDeferred> da, IDeferredListener ls) {
+            super(ls);
             this.da = da;
-            this.ls = ls;
-        }
-
-        public Object onError(Object e) {
-            return ls.onError(e);
         }
 
         public Object onSuccess(Object x) {

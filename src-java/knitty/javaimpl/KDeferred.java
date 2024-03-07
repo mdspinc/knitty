@@ -2,12 +2,8 @@ package knitty.javaimpl;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
-import java.util.function.Supplier;
-
 import clojure.lang.AFn;
 import clojure.lang.IFn;
 import clojure.lang.IPersistentMap;
@@ -258,14 +254,12 @@ public final class KDeferred
     static final byte STATE_DONE_MASK = STATE_SUCC | STATE_ERRR;
 
     private static final VarHandle STATE;
-    private static final VarHandle TOKEN;
     private static final VarHandle OWNED;
 
     static {
         try {
             MethodHandles.Lookup l = MethodHandles.lookup();
             STATE = l.findVarHandle(KDeferred.class, "state", Byte.TYPE);
-            TOKEN = l.findVarHandle(KDeferred.class, "token", Object.class);
             OWNED = l.findVarHandle(KDeferred.class, "owned", Boolean.TYPE);
         } catch (ReflectiveOperationException var1) {
             throw new ExceptionInInitializerError(var1);

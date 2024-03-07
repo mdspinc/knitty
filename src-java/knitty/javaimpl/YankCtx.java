@@ -2,28 +2,15 @@ package knitty.javaimpl;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
 import java.util.concurrent.CancellationException;
-import java.util.concurrent.ConcurrentHashMap;
-
 import clojure.lang.Associative;
 import clojure.lang.IEditableCollection;
 import clojure.lang.ITransientAssociative;
 import clojure.lang.Keyword;
-import clojure.lang.PersistentArrayMap;
-import clojure.lang.IExceptionInfo;
-import clojure.lang.ExceptionInfo;
-import clojure.lang.IPersistentMap;
 import clojure.lang.ILookup;
 import clojure.lang.IFn;
-import manifold.deferred.IDeferred;
 import manifold.deferred.IDeferredListener;
-import manifold.deferred.IMutableDeferred;
 
 public final class YankCtx implements ILookup {
 

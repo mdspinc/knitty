@@ -2,7 +2,6 @@ package knitty.javaimpl;
 
 import java.util.Arrays;
 import java.util.Map;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 
 import clojure.lang.Keyword;
@@ -22,10 +21,6 @@ public final class KwMapper {
 
     public static int regkw(Keyword kw) {
         return INSTANCE.reg(kw);
-    }
-
-    public static int maxi() {
-        return INSTANCE.kid + 1;
     }
 
     private Keyword[] ksa = new Keyword[INIT_SIZE];
@@ -50,6 +45,10 @@ public final class KwMapper {
                 return t;
             }
         }
+    }
+
+    public int maxi() {
+        return INSTANCE.kid + 1;
     }
 
     public Keyword get(int i) {
