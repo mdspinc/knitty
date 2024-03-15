@@ -23,6 +23,10 @@ public final class KwMapper {
         return INSTANCE.reg(kw);
     }
 
+    public static int maxi() {
+        return INSTANCE.kid + 1;
+    }
+
     private Keyword[] ksa = new Keyword[INIT_SIZE];
     private final Map<Keyword, Integer> ksm = new ConcurrentHashMap<>(INIT_SIZE);
 
@@ -45,10 +49,6 @@ public final class KwMapper {
                 return t;
             }
         }
-    }
-
-    public int maxi() {
-        return INSTANCE.kid + 1;
     }
 
     public Keyword get(int i) {

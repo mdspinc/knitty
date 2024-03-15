@@ -4,7 +4,7 @@
 (ns knitty.javaimpl
   (:require [manifold.deferred :as md]
             [clojure.tools.logging :as log])
-  (:import [knitty.javaimpl KDeferred KAwaiter YankCtx KwMapper]))
+  (:import [knitty.javaimpl KDeferred KAwaiter KwMapper]))
 
 
 (KDeferred/setExceptionLogFn
