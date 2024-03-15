@@ -288,9 +288,9 @@ public final class KDeferred
         this.token = token;
     }
 
-    KDeferred(Object token, boolean revokable) {
-        this.token = token;
-        this.revokable = revokable;
+    KDeferred(byte state, Object value) {
+        this.state = state;
+        this.value = value;
     }
 
     final boolean owned() {
@@ -733,11 +733,12 @@ public final class KDeferred
         return new KDeferred(token);
     }
 
-    public static KDeferred wrapErr(Throwable e) {
-        KDeferred d = new KDeferred();
-        d.value = e;
-        STATE.setVolatile(d, STATE_ERRR);
-        return d;
+    public static KDeferred wrapError(Object e) {
+        return new KDeferred(STATE_ERRR, e);
+    }
+
+    public static KDeferred wrapSuccess(Object x) {
+        return new KDeferred(STATE_SUCC, x);
     }
 
     public static KDeferred wrapDeferred(IDeferred x) {
@@ -760,10 +761,7 @@ public final class KDeferred
         if (x instanceof IDeferred) {
             return wrapDeferred((IDeferred) x);
         } else {
-            KDeferred d = new KDeferred();
-            d.value = x;
-            STATE.setVolatile(d, STATE_SUCC);
-            return d;
+            return new KDeferred(STATE_SUCC, x);
         }
     }
 
