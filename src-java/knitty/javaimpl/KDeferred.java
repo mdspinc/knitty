@@ -272,7 +272,7 @@ public final class KDeferred
     }
 
     volatile byte state;
-    volatile boolean owned;
+    boolean owned;
     boolean revokable;
 
     private Object value;
@@ -289,8 +289,8 @@ public final class KDeferred
     }
 
     KDeferred(byte state, Object value) {
-        this.state = state;
         this.value = value;
+        this.state = state;
     }
 
     final boolean owned() {
@@ -326,31 +326,33 @@ public final class KDeferred
     }
 
     public Object success(Object x) {
-        byte state = (byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK);
-        if (state == STATE_INIT) {
-            if (this.token != null) {
+        if ((byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK) == STATE_INIT) {
+            if (this.token == null) {
+                this.value = x;
+                this.state = STATE_SUCC;
+                return true;
+            } else {
                 this.state = STATE_INIT;
                 throw new IllegalStateException("invalid claim-token");
             }
-            this.value = x;
-            this.state = STATE_SUCC;
-            return true;
+        } else {
+            return success0(x, null);
         }
-        return success0(x, null);
     }
 
     public Object success(Object x, Object token) {
-        byte state = (byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK);
-        if (state == STATE_INIT) {
-            if (this.token != token) {
+        if ((byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK) == STATE_INIT) {
+            if (this.token == token) {
+                this.value = x;
+                this.state = STATE_SUCC;
+                return true;
+            } else {
                 this.state = STATE_INIT;
                 throw new IllegalStateException("invalid claim-token");
             }
-            this.value = x;
-            this.state = STATE_SUCC;
-            return true;
+        } else {
+            return success0(x, token);
         }
-        return success0(x, token);
     }
 
     private Object success0(Object x, Object token) {
@@ -370,6 +372,12 @@ public final class KDeferred
                     STATE.setVolatile(this, STATE_SUCC);
                     return true;
                 }
+
+                case STATE_SUCC:
+                    return false;
+
+                case STATE_ERRR:
+                    return false;
 
                 case STATE_LSTN: {
 
@@ -398,44 +406,44 @@ public final class KDeferred
                             }
                         }
                     }
-
                     return true;
                 }
 
-                case STATE_SUCC:
-                case STATE_ERRR:
-                    return false;
+                case STATE_LOCK:
+                    Thread.onSpinWait();
+                    continue;
             }
-            Thread.onSpinWait();
         }
     }
 
     public Object error(Object x) {
-        byte state = (byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK);
-        if (state == STATE_INIT) {
-            if (this.token != null) {
+        if ((byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK) == STATE_INIT) {
+            if (this.token == null) {
+                this.value = x;
+                this.state = STATE_ERRR;
+                return true;
+            } else {
                 this.state = STATE_INIT;
                 throw new IllegalStateException("invalid claim-token");
             }
-            this.value = x;
-            this.state = STATE_ERRR;
-            return true;
+        } else {
+            return this.error0(x, null);
         }
-        return this.error0(x, null);
     }
 
     public Object error(Object x, Object token) {
-        byte state = (byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK);
-        if (state == STATE_INIT) {
-            if (this.token != token) {
+        if ((byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK) == STATE_INIT) {
+            if (this.token == token) {
+                this.value = x;
+                this.state = STATE_ERRR;
+                return true;
+            } else {
                 this.state = STATE_INIT;
                 throw new IllegalStateException("invalid claim-token");
             }
-            this.value = x;
-            this.state = STATE_ERRR;
-            return true;
+        } else {
+            return this.error0(x, token);
         }
-        return this.error0(x, token);
     }
 
     private Object error0(Object x, Object token) {
@@ -455,6 +463,12 @@ public final class KDeferred
                     STATE.setVolatile(this, STATE_ERRR);
                     return true;
                 }
+
+                case STATE_SUCC:
+                    return false;
+
+                case STATE_ERRR:
+                    return false;
 
                 case STATE_LSTN: {
 
@@ -486,11 +500,10 @@ public final class KDeferred
                     return true;
                 }
 
-                case STATE_SUCC:
-                case STATE_ERRR:
-                    return false;
+                case STATE_LOCK:
+                    Thread.onSpinWait();
+                    continue;
             }
-            Thread.onSpinWait();
         }
     }
 
@@ -502,7 +515,7 @@ public final class KDeferred
 
         if (state == STATE_INIT) {
             this.lcFirst = this.lcLast = new Listeners(x);
-            STATE.setVolatile(this, STATE_LSTN);
+            this.state = STATE_LSTN;
             return true;
         } else {
             return false;
@@ -530,16 +543,8 @@ public final class KDeferred
 
         while (true) {
             switch (state) {
-                case STATE_LOCK:
-                    Thread.onSpinWait();
-                    continue;
                 case STATE_INIT:
                     if (this.pushListener1(ls))
-                        return true;
-                    else
-                        continue;
-                case STATE_LSTN:
-                    if (this.pushListener(ls))
                         return true;
                     else
                         continue;
@@ -549,8 +554,14 @@ public final class KDeferred
                 case STATE_ERRR:
                     ls.onError(value);
                     return false;
-                default:
-                    throw new IllegalStateException();
+                case STATE_LSTN:
+                    if (this.pushListener(ls))
+                        return true;
+                    else
+                        continue;
+                case STATE_LOCK:
+                    Thread.onSpinWait();
+                    continue;
             }
         }
     }
@@ -733,11 +744,11 @@ public final class KDeferred
         return new KDeferred(token);
     }
 
-    public static KDeferred wrapError(Object e) {
+    public static KDeferred wrapErr(Object e) {
         return new KDeferred(STATE_ERRR, e);
     }
 
-    public static KDeferred wrapSuccess(Object x) {
+    public static KDeferred wrapVal(Object x) {
         return new KDeferred(STATE_SUCC, x);
     }
 
