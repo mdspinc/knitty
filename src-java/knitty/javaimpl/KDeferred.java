@@ -27,15 +27,15 @@ public final class KDeferred
     private final class BindListener implements IDeferredListener {
 
         private final KDeferred dest;
-        private final IFn valFn;
-        private final IFn errFn;
         private final Object token;
+        private final IFn valFn; // non-null
+        private final IFn errFn; // nullable
 
         private BindListener(KDeferred dest, IFn valFn, IFn errFn, Object token) {
             this.dest = dest;
+            this.token = token;
             this.valFn = valFn;
             this.errFn = errFn;
-            this.token = token;
         }
 
         public Object onSuccess(Object x) {
@@ -55,19 +55,24 @@ public final class KDeferred
         }
 
         public Object onError(Object e) {
-            Object t;
-            try {
-                t = errFn.invoke(e);
-            } catch (Throwable e1) {
-                dest.error(e1, token);
+            if (errFn == null) {
+                dest.error(e, token);
+                return null;
+            } else {
+                Object t;
+                try {
+                    t = errFn.invoke(e);
+                } catch (Throwable e1) {
+                    dest.error(e1, token);
+                    return null;
+                }
+                if (t instanceof IDeferred) {
+                    dest.chainFromDeferred((IDeferred) t, token);
+                } else {
+                    dest.success(t, token);
+                }
                 return null;
             }
-            if (t instanceof IDeferred) {
-                dest.chainFromDeferred((IDeferred) t, token);
-            } else {
-                dest.success(t, token);
-            }
-            return null;
         }
     }
 
