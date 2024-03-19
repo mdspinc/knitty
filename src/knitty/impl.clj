@@ -1,13 +1,12 @@
 (ns knitty.impl
-  (:require [knitty.javaimpl :as ji]
+  (:require [clojure.set :as set]
+            [knitty.javaimpl :as ji]
             [knitty.trace :as t]
-            [clojure.set :as set]
             [manifold.deferred :as md]
             [manifold.executor]
             [manifold.utils])
-  (:import
-   [clojure.lang IFn]
-   [knitty.javaimpl YankCtx KDeferred YarnProvider]))
+  (:import [clojure.lang AFn]
+           [knitty.javaimpl KDeferred YankCtx YarnProvider]))
 
 
 (set! *warn-on-reflection* true)
@@ -36,7 +35,7 @@
   (count [_] (count asmap))
   (cons [t x] (.assoc t (ji/yarn-key x) x))
   (equiv [_ o] (and (instance? Registry o) (= asmap (.-asmap ^Registry o))))
-  (empty [_] (Registry. (delay (make-array IFn 0)) {} {}))
+  (empty [_] (Registry. (delay (make-array AFn 0)) {} {}))
 
   clojure.lang.ILookup
   (valAt [_ k] (asmap k))
@@ -60,13 +59,13 @@
           (check-no-cycle k d [k] asmap)))
 
       (Registry.
-       (delay (make-array IFn (inc (ji/maxid))))
+       (delay (make-array AFn (inc (ji/maxid))))
        (assoc asmap k v)
        all-deps'))))
 
 
 (defn create-registry []
-  (Registry. (delay (make-array IFn 0)) {} {}))
+  (Registry. (delay (make-array AFn 0)) {} {}))
 
 
 (defn bind-param-type [ds]
