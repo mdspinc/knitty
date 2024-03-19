@@ -4,6 +4,8 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.Arrays;
 import java.util.concurrent.CancellationException;
+
+import clojure.lang.AFn;
 import clojure.lang.Associative;
 import clojure.lang.IEditableCollection;
 import clojure.lang.ITransientAssociative;
@@ -76,7 +78,7 @@ public final class YankCtx implements ILookup {
         return a1x == null ? a11 : a1x;
     }
 
-    public void yank(Iterable<?> yarns, IDeferredListener callback) {
+    public void yank(Iterable<?> yarns, AFn callback) {
 
         int di = 0;
         KDeferred[] ds = null;
@@ -87,7 +89,7 @@ public final class YankCtx implements ILookup {
                 Keyword k = (Keyword) x;
                 int i0 = this.kwm.getr(k, true);
                 if (i0 == -1) {
-                    callback.onError(new IllegalArgumentException("unknown yarn " + x));
+                    callback.invoke(new IllegalArgumentException("unknown yarn " + x));
                     return;
                 }
                 r = this.fetch(i0, k);
@@ -96,7 +98,7 @@ public final class YankCtx implements ILookup {
                 Keyword k = (Keyword) KEYFN.invoke(y.invoke());
                 int i0 = this.kwm.getr(k, true);
                 if (i0 == -1) {
-                    callback.onError(new IllegalArgumentException("unknown yarn " + k));
+                    callback.invoke(new IllegalArgumentException("unknown yarn " + k));
                     return;
                 }
                 r = this.fetch(i0, k, y);
@@ -110,11 +112,7 @@ public final class YankCtx implements ILookup {
                 ds[di++] = r;
             }
         }
-        switch (di) {
-            case 0:  callback.onSuccess(null); return;
-            case 1:  ds[0].addListener(callback); return;
-            default: KAwaiter.awaitArr(callback, ds, di); return;
-        }
+        KAwaiter.awaitArr(callback, ds, di);
     }
 
     public KDeferred yank1(Object x) {

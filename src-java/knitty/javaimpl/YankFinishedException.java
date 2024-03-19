@@ -11,6 +11,6 @@ public class YankFinishedException extends CancellationException {
    }
 
    public synchronized Throwable fillInStackTrace() {
-      return this;
+    return this;
    }
 }

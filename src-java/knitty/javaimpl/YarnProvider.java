@@ -1,9 +1,9 @@
 package knitty.javaimpl;
 
 import clojure.lang.Keyword;
-import clojure.lang.IFn;
+import clojure.lang.AFn;
 
 public interface YarnProvider {
-    IFn yarn(Keyword k);
-    IFn[] ycache();
+    AFn yarn(Keyword k);
+    AFn[] ycache();
 }
