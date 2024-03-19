@@ -188,7 +188,8 @@ public final class YankCtx implements ILookup {
 
         Object x = inputs.valAt(k, NONE);
         if (x != NONE) {
-            return d.chainFrom(x, token);
+            d.chainFrom(x, token);
+            return d;
         }
 
         IFn y = this.yarn(i);
@@ -219,7 +220,8 @@ public final class YankCtx implements ILookup {
 
         Object x = inputs.valAt(k, NONE);
         if (x != NONE) {
-            return d.chainFrom(x, token);
+            d.chainFrom(x, token);
+            return d;
         }
 
         KVCons a = added;
