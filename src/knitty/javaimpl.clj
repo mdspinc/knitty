@@ -17,7 +17,8 @@
 (definline maxid []
   `(KwMapper/maxi))
 
-(defrecord YarnInfo [type key deps body-sexp])
+(defrecord YarnInfo
+           [type key deps body-sexp])
 
 (defmacro decl-yarn
   ([ykey deps bodyf]
@@ -79,14 +80,20 @@
 (definline kd-revoke [d cancel err-handler]
   `(KDeferred/revoke ~d ~cancel ~err-handler))
 
+(definline kd-revoke-to [kd kd0]
+  `(let [^KDeferred x# ~kd] (.revokeTo x# ~kd0)))
+
 (definline kd-chain-from [kd d token]
   `(let [^KDeferred x# ~kd] (.chainFrom x# ~d ~token)))
 
-(defmacro kd-after* [d val]
-  `(let [^KDeferred x# ~d, f# (fn [_#] ~val)] (.chain x# f# f#)))
+(definline kd-bind [d vf ef token]
+  `(let [^KDeferred x# ~d] (.bind x# ~vf ~ef ~token)))
 
-(definline kd-chain [d vf ef]
-  `(let [^KDeferred x# ~d] (.chain x# ~vf ~ef)))
+(defmacro kd-after* [d & body]
+  `(kd-bind ~d
+            (fn [x#] (do ~@body) x#)
+            (fn [e#] (do ~@body) (KDeferred/wrapErr e#))
+            nil))
 
 (defmacro kd-await
   ([ls]

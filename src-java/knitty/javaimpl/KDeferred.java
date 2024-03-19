@@ -24,34 +24,49 @@ public final class KDeferred
         IDeferred,
         IMutableDeferred {
 
-    private static class ChainFnListener implements IDeferredListener {
+    private final class BindListener implements IDeferredListener {
 
-        private final KDeferred d;
-        private final IFn vf;
-        private final IFn ef;
+        private final KDeferred dest;
+        private final IFn valFn;
+        private final IFn errFn;
         private final Object token;
 
-        private ChainFnListener(KDeferred d, IFn vf, IFn ef, Object token) {
-            this.d = d;
-            this.vf = vf;
-            this.ef = ef;
+        private BindListener(KDeferred dest, IFn valFn, IFn errFn, Object token) {
+            this.dest = dest;
+            this.valFn = valFn;
+            this.errFn = errFn;
             this.token = token;
         }
 
-        public Object onSuccess(Object v) {
-            Object x;
+        public Object onSuccess(Object x) {
+            Object t;
             try {
-                x = vf.invoke(v);
+                t = valFn.invoke(x);
             } catch (Throwable e) {
-                d.error(e, token);
+                dest.error(e, token);
                 return null;
             }
-            d.success(x, token);
+            if (t instanceof IDeferred) {
+                dest.chainFromDeferred((IDeferred) t, token);
+            } else {
+                dest.success(t, token);
+            }
             return null;
         }
 
         public Object onError(Object e) {
-            d.error(ef.invoke(e), token);
+            Object t;
+            try {
+                t = errFn.invoke(e);
+            } catch (Throwable e1) {
+                dest.error(e1, token);
+                return null;
+            }
+            if (t instanceof IDeferred) {
+                dest.chainFromDeferred((IDeferred) t, token);
+            } else {
+                dest.success(t, token);
+            }
             return null;
         }
     }
@@ -94,46 +109,6 @@ public final class KDeferred
         }
     }
 
-    private final static class ChainSucFn extends AFn {
-
-        private final KDeferred kd;
-        private final Object token;
-
-        public ChainSucFn(KDeferred kd, Object token) {
-            this.kd = kd;
-            this.token = token;
-        }
-
-        public Object invoke(Object x) {
-            if (x instanceof IDeferred) {
-                kd.chainFrom(x, token);
-            } else {
-                kd.success(x, token);
-            }
-            return null;
-        }
-    }
-
-    private final static class ChainErrFn extends AFn {
-
-        private final KDeferred kd;
-        private final Object token;
-
-        public ChainErrFn(KDeferred kd, Object token) {
-            this.kd = kd;
-            this.token = token;
-        }
-
-        public Object invoke(Object x) {
-            if (x instanceof IDeferred) {
-                kd.chainFromDeferred((IDeferred) x, token);
-            } else {
-                kd.error(x, token);
-            }
-            return null;
-        }
-    }
-
     private final static class ChainListener implements IDeferredListener {
 
         private final KDeferred kd;
@@ -160,6 +135,22 @@ public final class KDeferred
                 kd.error(x, token);
             }
             return null;
+        }
+
+        public IFn successCallback() {
+            return new AFn() {
+                public Object invoke(Object x) {
+                    return onSuccess(x);
+                }
+            };
+        }
+
+        public IFn errorCallback() {
+            return new AFn() {
+                public Object invoke(Object x) {
+                    return onError(x);
+                }
+            };
         }
     }
 
@@ -267,6 +258,7 @@ public final class KDeferred
     }
 
     private static volatile IFn LOG_EXCEPTION;
+
     public static void setExceptionLogFn(IFn f) {
         LOG_EXCEPTION = f;
     }
@@ -274,7 +266,6 @@ public final class KDeferred
     volatile byte state;
     boolean owned;
     boolean revokable;
-
     private Object value;
     private Object token;
     private Listeners lcFirst;
@@ -317,7 +308,8 @@ public final class KDeferred
             if (log != null) {
                 log.invoke(e0);
             } else {
-                e0.printStackTrace();;
+                e0.printStackTrace();
+                ;
             }
         } catch (Throwable e1) {
             e0.printStackTrace();
@@ -336,32 +328,18 @@ public final class KDeferred
                 throw new IllegalStateException("invalid claim-token");
             }
         } else {
-            return success0(x, null);
+            return success(x, null);
         }
     }
 
     public Object success(Object x, Object token) {
-        if ((byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK) == STATE_INIT) {
-            if (this.token == token) {
-                this.value = x;
-                this.state = STATE_SUCC;
-                return true;
-            } else {
-                this.state = STATE_INIT;
-                throw new IllegalStateException("invalid claim-token");
-            }
-        } else {
-            return success0(x, token);
-        }
-    }
-
-    private Object success0(Object x, Object token) {
         while (true) {
             switch (this.state) {
 
                 case STATE_INIT: {
                     byte state = (byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK);
-                    if (state == STATE_INIT) break;
+                    if (state != STATE_INIT)
+                        break;
 
                     if (token != this.token) {
                         STATE.setVolatile(this, STATE_INIT);
@@ -382,7 +360,8 @@ public final class KDeferred
                 case STATE_LSTN: {
 
                     byte state = (byte) STATE.compareAndExchange(this, STATE_LSTN, STATE_LOCK);
-                    if (state != STATE_LSTN) break;
+                    if (state != STATE_LSTN)
+                        break;
 
                     if (token != this.token) {
                         STATE.setVolatile(this, STATE_LSTN);
@@ -401,6 +380,8 @@ public final class KDeferred
                             IDeferredListener ls = node.items[i];
                             try {
                                 ls.onSuccess(value);
+                            } catch (StackOverflowError e) {
+                                throw e;
                             } catch (Throwable e) {
                                 logException(e);
                             }
@@ -427,32 +408,18 @@ public final class KDeferred
                 throw new IllegalStateException("invalid claim-token");
             }
         } else {
-            return this.error0(x, null);
+            return this.error(x, null);
         }
     }
 
     public Object error(Object x, Object token) {
-        if ((byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK) == STATE_INIT) {
-            if (this.token == token) {
-                this.value = x;
-                this.state = STATE_ERRR;
-                return true;
-            } else {
-                this.state = STATE_INIT;
-                throw new IllegalStateException("invalid claim-token");
-            }
-        } else {
-            return this.error0(x, token);
-        }
-    }
-
-    private Object error0(Object x, Object token) {
         while (true) {
             switch (this.state) {
 
                 case STATE_INIT: {
                     byte state = (byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK);
-                    if (state != STATE_INIT) break;
+                    if (state != STATE_INIT)
+                        break;
 
                     if (token != this.token) {
                         STATE.setVolatile(this, STATE_INIT);
@@ -473,7 +440,8 @@ public final class KDeferred
                 case STATE_LSTN: {
 
                     byte state = (byte) STATE.compareAndExchange(this, STATE_LSTN, STATE_LOCK);
-                    if (state != STATE_LSTN) break;
+                    if (state != STATE_LSTN)
+                        break;
 
                     if (token != this.token) {
                         STATE.setVolatile(this, STATE_LSTN);
@@ -492,6 +460,8 @@ public final class KDeferred
                             IDeferredListener ls = node.items[i];
                             try {
                                 ls.onError(value);
+                            } catch (StackOverflowError e) {
+                                throw e;
                             } catch (Throwable e) {
                                 logException(e);
                             }
@@ -538,9 +508,7 @@ public final class KDeferred
     }
 
     public Object addListener(Object lss) {
-
         IDeferredListener ls = (IDeferredListener) lss;
-
         while (true) {
             switch (state) {
                 case STATE_INIT:
@@ -642,6 +610,12 @@ public final class KDeferred
         }
     }
 
+    private CountDownLatch acquireCountdDownLatch() {
+        CountDownLatch cdl = new CountDownLatch(1);
+        this.addListener(new CdlListener(cdl));
+        return cdl;
+    }
+
     public Object deref(long ms, Object timeoutValue) {
 
         switch (this.state) {
@@ -696,27 +670,24 @@ public final class KDeferred
         throw new IllegalStateException();
     }
 
-    private CountDownLatch acquireCountdDownLatch() {
-        CountDownLatch cdl = new CountDownLatch(1);
-        this.addListener(new CdlListener(cdl));
-        return cdl;
-    }
-
-    public KDeferred chainFrom(Object x) {
-        return chainFrom(x, null);
+    public void revokeTo(KDeferred d) {
+        if (d.revokable) {
+            this.addListener(new KdRevokeListener(d));
+        }
     }
 
     void chainFromDeferred(IDeferred x, Object token) {
+        ChainListener ls = new ChainListener(this, token);
         if (x instanceof KDeferred) {
             KDeferred xx = (KDeferred) x;
-            xx.addListener(new ChainListener(this, token));
+            xx.addListener(ls);
             if (xx.revokable) {
                 this.addListener(new KdRevokeListener(xx));
             }
         } else if (x instanceof IMutableDeferred) {
-            ((IMutableDeferred) x).addListener(new ChainListener(this, token));
+            ((IMutableDeferred) x).addListener(ls);
         } else {
-            x.onRealized(new ChainSucFn(this, token), new ChainErrFn(this, token));
+            x.onRealized(ls.successCallback(), ls.errorCallback());
         }
     }
 
@@ -729,11 +700,34 @@ public final class KDeferred
         return this;
     }
 
-    public KDeferred chain(IFn vf, IFn ef) {
-        KDeferred d = new KDeferred(this.token);
-        d.pushListener1(new KdRevokeListener(this));
-        this.addListener(new ChainFnListener(d, vf, ef, token));
-        return d;
+    public KDeferred bind(IFn valFn, IFn errFn, Object token) {
+        while (true) {
+            switch (state) {
+                case STATE_INIT: {
+                    KDeferred dest = new KDeferred(token);
+                    if (this.pushListener1(new BindListener(dest, valFn, errFn, token))) {
+                        return dest;
+                    } else {
+                        continue;
+                    }
+                }
+                case STATE_SUCC:
+                    return wrap(valFn.invoke(value));
+                case STATE_ERRR:
+                    return wrap(errFn.invoke(value));
+                case STATE_LSTN: {
+                    KDeferred dest = new KDeferred(token);
+                    if (this.pushListener(new BindListener(dest, valFn, errFn, token))) {
+                        return dest;
+                    } else {
+                        continue;
+                    }
+                }
+                case STATE_LOCK:
+                    Thread.onSpinWait();
+                    continue;
+            }
+        }
     }
 
     public static KDeferred create() {
@@ -754,16 +748,10 @@ public final class KDeferred
 
     public static KDeferred wrapDeferred(IDeferred x) {
         if (x instanceof KDeferred) {
-             return (KDeferred) x;
-        } else if (x instanceof IMutableDeferred) {
-            KDeferred d = new KDeferred(x);
-            IMutableDeferred xx = (IMutableDeferred) x;
-            xx.addListener(new ChainListener(d, x));
-            return d;
+            return (KDeferred) x;
         } else {
             KDeferred d = new KDeferred(x);
-            IDeferred xx = (IDeferred) x;
-            xx.onRealized(new ChainSucFn(d, x), new ChainErrFn(d, x));
+            d.chainFromDeferred(x, x);
             return d;
         }
     }
@@ -783,7 +771,7 @@ public final class KDeferred
             KDeferred kd = new KDeferred();
             kd.revokable = true;
             kd.pushListener1(new RevokeListener(d, canceller, errCallback));
-            kd.chainFrom(d, null);
+            kd.chainFromDeferred(d, null);
             return kd;
         }
     }

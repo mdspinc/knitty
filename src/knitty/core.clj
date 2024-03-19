@@ -236,13 +236,19 @@
     (trace/if-tracing
      (if t
        (let [td (delay (trace/capture-trace! t))
-             r' (ji/kd-chain r
-                             (fn [x] (vary-meta x update :knitty/trace conj @td))
-                             (fn [e] (ex-info
-                                      (ex-message e)
-                                      (assoc (ex-data e) :knitty/trace (conj (:knitty/trace poy) @td))
-                                      (ex-cause e))))]
+             r' (ji/kd-bind
+                 r
+                 (fn [x]
+                   (vary-meta x update :knitty/trace conj @td))
+                 (fn [e]
+                   (throw
+                    (ex-info
+                     (ex-message e)
+                     (assoc (ex-data e) :knitty/trace (conj (:knitty/trace poy) @td))
+                     (ex-cause e))))
+                 nil)]
          (reset-meta! r' {:knitty/trace (ji/kd-after* r (conj (:knitty/trace poy) @td))})
+         (ji/kd-revoke-to r' r)
          r')
        r)
      r)))
@@ -261,13 +267,19 @@
     (trace/if-tracing
      (if t
        (let [td (delay (trace/capture-trace! t))
-             r' (ji/kd-chain r
-                             identity
-                             (fn [e] (ex-info
-                                      (ex-message e)
-                                      (assoc (ex-data e) :knitty/trace (conj (:knitty/trace poy) @td))
-                                      (ex-cause e))))]
+             r' (ji/kd-bind
+                 r
+                 (fn [x]
+                   x)
+                 (fn [e]
+                   (throw
+                    (ex-info
+                     (ex-message e)
+                     (assoc (ex-data e) :knitty/trace (conj (:knitty/trace poy) @td))
+                     (ex-cause e))))
+                 nil)]
          (reset-meta! r' {:knitty/trace (ji/kd-after* r (conj (:knitty/trace poy) @td))})
+         (ji/kd-revoke-to r' r)
          r')
        r)
      r)))
