@@ -1,8 +1,6 @@
 package knitty.javaimpl;
 
 import java.util.Iterator;
-
-import manifold.deferred.IDeferred;
 import manifold.deferred.IDeferredListener;
 
 public final class KAwaiter {

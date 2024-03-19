@@ -209,29 +209,38 @@ public final class KDeferred
 
     private static final class Listeners {
 
-        private static final int MAX_SIZE = 32;
+        private IDeferredListener l0;
+        private IDeferredListener l1;
+        private IDeferredListener l2;
+        private IDeferredListener l3;
 
-        public final IDeferredListener[] items;
         public int pos;
         public Listeners next;
 
         public Listeners(IDeferredListener x) {
-            this.items = new IDeferredListener[] { x, null, null, null };
-            this.pos = 1;
+            this.l0 = x;
         }
 
-        public Listeners(int size, IDeferredListener x) {
-            this.items = new IDeferredListener[size];
-            this.items[0] = x;
-            this.pos = 1;
+        public IDeferredListener get(int i) {
+            switch (i) {
+                case 0: return this.l0;
+                case 1: return this.l1;
+                case 2: return this.l2;
+                case 3: return this.l3;
+                default: throw new IllegalStateException();
+            }
         }
 
         public Listeners push(IDeferredListener ls) {
-            if (this.pos == this.items.length) {
-                this.next = new Listeners(Math.min(MAX_SIZE, this.items.length * 2), ls);
-                return next;
+            if (this.pos == 3) {
+                return this.next = new Listeners(ls);
             } else {
-                this.items[pos++] = ls;
+                switch (++this.pos) {
+                    case 1: this.l1 = ls; break;
+                    case 2: this.l2 = ls; break;
+                    case 3: this.l3 = ls; break;
+                    default: throw new IllegalStateException();
+                }
                 return this;
             }
         }
@@ -376,8 +385,8 @@ public final class KDeferred
                     this.lcFirst = null;
 
                     for (; node != null; node = node.next) {
-                        for (int i = 0; i < node.pos; ++i) {
-                            IDeferredListener ls = node.items[i];
+                        for (int i = 0; i <= node.pos; ++i) {
+                            IDeferredListener ls = node.get(i);
                             try {
                                 ls.onSuccess(value);
                             } catch (StackOverflowError e) {
@@ -456,8 +465,8 @@ public final class KDeferred
                     this.lcFirst = null;
 
                     for (; node != null; node = node.next) {
-                        for (int i = 0; i < node.pos; ++i) {
-                            IDeferredListener ls = node.items[i];
+                        for (int i = 0; i <= node.pos; ++i) {
+                            IDeferredListener ls = node.get(i);
                             try {
                                 ls.onError(value);
                             } catch (StackOverflowError e) {
