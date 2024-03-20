@@ -333,7 +333,7 @@ public final class KDeferred
     }
 
     private Object success0(byte state, Object x, Object token) {
-        do {
+        while (true) {
             switch (state) {
 
                 case STATE_LOCK:
@@ -360,7 +360,7 @@ public final class KDeferred
                     this.value = x;
                     this.lcLast = null;
                     this.lcFirst = null;
-                    this.state = (STATE_SUCC);
+                    this.state = STATE_SUCC;
 
                     for (; node != null; node = node.next) {
                         for (int i = 0; i <= node.pos; ++i) {
@@ -392,8 +392,7 @@ public final class KDeferred
                     return true;
                 }
             }
-        } while (false);
-        throw new IllegalStateException();
+        }
     }
 
     public Object error(Object x) {
@@ -419,7 +418,7 @@ public final class KDeferred
     }
 
     private Object error0(byte state, Object x, Object token) {
-        do {
+        while (true) {
             switch (state) {
 
                 case STATE_LOCK:
@@ -478,8 +477,7 @@ public final class KDeferred
                     return true;
                 }
             }
-        } while (false);
-        throw new IllegalStateException();
+        }
     }
 
     private boolean pushListener1(IDeferredListener x) {
