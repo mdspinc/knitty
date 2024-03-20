@@ -84,7 +84,7 @@
   `(let [^KDeferred x# ~kd] (.revokeTo x# ~kd0)))
 
 (definline kd-chain-from [kd d token]
-  `(let [^KDeferred x# ~kd] (.chainFrom x# ~d ~token)))
+  `(let [^KDeferred x# ~kd] (.chain x# ~d ~token)))
 
 (definline kd-bind [d vf ef token]
   `(let [^KDeferred x# ~d] (.bind x# ~vf ~ef ~token)))

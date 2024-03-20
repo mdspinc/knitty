@@ -186,7 +186,7 @@ public final class YankCtx implements ILookup {
         }
         Object x = inputs.valAt(k, NONE);
         if (x != NONE) {
-            d.chainFrom(x, token);
+            d.chain(x, token);
             return false;
         }
         KVCons a = added;

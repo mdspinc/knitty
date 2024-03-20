@@ -24,7 +24,7 @@ public final class KDeferred
         IDeferred,
         IMutableDeferred {
 
-    private final class BindListener extends AListener {
+    private final static class BindListener extends AListener {
 
         private final KDeferred dest;
         private final Object token;
@@ -43,13 +43,13 @@ public final class KDeferred
             try {
                 t = valFn.invoke(x);
             } catch (Throwable e) {
-                dest.error(e, token);
+                dest.error0(dest.state, e, token);
                 return null;
             }
             if (t instanceof IDeferred) {
-                dest.chainFromDeferred((IDeferred) t, token);
+                dest.chain0((IDeferred) t, token);
             } else {
-                dest.success(t, token);
+                dest.success0(dest.state, t, token);
             }
             return null;
         }
@@ -63,13 +63,13 @@ public final class KDeferred
                 try {
                     t = errFn.invoke(e);
                 } catch (Throwable e1) {
-                    dest.error(e1, token);
+                    dest.error0(dest.state, e1, token);
                     return null;
                 }
                 if (t instanceof IDeferred) {
-                    dest.chainFromDeferred((IDeferred) t, token);
+                    dest.chain0((IDeferred) t, token);
                 } else {
-                    dest.success(t, token);
+                    dest.success0(dest.state, t, token);
                 }
                 return null;
             }
@@ -106,23 +106,23 @@ public final class KDeferred
 
         public Object onSuccess(Object x) {
             if (x instanceof IDeferred) {
-                kd.chainFromDeferred((IDeferred) x, token);
+                kd.chain0((IDeferred) x, token);
             } else {
-                kd.success(x, token);
+                kd.success0(kd.state, x, token);
             }
             return null;
         }
 
         public Object onError(Object x) {
             if (x instanceof IDeferred) {
-                kd.chainFromDeferred((IDeferred) x, token);
+                kd.chain0((IDeferred) x, token);
             } else {
-                kd.error(x, token);
+                kd.error0(kd.state, x, token);
             }
             return null;
         }
 
-        public IFn successCallback() {
+        public AFn successCallback() {
             return new AFn() {
                 public Object invoke(Object x) {
                     return onSuccess(x);
@@ -130,7 +130,7 @@ public final class KDeferred
             };
         }
 
-        public IFn errorCallback() {
+        public AFn errorCallback() {
             return new AFn() {
                 public Object invoke(Object x) {
                     return onError(x);
@@ -179,14 +179,14 @@ public final class KDeferred
 
         public Object onSuccess(Object x) {
             if (!d.realized()) {
-                d.error(RevokeException.INSTANCE, d.token);
+                d.error0(d.state, RevokeException.INSTANCE, d.token);
             }
             return null;
         }
 
         public Object onError(Object x) {
             if (!d.realized()) {
-                d.error(new RevokeException((Throwable) x), d.token);
+                d.error0(d.state, new RevokeException((Throwable) x), d.token);
             }
             return null;
         }
@@ -207,11 +207,16 @@ public final class KDeferred
 
         public IDeferredListener get(int i) {
             switch (i) {
-                case 0: return this.ls0;
-                case 1: return this.ls1;
-                case 2: return this.ls2;
-                case 3: return this.ls3;
-                default: throw new IllegalStateException();
+                case 0:
+                    return this.ls0;
+                case 1:
+                    return this.ls1;
+                case 2:
+                    return this.ls2;
+                case 3:
+                    return this.ls3;
+                default:
+                    throw new IllegalStateException();
             }
         }
 
@@ -220,10 +225,17 @@ public final class KDeferred
                 return this.next = new Listeners(ls);
             } else {
                 switch (++this.pos) {
-                    case 1: this.ls1 = ls; break;
-                    case 2: this.ls2 = ls; break;
-                    case 3: this.ls3 = ls; break;
-                    default: throw new IllegalStateException();
+                    case 1:
+                        this.ls1 = ls;
+                        break;
+                    case 2:
+                        this.ls2 = ls;
+                        break;
+                    case 3:
+                        this.ls3 = ls;
+                        break;
+                    default:
+                        throw new IllegalStateException();
                 }
                 return this;
             }
@@ -432,7 +444,7 @@ public final class KDeferred
                     this.value = x;
                     this.lcLast = null;
                     this.lcFirst = null;
-                    this.state = (STATE_ERRR);
+                    this.state = STATE_ERRR;
 
                     for (; node != null; node = node.next) {
                         for (int i = 0; i <= node.pos; ++i) {
@@ -511,7 +523,8 @@ public final class KDeferred
         while (true) {
             switch (state) {
                 case STATE_INIT:
-                    if (this.pushListener1(ls)) return true;
+                    if (this.pushListener1(ls))
+                        return true;
                     continue;
                 case STATE_SUCC:
                     ls.onSuccess(value);
@@ -520,7 +533,8 @@ public final class KDeferred
                     ls.onError(value);
                     return false;
                 case STATE_LSTN:
-                    if (this.pushListener(ls)) return true;
+                    if (this.pushListener(ls))
+                        return true;
                     continue;
                 case STATE_LOCK:
                     Thread.onSpinWait();
@@ -675,7 +689,16 @@ public final class KDeferred
         }
     }
 
-    void chainFromDeferred(IDeferred x, Object token) {
+    public void chain0(IDeferred x, Object token) {
+        Object x1;
+        while ((x1 = x.successValue(x)) != x) {
+             if (x1 instanceof IDeferred) {
+                x = (IDeferred) x1;
+             } else {
+                this.success0(this.state, x1, token);
+                return;
+             }
+        }
         ChainListener ls = new ChainListener(this, token);
         if (x instanceof KDeferred) {
             KDeferred xx = (KDeferred) x;
@@ -690,11 +713,11 @@ public final class KDeferred
         }
     }
 
-    public KDeferred chainFrom(Object x, Object token) {
+    public KDeferred chain(Object x, Object token) {
         if (x instanceof IDeferred) {
-            this.chainFromDeferred((IDeferred) x, token);
+            this.chain0((IDeferred) x, token);
         } else {
-            this.success(x, token);
+            this.success0(this.state, x, token);
         }
         return this;
     }
@@ -713,7 +736,11 @@ public final class KDeferred
                 case STATE_SUCC:
                     return wrap(valFn.invoke(value));
                 case STATE_ERRR:
-                    return wrap(errFn.invoke(value));
+                    if (errFn == null) {
+                        return this;
+                    } else {
+                        return wrap(errFn.invoke(value));
+                    }
                 case STATE_LSTN: {
                     KDeferred dest = new KDeferred(token);
                     if (this.pushListener(new BindListener(dest, valFn, errFn, token))) {
@@ -750,7 +777,7 @@ public final class KDeferred
             return (KDeferred) x;
         } else {
             KDeferred d = new KDeferred(x);
-            d.chainFromDeferred(x, x);
+            d.chain(x, x);
             return d;
         }
     }
@@ -770,7 +797,7 @@ public final class KDeferred
             KDeferred kd = new KDeferred();
             kd.revokable = true;
             kd.pushListener1(new RevokeListener(d, canceller, errCallback));
-            kd.chainFromDeferred(d, null);
+            kd.chain(d, null);
             return kd;
         }
     }
