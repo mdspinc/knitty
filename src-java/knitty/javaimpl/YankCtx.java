@@ -11,14 +11,13 @@ import clojure.lang.IEditableCollection;
 import clojure.lang.ITransientAssociative;
 import clojure.lang.Keyword;
 import clojure.lang.ILookup;
-import clojure.lang.IFn;
 import manifold.deferred.IDeferredListener;
 
 public final class YankCtx implements ILookup {
 
     private static final Object NONE = new Object();
     private static final KVCons NIL = new KVCons(null, null, null);
-    private static final IFn KEYFN = Keyword.find("key");
+    private static final Keyword KEYFN = Keyword.find("key");
 
     private static final int ASHIFT = 4;
     private static final int ASIZE = 1 << ASHIFT;
@@ -26,7 +25,7 @@ public final class YankCtx implements ILookup {
 
     private static final VarHandle AR0 = MethodHandles.arrayElementVarHandle(KDeferred[][].class);
     private static final VarHandle AR1 = MethodHandles.arrayElementVarHandle(KDeferred[].class);
-    private static final VarHandle YSC = MethodHandles.arrayElementVarHandle(IFn[].class);
+    private static final VarHandle YSC = MethodHandles.arrayElementVarHandle(AFn[].class);
     private static final VarHandle ADDED;
     static {
         try {
@@ -42,7 +41,7 @@ public final class YankCtx implements ILookup {
 
     private final KDeferred[][] a0;
     private final KwMapper kwm;
-    private final IFn[] yarnsCache;
+    private final AFn[] yarnsCache;
     private final YarnProvider yankerProvider;
 
     public final Object tracer;
@@ -94,7 +93,7 @@ public final class YankCtx implements ILookup {
                 }
                 r = this.fetch(i0, k);
             } else {
-                IFn y = (IFn) x;
+                AFn y = (AFn) x;
                 Keyword k = (Keyword) KEYFN.invoke(y.invoke());
                 int i0 = this.kwm.getr(k, true);
                 if (i0 == -1) {
@@ -124,7 +123,7 @@ public final class YankCtx implements ILookup {
             }
             return this.fetch(i0, k);
         } else {
-            IFn y = (IFn) x;
+            AFn y = (AFn) x;
             Keyword k = (Keyword) KEYFN.invoke(y.invoke());
             int i0 = this.kwm.getr(k, true);
             if (i0 == -1) {
@@ -190,7 +189,7 @@ public final class YankCtx implements ILookup {
             return d;
         }
 
-        IFn y = this.yarn(i);
+        AFn y = this.yarn(i);
 
         KVCons a = added;
         while (a != null && !ADDED.compareAndSet(this, a, new KVCons(a, k, d))) a = added;
@@ -209,7 +208,7 @@ public final class YankCtx implements ILookup {
         return token;
     }
 
-    public KDeferred fetch(int i, Keyword k, IFn y) {
+    public KDeferred fetch(int i, Keyword k, AFn y) {
 
         KDeferred d = pull(i);
         if (d.owned()) {
@@ -234,8 +233,8 @@ public final class YankCtx implements ILookup {
         return d;
     }
 
-    private IFn yarn(int i) {
-        IFn y = (IFn) YSC.getVolatile(yarnsCache, i);
+    private AFn yarn(int i) {
+        AFn y = (AFn) YSC.getVolatile(yarnsCache, i);
         if (y != null) {
             return y;
         }
