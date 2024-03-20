@@ -176,60 +176,43 @@ public final class YankCtx implements ILookup {
         return d0 != null ? d0 : d;
     }
 
-    public KDeferred fetch(int i, Keyword k) {
-
-        KDeferred d = pull(i);
-        if (d.owned()) {
-            return d;
-        }
-
-        Object x = inputs.valAt(k, NONE);
-        if (x != NONE) {
-            d.chainFrom(x, token);
-            return d;
-        }
-
-        AFn y = this.yarn(i);
-
-        KVCons a = added;
-        while (a != null && !ADDED.compareAndSet(this, a, new KVCons(a, k, d))) a = added;
-
-        if (a == null) {
-            d.error(YankFinishedException.INTANCE, token);
-
-        } else {
-            y.invoke(this, d);
-        }
-
-        return d;
-    }
-
     public Object token() {
         return token;
     }
 
-    public KDeferred fetch(int i, Keyword k, AFn y) {
-
-        KDeferred d = pull(i);
+    private boolean fetch0(KDeferred d, Keyword k) {
         if (d.owned()) {
-            return d;
+            return false;
         }
-
         Object x = inputs.valAt(k, NONE);
         if (x != NONE) {
             d.chainFrom(x, token);
-            return d;
+            return false;
         }
-
         KVCons a = added;
         while (a != null && !ADDED.compareAndSet(this, a, new KVCons(a, k, d))) a = added;
 
         if (a == null) {
             d.error(YankFinishedException.INTANCE, token);
-        } else {
+            return false;
+        }
+        return true;
+    }
+
+    public KDeferred fetch(int i, Keyword k, AFn y) {
+        KDeferred d = pull(i);
+        if (!d.owned && fetch0(d, k)) {
             y.invoke(this, d);
         }
+        return d;
+    }
 
+    public KDeferred fetch(int i, Keyword k) {
+        KDeferred d = pull(i);
+        if (!d.owned && fetch0(d, k)) {
+            AFn y = this.yarn(i);
+            y.invoke(this, d);
+        }
         return d;
     }
 

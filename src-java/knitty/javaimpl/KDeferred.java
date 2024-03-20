@@ -278,7 +278,7 @@ public final class KDeferred
     }
 
     final boolean owned() {
-        return owned || (boolean) OWNED.getAndSet(this, true);
+        return (boolean) OWNED.getAndSet(this, true);
     }
 
     public synchronized IPersistentMap meta() {
