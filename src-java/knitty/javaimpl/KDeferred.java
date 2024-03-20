@@ -332,25 +332,14 @@ public final class KDeferred
         }
     }
 
-    private Object success0(byte state, Object x, Object token) {
+    private Object success0(byte s, Object x, Object token) {
         while (true) {
-            switch (state) {
+            switch (s) {
 
-                case STATE_LOCK:
-                    Thread.onSpinWait();
-                    state = this.state;
-                    continue;
-
-                case STATE_SUCC:
-                case STATE_ERRR:
-                    return false;
-
-                case STATE_LSTN: {
-
-                    state = (byte) STATE.compareAndExchange(this, STATE_LSTN, STATE_LOCK);
-                    if (state != STATE_LSTN)
+                case STATE_LSTN:
+                    s = (byte) STATE.compareAndExchange(this, STATE_LSTN, STATE_LOCK);
+                    if (s != STATE_LSTN)
                         continue;
-
                     if (token != this.token) {
                         this.state = STATE_LSTN;
                         throw new IllegalStateException("invalid claim-token");
@@ -375,13 +364,17 @@ public final class KDeferred
                         }
                     }
                     return true;
-                }
 
-                case STATE_INIT: {
-                    state = (byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK);
-                    if (state != STATE_INIT)
+                case STATE_SUCC:
+                    return false;
+
+                case STATE_ERRR:
+                    return false;
+
+                case STATE_INIT:
+                    s = (byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK);
+                    if (s != STATE_INIT)
                         continue;
-
                     if (token != this.token) {
                         this.state = STATE_INIT;
                         throw new IllegalStateException("invalid claim-token");
@@ -390,7 +383,11 @@ public final class KDeferred
                     this.value = x;
                     this.state = STATE_SUCC;
                     return true;
-                }
+
+                case STATE_LOCK:
+                    Thread.onSpinWait();
+                    s = this.state;
+                    continue;
             }
         }
     }
@@ -417,23 +414,13 @@ public final class KDeferred
         }
     }
 
-    private Object error0(byte state, Object x, Object token) {
+    private Object error0(byte s, Object x, Object token) {
         while (true) {
-            switch (state) {
+            switch (s) {
 
-                case STATE_LOCK:
-                    Thread.onSpinWait();
-                    state = this.state;
-                    continue;
-
-                case STATE_SUCC:
-                case STATE_ERRR:
-                    return false;
-
-                case STATE_LSTN: {
-
-                    state = (byte) STATE.compareAndExchange(this, STATE_LSTN, STATE_LOCK);
-                    if (state != STATE_LSTN)
+                case STATE_LSTN:
+                    s = (byte) STATE.compareAndExchange(this, STATE_LSTN, STATE_LOCK);
+                    if (s != STATE_LSTN)
                         continue;
 
                     if (token != this.token) {
@@ -460,11 +447,16 @@ public final class KDeferred
                         }
                     }
                     return true;
-                }
 
-                case STATE_INIT: {
-                    state = (byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK);
-                    if (state != STATE_INIT)
+                case STATE_SUCC:
+                    return false;
+
+                case STATE_ERRR:
+                    return false;
+
+                case STATE_INIT:
+                    s = (byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK);
+                    if (s != STATE_INIT)
                         continue;
 
                     if (token != this.token) {
@@ -475,7 +467,11 @@ public final class KDeferred
                     this.value = x;
                     this.state = STATE_ERRR;
                     return true;
-                }
+
+                case STATE_LOCK:
+                    Thread.onSpinWait();
+                    s = this.state;
+                    continue;
             }
         }
     }
