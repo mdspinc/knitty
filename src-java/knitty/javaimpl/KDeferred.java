@@ -368,7 +368,7 @@ public final class KDeferred
                             IDeferredListener ls = node.get(i);
                             try {
                                 ls.onSuccess(value);
-                            } catch (StackOverflowError e) {
+                                                        } catch (StackOverflowError e) {
                                 throw e;
                             } catch (Throwable e) {
                                 logException(e);
@@ -412,7 +412,7 @@ public final class KDeferred
             return true;
         } else {
             return this.error0(s, x, null);
-        }
+}
     }
 
     public Object error(Object x, Object token) {
@@ -422,8 +422,8 @@ public final class KDeferred
             this.state = STATE_ERRR;
             return true;
         } else {
-            return this.error0(s, x, token);
-        }
+                            return this.error0(s, x, token);
+                    }
     }
 
     private Object error0(byte s, Object x, Object token) {
@@ -451,7 +451,7 @@ public final class KDeferred
                             IDeferredListener ls = node.get(i);
                             try {
                                 ls.onError(value);
-                            } catch (StackOverflowError e) {
+                                                        } catch (StackOverflowError e) {
                                 throw e;
                             } catch (Throwable e) {
                                 logException(e);
@@ -503,7 +503,7 @@ public final class KDeferred
         }
     }
 
-    private boolean pushListener(IDeferredListener x) {
+    private boolean pushListenerX(IDeferredListener x) {
 
         byte state;
         while ((state = (byte) STATE.compareAndExchange(this, STATE_LSTN, STATE_LOCK)) == STATE_LOCK)
@@ -516,6 +516,32 @@ public final class KDeferred
         } else {
             return false;
         }
+    }
+
+    public boolean addListenerOnly(IDeferredListener ls) {
+        while (true) {
+            switch (state) {
+                case STATE_INIT:
+                    if (this.pushListener1(ls))
+                        return true;
+                    continue;
+                case STATE_SUCC:
+                    return false;
+                case STATE_ERRR:
+                    return false;
+                case STATE_LSTN:
+                    if (this.pushListenerX(ls))
+                        return true;
+                    continue;
+                case STATE_LOCK:
+                    Thread.onSpinWait();
+                    continue;
+            }
+        }
+    }
+
+    public boolean addListenerOnly(IFn onVal, IFn onErr) {
+        return addListenerOnly(AListener.fromFn(onVal, onErr));
     }
 
     public Object addListener(Object lss) {
@@ -533,7 +559,7 @@ public final class KDeferred
                     ls.onError(value);
                     return false;
                 case STATE_LSTN:
-                    if (this.pushListener(ls))
+                    if (this.pushListenerX(ls))
                         return true;
                     continue;
                 case STATE_LOCK:
@@ -544,7 +570,7 @@ public final class KDeferred
     }
 
     public Object onRealized(Object onSucc, Object onErr) {
-        return this.addListener(AListener.fromFn((IFn) onSucc, (IFn) onErr));
+        return this.addListener(AListener.fromFn(onSucc, onErr));
     }
 
     public Object cancelListener(Object listener) {
@@ -743,7 +769,7 @@ public final class KDeferred
                     }
                 case STATE_LSTN: {
                     KDeferred dest = new KDeferred(token);
-                    if (this.pushListener(new BindListener(dest, valFn, errFn, token))) {
+                    if (this.pushListenerX(new BindListener(dest, valFn, errFn, token))) {
                         return dest;
                     } else {
                         continue;
