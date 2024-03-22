@@ -9,7 +9,7 @@
            defyarn-method
            defyarn-multi
            declare-yarn
-           link-yarn
+           bind-yarn
            yank
            yank1]])
 
@@ -111,7 +111,7 @@
    y four}
   (+ x y))
 
-(link-yarn five five-impl)
+(bind-yarn five five-impl)
 
 @(yank {} five)
 ;; => #:user{:one-slow 1, :two 2, ...}
