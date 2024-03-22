@@ -317,7 +317,7 @@ public final class KAwaiter {
                 }
                 ls.invoke();
             } catch (Throwable e) {
-                KDeferred.logException(e);
+                KDeferred.logError(e, "error in awaiter callback");
             }
             return null;
         }
@@ -343,7 +343,7 @@ public final class KAwaiter {
                 }
                 ls.invoke();
             } catch (Throwable e) {
-                KDeferred.logException(e);
+                KDeferred.logError(e, "error in awaiter callback");
             }
             return null;
         }

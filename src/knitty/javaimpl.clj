@@ -8,7 +8,7 @@
 
 
 (KDeferred/setExceptionLogFn
- (fn log-ex [e] (log/error e "error in deferred handler")))
+ (fn log-ex [e msg] (log/error e msg)))
 
 
 (definline regkw [k]
