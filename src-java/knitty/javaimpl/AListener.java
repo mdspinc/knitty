@@ -3,17 +3,35 @@ package knitty.javaimpl;
 import clojure.lang.IFn;
 import manifold.deferred.IDeferredListener;
 
-public abstract class AListener implements IDeferredListener {
+public abstract class AListener {
 
-    public Object onSuccess(Object x) { return null; }
+    AListener next;
 
-    public Object onError(Object e) { return null; }
+    public abstract void success(Object x);
+    public abstract void error(Object e);
 
     public static AListener fromFn(Object onVal, Object onErr) {
         return new Fn((IFn) onVal, (IFn) onErr);
     }
 
-    private static final class Fn extends AListener {
+    static final class Dl extends AListener {
+
+        private final IDeferredListener ls;
+
+        Dl(IDeferredListener ls) {
+            this.ls = ls;
+        }
+
+        public void success(Object x) {
+            this.ls.onSuccess(x);
+        }
+
+        public void error(Object e) {
+            this.ls.onError(e);
+        }
+    }
+
+    static final class Fn extends AListener {
 
         private final IFn onSucc;
         private final IFn onErr;
@@ -23,14 +41,12 @@ public abstract class AListener implements IDeferredListener {
             this.onErr = onErr;
         }
 
-        public Object onSuccess(Object x) {
+        public void success(Object x) {
             this.onSucc.invoke(x);
-            return null;
         }
 
-        public Object onError(Object e) {
+        public void error(Object e) {
             this.onErr.invoke(e);
-            return null;
         }
     }
 }

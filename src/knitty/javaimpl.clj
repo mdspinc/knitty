@@ -8,7 +8,11 @@
 
 
 (KDeferred/setExceptionLogFn
- (fn log-ex [e msg] (log/error e msg)))
+ (fn log-ex
+   [error? e msg]
+   (if error?
+     (log/error e msg)
+     (log/warn e msg))))
 
 
 (definline regkw [k]

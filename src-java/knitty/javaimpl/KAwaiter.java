@@ -13,7 +13,7 @@ public final class KAwaiter {
 
     public static void await(AFn ls, KDeferred x1) {
         if (x1.state != OK) {
-            x1.addListener(new L0(ls));
+            x1.listen(new L0(ls));
         } else {
             ls.invoke();
         }
@@ -21,9 +21,9 @@ public final class KAwaiter {
 
     public static void await(AFn ls, KDeferred x1, KDeferred x2) {
         if (x2.state != OK) {
-            x2.addListener(new L1(ls, x1));
+            x2.listen(new L1(ls, x1));
         } else if (x1.state != OK) {
-            x1.addListener(new L0(ls));
+            x1.listen(new L0(ls));
         } else {
             ls.invoke();
         }
@@ -31,11 +31,11 @@ public final class KAwaiter {
 
     public static void await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3) {
         if (x3.state != OK) {
-            x3.addListener(new L2(ls, x1, x2));
+            x3.listen(new L2(ls, x1, x2));
         } else if (x2.state != OK) {
-            x2.addListener(new L1(ls, x1));
+            x2.listen(new L1(ls, x1));
         } else if (x1.state != OK) {
-            x1.addListener(new L0(ls));
+            x1.listen(new L0(ls));
         } else {
             ls.invoke();
         }
@@ -43,13 +43,13 @@ public final class KAwaiter {
 
     public static void await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4) {
         if (x4.state != OK) {
-            x4.addListener(new L3(ls, x1, x2, x3));
+            x4.listen(new L3(ls, x1, x2, x3));
         } else if (x3.state != OK) {
-            x3.addListener(new L2(ls, x1, x2));
+            x3.listen(new L2(ls, x1, x2));
         } else if (x2.state != OK) {
-            x2.addListener(new L1(ls, x1));
+            x2.listen(new L1(ls, x1));
         } else if (x1.state != OK) {
-            x1.addListener(new L0(ls));
+            x1.listen(new L0(ls));
         } else {
             ls.invoke();
         }
@@ -155,7 +155,7 @@ public final class KAwaiter {
         for (int i = len - 1; i >= 0; --i) {
             KDeferred d = ds[i];
             if (d.state != OK) {
-                d.addListener(new Arr(i - 1, ls, ds));
+                d.listen(new Arr(i - 1, ls, ds));
                 return;
             }
         }
@@ -166,7 +166,7 @@ public final class KAwaiter {
         for (int i = ds.length - 1; i >= 0; --i) {
             KDeferred d = ds[i];
             if (d.state != OK) {
-                d.addListener(new Arr(i - 1, ls, ds));
+                d.listen(new Arr(i - 1, ls, ds));
                 return;
             }
         }
@@ -183,7 +183,7 @@ public final class KAwaiter {
 
     public static void awaitIter(AFn ls, Iterator<KDeferred> ds) {
         if (ds.hasNext()) {
-            new Iter(ds, ls).onSuccess(null);
+            new Iter(ds, ls).success(null);
         } else {
             ls.invoke();
         }
@@ -199,9 +199,8 @@ public final class KAwaiter {
             this.ls = ls;
         }
 
-        public Object onError(Object e) {
+        public void error(Object e) {
             ls.invoke(e);
-            return null;
         }
     }
 
@@ -211,9 +210,8 @@ public final class KAwaiter {
             super(ls);
         }
 
-        public Object onSuccess(Object x) {
+        public void success(Object x) {
             ls.invoke();
-            return null;
         }
     }
 
@@ -228,13 +226,12 @@ public final class KAwaiter {
             this.x1 = x1;
         }
 
-        public Object onSuccess(Object _x) {
+        public void success(Object _x) {
             if (x1.state != OK) {
-                x1.addListener(new L0(ls));
+                x1.listen(new L0(ls));
             } else {
                 ls.invoke();
             }
-            return null;
         }
     }
 
@@ -252,15 +249,14 @@ public final class KAwaiter {
             this.x2 = x2;
         }
 
-        public Object onSuccess(Object _x) {
+        public void success(Object _x) {
             if (x2.state != OK) {
-                x2.addListener(new L1(ls, x1));
+                x2.listen(new L1(ls, x1));
             } else if (x1.state != OK) {
-                x1.addListener(new L0(ls));
+                x1.listen(new L0(ls));
             } else {
                 ls.invoke();
             }
-            return null;
         }
     }
 
@@ -281,17 +277,16 @@ public final class KAwaiter {
             this.x3 = x3;
         }
 
-        public Object onSuccess(Object _x) {
+        public void success(Object _x) {
             if (x3.state != OK) {
-                x3.addListener(new L2(ls, x1, x2));
+                x3.listen(new L2(ls, x1, x2));
             } else if (x2.state != OK) {
-                x2.addListener(new L1(ls, x1));
+                x2.listen(new L1(ls, x1));
             } else if (x1.state != OK) {
-                x1.addListener(new L0(ls));
+                x1.listen(new L0(ls));
             } else {
                 ls.invoke();
             }
-            return null;
         }
     }
 
@@ -306,20 +301,19 @@ public final class KAwaiter {
             this.ds = ds;
         }
 
-        public Object onSuccess(Object x) {
+        public void success(Object x) {
             try {
                 for (; i >= 0; --i) {
                     KDeferred d = ds[i];
                     if (d.state != OK) {
-                        d.addListener(this);
-                        return null;
+                        d.listen(this);
+                        return;
                     }
                 }
                 ls.invoke();
             } catch (Throwable e) {
                 KDeferred.logError(e, "error in awaiter callback");
             }
-            return null;
         }
     }
 
@@ -332,20 +326,19 @@ public final class KAwaiter {
             this.da = da;
         }
 
-        public Object onSuccess(Object x) {
+        public void success(Object x) {
             try {
                 while (da.hasNext()) {
                     KDeferred d = da.next();
                     if (d.state != OK) {
-                        d.addListener(this);
-                        return null;
+                        d.listen(this);
+                        return;
                     }
                 }
                 ls.invoke();
             } catch (Throwable e) {
                 KDeferred.logError(e, "error in awaiter callback");
             }
-            return null;
         }
     }
 }

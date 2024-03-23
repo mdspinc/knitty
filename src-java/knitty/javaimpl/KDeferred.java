@@ -7,11 +7,13 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import clojure.lang.AFn;
+import clojure.lang.ExceptionInfo;
 import clojure.lang.IFn;
 import clojure.lang.IPersistentMap;
 import clojure.lang.ISeq;
+import clojure.lang.Keyword;
+import clojure.lang.PersistentArrayMap;
 import clojure.lang.RT;
-import clojure.lang.Util;
 
 import manifold.deferred.IDeferred;
 import manifold.deferred.IDeferredListener;
@@ -41,7 +43,7 @@ public final class KDeferred
             Object e = this.err;
             if (e != null) {
                 try {
-                    logError(e, "unconsumed deferred in error state");
+                    logWarn(e, "unconsumed deferred in error state");
                 } catch (Exception e1) {
                     e1.printStackTrace();
                 }
@@ -63,40 +65,37 @@ public final class KDeferred
             this.errFn = errFn;
         }
 
-        public Object onSuccess(Object x) {
+        public void success(Object x) {
             Object t;
             try {
                 t = valFn.invoke(x);
             } catch (Throwable e) {
                 dest.error(e, token);
-                return null;
+                return;
             }
             if (t instanceof IDeferred) {
                 dest.chain(t, token);
             } else {
                 dest.success(t, token);
             }
-            return null;
         }
 
-        public Object onError(Object e) {
+        public void error(Object e) {
             if (errFn == null) {
                 dest.error(e, token);
-                return null;
             } else {
                 Object t;
                 try {
                     t = errFn.invoke(e);
                 } catch (Throwable e1) {
                     dest.error(e1, token);
-                    return null;
+                    return;
                 }
                 if (t instanceof IDeferred) {
                     dest.chain(t, token);
                 } else {
                     dest.success(t, token);
                 }
-                return null;
             }
         }
     }
@@ -108,18 +107,43 @@ public final class KDeferred
             this.cdl = cdl;
         }
 
-        public Object onSuccess(Object x) {
+        public void success(Object x) {
             cdl.countDown();
-            return null;
         }
 
-        public Object onError(Object e) {
+        public void error(Object e) {
             cdl.countDown();
-            return null;
         }
     }
 
-    private final static class ChainListener extends AListener {
+    private final static class KdChainListener extends AListener {
+
+        private final KDeferred kd;
+        private final Object token;
+
+        public KdChainListener(KDeferred kd, Object token) {
+            this.kd = kd;
+            this.token = token;
+        }
+
+        public void success(Object x) {
+            if (x instanceof IDeferred) {
+                kd.chain(x, token);
+            } else {
+                kd.success(x, token);
+            }
+        }
+
+        public void error(Object x) {
+            if (x instanceof IDeferred) {
+                kd.chain(x, token);
+            } else {
+                kd.error(x, token);
+            }
+        }
+    }
+
+    private final static class ChainListener implements IDeferredListener {
 
         private final KDeferred kd;
         private final Object token;
@@ -163,7 +187,6 @@ public final class KDeferred
             };
         }
     }
-
     private final static class RevokeListener extends AListener {
 
         private final IDeferred d;
@@ -176,21 +199,19 @@ public final class KDeferred
             this.errCallback = errCallback;
         }
 
-        public Object onSuccess(Object x) {
+        public void success(Object x) {
             if (!d.realized()) {
                 canceller.invoke();
             }
-            return null;
         }
 
-        public Object onError(Object x) {
+        public void error(Object x) {
             if (!d.realized()) {
                 canceller.invoke();
             }
             if (errCallback != null) {
                 errCallback.invoke(x);
             }
-            return null;
         }
     }
 
@@ -202,77 +223,24 @@ public final class KDeferred
             this.d = d;
         }
 
-        public Object onSuccess(Object x) {
+        public void success(Object x) {
             if (!d.realized()) {
                 d.error(RevokeException.INSTANCE, d.token);
             }
-            return null;
         }
 
-        public Object onError(Object x) {
+        public void error(Object x) {
             if (!d.realized()) {
                 d.error(new RevokeException((Throwable) x), d.token);
             }
-            return null;
         }
     }
 
-    private static final class Listeners {
-
-        public final IDeferredListener ls0;
-        public IDeferredListener ls1;
-        public IDeferredListener ls2;
-        public IDeferredListener ls3;
-        public int pos;
-        public Listeners next;
-
-        public Listeners(IDeferredListener x) {
-            this.ls0 = x;
-        }
-
-        public IDeferredListener get(int i) {
-            switch (i) {
-                case 0:
-                    return this.ls0;
-                case 1:
-                    return this.ls1;
-                case 2:
-                    return this.ls2;
-                case 3:
-                    return this.ls3;
-                default:
-                    throw new IllegalStateException();
-            }
-        }
-
-        public Listeners push(IDeferredListener ls) {
-            if (this.pos == 3) {
-                return this.next = new Listeners(ls);
-            } else {
-                switch (++this.pos) {
-                    case 1:
-                        this.ls1 = ls;
-                        break;
-                    case 2:
-                        this.ls2 = ls;
-                        break;
-                    case 3:
-                        this.ls3 = ls;
-                        break;
-                    default:
-                        throw new IllegalStateException();
-                }
-                return this;
-            }
-        }
-    }
-
-    static final byte STATE_INIT = 0;
-    static final byte STATE_SUCC = 1;
-    static final byte STATE_ERRR = 2;
-    static final byte STATE_LSTN = 4;
-    static final byte STATE_LOCK = 8;
-    static final byte STATE_DONE_MASK = STATE_SUCC | STATE_ERRR;
+    static final byte STATE_PEND = 0;
+    static final byte STATE_LOCK = 1;
+    static final byte STATE_SUCC = 2;
+    static final byte STATE_ERRR = 3;
+    static final byte STATE_DONE_MASK = 2;
 
     private static final VarHandle STATE;
     private static final VarHandle OWNED;
@@ -306,8 +274,8 @@ public final class KDeferred
     boolean revokable;
     private Object value;
     private Object token;
-    private Listeners lcFirst;
-    private Listeners lcLast;
+    private AListener lcFirst;
+    private AListener lcLast;
     private IPersistentMap meta;
     private ErrorLeakDetector eld;
 
@@ -353,9 +321,17 @@ public final class KDeferred
         return m;
     }
 
+    static void logWarn(Object err, String msg) {
+        try {
+            LOG_EXCEPTION.invoke(false, err, msg);
+        } catch (Throwable e) {
+            e.printStackTrace();
+        }
+    }
+
     static void logError(Object err, String msg) {
         try {
-            LOG_EXCEPTION.invoke(err, msg);
+            LOG_EXCEPTION.invoke(true, err, msg);
         } catch (Throwable e) {
             e.printStackTrace();
         }
@@ -370,58 +346,40 @@ public final class KDeferred
         while (true) {
             switch (s) {
 
-                case STATE_INIT:
-                    s = (byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK);
-                    if (s != STATE_INIT)
+                case STATE_PEND:
+                    s = (byte) STATE.compareAndExchange(this, STATE_PEND, STATE_LOCK);
+                    if (s != STATE_PEND)
                         continue;
                     if (token != this.token) {
-                        this.state = STATE_INIT;
+                        this.state = STATE_PEND;
                         throw new IllegalStateException("invalid claim-token");
                     }
 
-                    this.value = x;
-                    this.state = STATE_SUCC;
-                    return true;
-
-                case STATE_SUCC:
-                    return false;
-
-                case STATE_ERRR:
-                    return false;
-
-                case STATE_LSTN:
-                    s = (byte) STATE.compareAndExchange(this, STATE_LSTN, STATE_LOCK);
-                    if (s != STATE_LSTN)
-                        continue;
-                    if (token != this.token) {
-                        this.state = STATE_LSTN;
-                        throw new IllegalStateException("invalid claim-token");
-                    }
-
-                    Listeners node = this.lcFirst;
+                    AListener node = this.lcFirst;
                     this.value = x;
                     this.lcLast = null;
                     this.lcFirst = null;
                     this.state = STATE_SUCC;
 
                     for (; node != null; node = node.next) {
-                        for (int i = 0; i <= node.pos; ++i) {
-                            IDeferredListener ls = node.get(i);
-                            try {
-                                ls.onSuccess(value);
-                            } catch (StackOverflowError e) {
-                                throw e;
-                            } catch (Throwable e) {
-                                logError(e, "error in deferred handler");
-                            }
+                        try {
+                            node.success(x);
+                        } catch (Throwable e) {
+                            logError(e, "error in deferred handler");
                         }
                     }
-                    return true;
+                    return Boolean.TRUE;
 
                 case STATE_LOCK:
                     Thread.onSpinWait();
                     s = this.state;
                     continue;
+
+                case STATE_SUCC:
+                    return Boolean.FALSE;
+
+                case STATE_ERRR:
+                    return Boolean.FALSE;
             }
         }
     }
@@ -435,149 +393,104 @@ public final class KDeferred
         while (true) {
             switch (s) {
 
-                case STATE_INIT:
-                    s = (byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK);
-                    if (s != STATE_INIT)
+                case STATE_PEND:
+                    s = (byte) STATE.compareAndExchange(this, STATE_PEND, STATE_LOCK);
+                    if (s != STATE_PEND)
                         continue;
 
                     if (token != this.token) {
-                        this.state = STATE_INIT;
+                        this.state = STATE_PEND;
                         throw new IllegalStateException("invalid claim-token");
                     }
 
-                    this.fireEld(x);
-                    this.value = x;
-                    this.state = STATE_ERRR;
-                    return true;
-
-                case STATE_SUCC:
-                    return false;
-
-                case STATE_ERRR:
-                    return false;
-
-                case STATE_LSTN:
-                    s = (byte) STATE.compareAndExchange(this, STATE_LSTN, STATE_LOCK);
-                    if (s != STATE_LSTN)
-                        continue;
-
-                    if (token != this.token) {
-                        this.state = STATE_LSTN;
-                        throw new IllegalStateException("invalid claim-token");
-                    }
-
-                    Listeners node = this.lcFirst;
+                    AListener node = this.lcFirst;
                     this.value = x;
                     this.lcLast = null;
                     this.lcFirst = null;
+                    if (node == null) {
+                        this.fireEld(x);
+                    } else {
+                        this.clearEld();
+                    }
                     this.state = STATE_ERRR;
 
                     for (; node != null; node = node.next) {
-                        for (int i = 0; i <= node.pos; ++i) {
-                            IDeferredListener ls = node.get(i);
-                            try {
-                                ls.onError(value);
-                            } catch (StackOverflowError e) {
-                                throw e;
-                            } catch (Throwable e) {
-                                logError(e, "error in deferred handler");
-                            }
+                        try {
+                            node.error(value);
+                        } catch (Throwable e) {
+                            logError(e, "error in deferred handler");
                         }
                     }
-                    return true;
+                    return Boolean.TRUE;
 
                 case STATE_LOCK:
                     Thread.onSpinWait();
                     s = this.state;
                     continue;
+
+                case STATE_SUCC:
+                    return  Boolean.FALSE;
+
+                case STATE_ERRR:
+                    return  Boolean.FALSE;
             }
         }
     }
 
-    private boolean pushListener1(IDeferredListener x) {
-
-        byte state;
-        while ((state = (byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK)) == STATE_LOCK)
-            Thread.onSpinWait();
-
-        if (state == STATE_INIT) {
-            this.lcFirst = this.lcLast = new Listeners(x);
-            this.state = STATE_LSTN;
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    private boolean pushListenerX(IDeferredListener x) {
-
-        byte state;
-        while ((state = (byte) STATE.compareAndExchange(this, STATE_LSTN, STATE_LOCK)) == STATE_LOCK)
-            Thread.onSpinWait();
-
-        if (state == STATE_LSTN) {
-            this.lcLast = this.lcLast.push(x);
-            this.state = (STATE_LSTN);
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    public boolean addListenerOnly(IDeferredListener ls) {
+    public boolean listen0(AListener ls) {
+        byte s = this.state;
         while (true) {
-            switch (state) {
-                case STATE_INIT:
-                    if (this.pushListener1(ls))
+            switch (s) {
+                case STATE_PEND:
+                    if ((s = (byte) STATE.compareAndExchange(this, STATE_PEND, STATE_LOCK)) == STATE_PEND) {
+                        if (this.lcLast == null) {
+                            this.lcFirst = this.lcLast = ls;
+                        } else {
+                            this.lcLast.next = ls;
+                            this.lcLast = ls;
+                        }
+                        this.state = STATE_PEND;
                         return true;
+                    }
+                    continue;
+                case STATE_LOCK:
+                    Thread.onSpinWait();
+                    s = this.state;
                     continue;
                 case STATE_SUCC:
                     return false;
                 case STATE_ERRR:
                     return false;
-                case STATE_LSTN:
-                    if (this.pushListenerX(ls))
-                        return true;
-                    continue;
-                case STATE_LOCK:
-                    Thread.onSpinWait();
-                    continue;
             }
         }
     }
 
-    public boolean addListenerOnly(IFn onVal, IFn onErr) {
-        return addListenerOnly(AListener.fromFn(onVal, onErr));
+    public boolean listen(AListener ls) {
+        if (!this.listen0(ls)) {
+            switch (this.state) {
+                case STATE_SUCC:
+                    ls.success(value);
+                    return false;
+                case STATE_ERRR:
+                    this.clearEld();
+                    ls.error(value);
+                    return false;
+                default:
+                    throw new IllegalStateException();
+            }
+        }
+        return true;
     }
 
     public Object addListener(Object lss) {
         IDeferredListener ls = (IDeferredListener) lss;
-        while (true) {
-            switch (state) {
-                case STATE_INIT:
-                    if (this.pushListener1(ls))
-                        return true;
-                    continue;
-                case STATE_SUCC:
-                    ls.onSuccess(value);
-                    return false;
-                case STATE_ERRR:
-                    this.clearEld();
-                    ls.onError(value);
-                    return false;
-                case STATE_LSTN:
-                    if (this.pushListenerX(ls))
-                        return true;
-                    continue;
-                case STATE_LOCK:
-                    Thread.onSpinWait();
-                    continue;
-            }
-        }
+        return this.listen(new AListener.Dl(ls));
     }
 
-    public Object onRealized(Object onSucc, Object onErr) {
-        return this.addListener(AListener.fromFn(onSucc, onErr));
+    public Object onRealized(Object onSucc, Object onErrr) {
+        IFn onSuc = (IFn) onSucc;
+        IFn onErr = (IFn) onErrr;
+        return this.listen(new AListener.Fn(onSuc, onErr));
     }
 
     public Object cancelListener(Object listener) {
@@ -596,8 +509,7 @@ public final class KDeferred
         while (true) {
             byte state = this.state;
             switch (state) {
-                case STATE_INIT:
-                case STATE_LSTN: {
+                case STATE_PEND:
                     byte nst = (byte) STATE.compareAndExchange(this, state, STATE_LOCK);
                     if (nst != state) {
                         state = nst;
@@ -611,7 +523,6 @@ public final class KDeferred
                         this.state = state;
                         return false;
                     }
-                }
                 case STATE_LOCK:
                     Thread.onSpinWait();
                     continue;
@@ -655,7 +566,7 @@ public final class KDeferred
                 return value;
             case STATE_ERRR:
                 this.clearEld();
-                throw Util.sneakyThrow((Throwable) value);
+                throwErr(value);
             default:
                 throw new IllegalStateException("kdeferred is not realized");
         }
@@ -663,7 +574,7 @@ public final class KDeferred
 
     private CountDownLatch acquireCountdDownLatch() {
         CountDownLatch cdl = new CountDownLatch(1);
-        this.addListener(new CdlListener(cdl));
+        this.listen(new CdlListener(cdl));
         return cdl;
     }
 
@@ -674,7 +585,7 @@ public final class KDeferred
                 return value;
             case STATE_ERRR:
                 this.clearEld();
-                throw Util.sneakyThrow((Throwable) value);
+                throwErr(value);
         }
 
         if (ms <= 0) {
@@ -684,7 +595,7 @@ public final class KDeferred
         try {
             acquireCountdDownLatch().await(ms, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
-            throw Util.sneakyThrow(e);
+            throwErr(e);
         }
 
         switch (this.state) {
@@ -692,7 +603,7 @@ public final class KDeferred
                 return value;
             case STATE_ERRR:
                 this.clearEld();
-                throw Util.sneakyThrow((Throwable) value);
+                throwErr(value);
         }
 
         return timeoutValue;
@@ -705,13 +616,13 @@ public final class KDeferred
                 return value;
             case STATE_ERRR:
                 this.clearEld();
-                throw Util.sneakyThrow((Throwable) value);
+                throwErr(value);
         }
 
         try {
             acquireCountdDownLatch().await();
         } catch (InterruptedException e) {
-            throw Util.sneakyThrow(e);
+            throwErr(e);
         }
 
         switch (this.state) {
@@ -719,19 +630,20 @@ public final class KDeferred
                 return value;
             case STATE_ERRR:
                 this.clearEld();
-                throw Util.sneakyThrow((Throwable) value);
+                throwErr(value);
         }
 
         throw new IllegalStateException();
     }
 
     public void revokeTo(KDeferred d) {
-        if (d.revokable) {
-            this.addListener(new KdRevokeListener(d));
+        if (d.revokable && !d.realized()) {
+            this.listen(new KdRevokeListener(d));
         }
     }
 
     public void chain(Object x, Object token) {
+
         while (x instanceof IDeferred) {
             Object x1 = ((IDeferred) x).successValue(x);
             if (x == x1) {
@@ -740,20 +652,24 @@ public final class KDeferred
                 x = x1;
             }
         }
+
         if (!(x instanceof IDeferred)) {
             this.success(x, token);
         } else {
-            ChainListener ls = new ChainListener(this, token);
             if (x instanceof KDeferred) {
                 KDeferred xx = (KDeferred) x;
-                xx.addListener(ls);
-                if (xx.revokable) {
-                    this.addListener(new KdRevokeListener(xx));
+                if (!xx.listen0(new KdChainListener(this, token))) {
+                    this.success(xx.get(), token);
+                } else if (xx.revokable) {
+                    this.listen(new KdRevokeListener(xx));
                 }
-            } else if (x instanceof IMutableDeferred) {
-                ((IMutableDeferred) x).addListener(ls);
             } else {
-                ((IDeferred) x).onRealized(ls.successCallback(), ls.errorCallback());
+                ChainListener ls = new ChainListener(this, token);
+                if (x instanceof IMutableDeferred) {
+                    ((IMutableDeferred) x).addListener(ls);
+                } else {
+                    ((IDeferred) x).onRealized(ls.successCallback(), ls.errorCallback());
+                }
             }
         }
     }
@@ -761,14 +677,16 @@ public final class KDeferred
     public KDeferred bind(IFn valFn, IFn errFn, Object token) {
         while (true) {
             switch (state) {
-                case STATE_INIT: {
+                case STATE_PEND:
                     KDeferred dest = new KDeferred(token);
-                    if (this.pushListener1(new BindListener(dest, valFn, errFn, token))) {
+                    if (this.listen0(new BindListener(dest, valFn, errFn, token))) {
                         return dest;
                     } else {
                         continue;
                     }
-                }
+                case STATE_LOCK:
+                    Thread.onSpinWait();
+                    continue;
                 case STATE_SUCC:
                     return wrap(valFn.invoke(value));
                 case STATE_ERRR:
@@ -778,17 +696,7 @@ public final class KDeferred
                         this.clearEld();
                         return wrap(errFn.invoke(value));
                     }
-                case STATE_LSTN: {
-                    KDeferred dest = new KDeferred(token);
-                    if (this.pushListenerX(new BindListener(dest, valFn, errFn, token))) {
-                        return dest;
-                    } else {
-                        continue;
-                    }
-                }
-                case STATE_LOCK:
-                    Thread.onSpinWait();
-                    continue;
+
             }
         }
     }
@@ -835,9 +743,21 @@ public final class KDeferred
         } else {
             KDeferred kd = new KDeferred();
             kd.revokable = true;
-            kd.pushListener1(new RevokeListener(d, canceller, errCallback));
+            kd.listen0(new RevokeListener(d, canceller, errCallback));
             kd.chain(d, null);
             return kd;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T extends Throwable> void throwErr(Object err) throws T {
+        if (err instanceof Throwable) {
+            throw (T) err;
+        } else {
+            throw new ExceptionInfo(
+                "invalid error object",
+                    PersistentArrayMap.EMPTY.assoc(Keyword.find("error"), err)
+            );
         }
     }
 }
