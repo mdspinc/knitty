@@ -193,7 +193,7 @@ public final class YankCtx implements ILookup {
         while (a != null && !ADDED.compareAndSet(this, a, new KVCons(a, k, d))) a = added;
 
         if (a == null) {
-            d.error(YankFinishedException.INTANCE, token);
+            d.error(RevokeException.YANK_FINISHED, token);
             return false;
         }
         return true;
@@ -241,7 +241,7 @@ public final class YankCtx implements ILookup {
     public void freezeVoid() {
         for (KVCons a = this.freeze(); a.d != null; a = a.next) {
             if (!a.d.owned()) {
-                a.d.error(RevokeException.INSTANCE, this.token);
+                a.d.error(RevokeException.DEFERRED_REVOKED, this.token);
             }
         }
     }
@@ -257,7 +257,7 @@ public final class YankCtx implements ILookup {
                 if (a.d.owned()) {
                     t = t.assoc(a.k, a.d.unwrap());
                 } else {
-                    a.d.error(RevokeException.INSTANCE, this.token);
+                    a.d.error(RevokeException.DEFERRED_REVOKED, this.token);
                 }
             }
             return (Associative) t.persistent();
@@ -267,7 +267,7 @@ public final class YankCtx implements ILookup {
                 if (a.d.owned()) {
                     t = t.assoc(a.k, a.d.unwrap());
                 } else {
-                    a.d.error(RevokeException.INSTANCE, this.token);
+                    a.d.error(RevokeException.DEFERRED_REVOKED, this.token);
                 }
             }
             return t;
