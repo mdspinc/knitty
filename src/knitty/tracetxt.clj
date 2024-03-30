@@ -17,7 +17,7 @@
    :lazy   "[lazy]"
    :maybe  "[maybe]"
    :ref    "[ref]"
-   :yankfn "[yankfn]"})
+   :case   "[case]"})
 
 
 (defn- render-tracegraph-txt [ts]

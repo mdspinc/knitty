@@ -16,17 +16,17 @@
 
 
 (defn infer-param-type [bind-node]
-  (let [{:keys [sync lazy defer yankfn]} (eval-node-meta bind-node)
-        n (count (filter identity [sync lazy defer yankfn]))]
+  (let [{:keys [sync lazy defer case]} (eval-node-meta bind-node)
+        n (count (filter identity [sync lazy defer case]))]
     (when (> n 1)
       (api/reg-finding!
        (assoc (meta bind-node)
-              :message (str "yarn dependency may be marked with one of :sync, :defer, :lazy or :yankfn")
+              :message (str "yarn dependency may be marked with one of :sync, :defer, :lazy or :case")
               :type :knitty/invalid-yarn-binding)))
     (cond
-      lazy :lazy
+      lazy  :lazy
       defer :defer
-      yankfn :yankfn
+      case  :case
       :else :sync)))
 
 
@@ -36,7 +36,7 @@
              (and (api/keyword-node? v0) (or (:namespaced? v0) (qualified-keyword? (:k v0)))))
     (api/reg-finding!
      (assoc (meta v0)
-            :message "yankfn argument val must be a symbol or qualified keyword"
+            :message "case argument val must be a symbol or qualified keyword"
             :type :knitty/invalid-yarn-binding))))
 
 
@@ -79,7 +79,7 @@
                 :message "binding must be an unqualified symbol"
                 :type :knitty/invalid-yarn-binding)))
 
-      (when (= :yankfn btype)
+      (when (= :case btype)
         (cond
           (or (api/set-node? v) (api/vector-node? v))
           (doseq [v0 (:children v)]
@@ -96,14 +96,14 @@
                   :type :knitty/invalid-yarn-binding))))
 
       (when (and
-             (not= :yankfn btype)
+             (not= :case btype)
              (not (or
                    (and (api/token-node? v) (ident? (:value v)))
                    (and (api/keyword-node? v) (or (:namespaced? v) (qualified-keyword? (:k v)))))))
         (api/reg-finding!
          (assoc (meta v)
                 :message (if (api/map-node? v)
-                           "yarn dependency should not be a map or should be marked with ^:yankfn"
+                           "yarn dependency should not be a map or should be marked with ^:case"
                            "yarn dependency should be a symbol or qualified keyword")
                 :type :knitty/invalid-yarn-binding)))))
 

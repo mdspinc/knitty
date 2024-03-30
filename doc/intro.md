@@ -120,7 +120,7 @@ Working with raw deferred may be useful to handle expected exceptions.
 
 - Optional dependencies (:maybe)
 - Multiyarns & routing
-- Dynamic dependencies (:yankfn)
+- Dynamic dependencies (:case)
 - Revokation & cancelling
 - Execution model
 - Use with specs

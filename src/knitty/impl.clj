@@ -68,12 +68,12 @@
 
 
 (defn bind-param-type [ds]
-  (let [{:keys [defer lazy yankfn maybe]} (meta ds)]
+  (let [{:keys [defer lazy case maybe]} (meta ds)]
     (cond
       lazy   :lazy
       defer  :defer
       maybe  :maybe
-      yankfn :yankfn
+      case   :case
       :else  :sync)))
 
 
@@ -123,25 +123,7 @@
     ~(ji/regkw ykey)))
 
 
-(defrecord YankFnParam
-           [^long ikey
-            ^clojure.lang.Keyword ykey])
-
-
-(defn make-yankfn
-  [^YankCtx yctx
-   yk
-   yarns-map]
-  (fn yankfn [y]
-    (if-let [^YankFnParam fp (yarns-map y)]
-      (let [i (.-ikey fp)
-            k (.-ykey fp)]
-        (tracer-> yctx t/trace-dep yk k)
-        (.fetch yctx i k))
-      (throw (ex-info "Invalid yank-fn arg" {:knitty/yankfn-arg y
-                                             :knytty/yankfn-known-args (keys yarns-map)})))))
-
-(defmacro yarn-get-yankfn [yk keys-map yctx]
+(defmacro yarn-get-case [yk keys-map yctx]
   (let [keys-map (cond
                    (map? keys-map)
                    keys-map
@@ -152,12 +134,17 @@
                    :else
                    (throw (ex-info "invalid yank-fn args mapping"
                                    {:knitty/yankfn-yarn yk
-                                    :knitty/yankfn-mapping keys-map})))
-        yarns-map
-        (into {}
-              (for [[k v] keys-map]
-                [k (->YankFnParam (ji/regkw v) v)]))]
-    `(make-yankfn ~yctx ~yk ~yarns-map)))
+                                    :knitty/yankfn-mapping keys-map})))]
+    `(fn [k#]
+       (case k#
+         ~@(mapcat (fn [[k v]]
+                     [(list k)
+                      `(do
+                         (tracer-> ~yctx t/trace-dep ~yk ~v)
+                         (yarn-get-impl ~yk ~v ~yctx))])
+                   keys-map)
+         (throw (ex-info "invalid yank-fn arg" {:knitty/yankfn-arg k#
+                                                :knytty/yankfn-known-args ~(set (keys keys-map))}))))))
 
 
 (defmacro force-lazy-result [v]
@@ -217,7 +204,7 @@
                      :lazy   `(yarn-get-lazy   ~ykey ~dk ~yctx)
                      :defer  `(yarn-get-impl   ~ykey ~dk ~yctx)
                      :maybe  `(yarn-get-maybe  ~ykey ~dk ~yctx)
-                     :yankfn `(yarn-get-yankfn ~ykey ~dk ~yctx))]))
+                     :case   `(yarn-get-case   ~ykey ~dk ~yctx))]))
 
         sync-deps
         (for [[ds _dk] bind
@@ -241,8 +228,8 @@
                      (comp cat (distinct))
                      (for [[ds dk] bind
                            :let [pt (bind-param-type ds)]]
-                       (if (= :yankfn pt)
-                         (for [[_ k] dk] [k :yankfn])
+                       (if (= :case pt)
+                         (for [[_ k] dk] [k :case])
                          [[dk pt]])))]
 
     `(ji/decl-yarn

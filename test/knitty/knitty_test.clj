@@ -249,7 +249,7 @@
    (defyarn y3 {} 3)
 
    (defyarn yx
-     {^:yankfn f {:a y1, :b y2, :c y3}}
+     {^:case f {:a y1, :b y2, :c y3}}
      (is (fn? f))
      (is (md/deferred? (f :a)))
      (is (= @(f :a) 1))

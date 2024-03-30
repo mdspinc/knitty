@@ -32,12 +32,12 @@
 
 
 (defn- valid-bind-type? [bsym]
-  (let [{:keys [defer lazy yankfn]} (meta bsym)
-        n (count (filter identity [defer lazy yankfn]))]
+  (let [{:keys [defer lazy case]} (meta bsym)
+        n (count (filter identity [defer lazy case]))]
     (<= n 1)))
 
 
-(s/def ::yarn-binding-yankfn-map
+(s/def ::yarn-binding-case-map
   (s/or
    :map (s/map-of any? (some-fn qualified-keyword? symbol?))
    :seq (s/coll-of (some-fn qualified-keyword? symbol?))
@@ -50,7 +50,7 @@
   (s/map-of
    ::yarn-bindind-var
    (s/or :ident ident?
-         :yankfn-map ::yarn-binding-yankfn-map)))
+         :case-map ::yarn-binding-case-map)))
 
 (s/def ::bind-and-body
   (s/? (s/cat :bind ::yarn-binding :body (s/+ any?))))
@@ -101,7 +101,7 @@
         k))))
 
 
-(defn- parse-yankfn-params-map
+(defn- parse-case-params-map
   [env vv]
   (let [[vv-t vv-val] vv]
     (case vv-t
@@ -121,7 +121,7 @@
                      [k
                       (case vt
                         :ident (resolve-sym-or-kw env vv)
-                        :yankfn-map (parse-yankfn-params-map env vv))]))]
+                        :case-map (parse-case-params-map env vv))]))]
     (impl/gen-yarn k bind `(do ~@body) mt)))
 
 
