@@ -79,7 +79,7 @@
 
 (defmacro tracer-> [yctx f & args]
   `(t/if-tracing
-    (when-some [t# (.tracer ~yctx)]
+    (when-some [^knitty.trace.Tracer t# (.-tracer ~yctx)]
       (~f t# ~@args))))
 
 
@@ -88,14 +88,14 @@
    `(yarn-get-impl ~yk ~ykey ~(ji/regkw ykey) ~yctx))
   ([yk ykey ykeyi yctx]
    `(do
-      (tracer-> ~yctx t/trace-dep ~yk ~ykey)
+      (tracer-> ~yctx .traceDep ~yk ~ykey)
       (.fetch ~yctx ~ykeyi ~ykey))))
 
 
 (defmacro yarn-get-maybe
   [yk ykey yctx]
   `(do
-     (tracer-> ~yctx t/trace-dep ~yk ~ykey)
+     (tracer-> ~yctx .traceDep ~yk ~ykey)
      (.pull ~yctx ~(ji/regkw ykey))))
 
 
@@ -140,7 +140,7 @@
          ~@(mapcat (fn [[k v]]
                      [(list k)
                       `(do
-                         (tracer-> ~yctx t/trace-dep ~yk ~v)
+                         (tracer-> ~yctx .traceDep ~yk ~v)
                          (yarn-get-impl ~yk ~v ~yctx))])
                    keys-map)
          (throw (ex-info "invalid yank-fn arg" {:knitty/yankfn-arg k#
@@ -171,22 +171,22 @@
        (t/if-tracing
         (do
           (ji/kd-chain-from ~dest ~result (.token ~yctx))
-          (when-some [t# (.-tracer ~yctx)]
+          (when-some [^knitty.trace.Tracer t# (.-tracer ~yctx)]
             (ji/kd-await
              (fn
-               ([] (t/trace-finish t# ~ykey (ji/kd-get ~dest) nil true))
-               ([e#] (t/trace-finish t# ~ykey nil e# true)))
+               ([] (.traceFinish t# ~ykey (ji/kd-get ~dest) nil true))
+               ([e#] (.traceFinish t# ~ykey nil e# true)))
               ~dest)))
         (do
           (ji/kd-chain-from ~dest ~result (.token ~yctx)))))
      (do
-       (tracer-> ~yctx t/trace-finish ~ykey ~result nil false)
+       (tracer-> ~yctx .traceFinish ~ykey ~result nil false)
        (ji/kd-success! ~dest ~result (.token ~yctx)))))
 
 
 (defmacro connect-error [yctx ykey error dest]
   `(do
-     (tracer-> ~yctx t/trace-finish ~ykey nil ~error false)
+     (tracer-> ~yctx .traceFinish ~ykey nil ~error false)
      (ji/kd-error! ~dest ~error (.token ~yctx))))
 
 
@@ -237,7 +237,7 @@
       (fn [~yctx d#]
         (maybe-future-with
          ~executor
-         (tracer-> ~yctx t/trace-start ~ykey :yarn ~all-deps-tr)
+         (tracer-> ~yctx .traceStart ~ykey :yarn ~all-deps-tr)
          (try
            (let [~@yank-deps]
              (ji/kd-await
@@ -245,7 +245,7 @@
                 ([]
                  (try
                    (let [z# (let [~@deref-syncs]
-                              (tracer-> ~yctx t/trace-call ~ykey)
+                              (tracer-> ~yctx .traceCall ~ykey)
                               (~coerce-deferred ~the-fn-body))]
                      (connect-result ~yctx ~ykey z# d#))
                    (catch Throwable e#
@@ -284,7 +284,7 @@
   `(ji/decl-yarn
     ~ykey #{~from}
     (fn [yctx# d#]
-      (tracer-> yctx# t/trace-start ~ykey :knot [[~from :ref]])
+      (tracer-> yctx# .traceStart ~ykey :knot [[~from :ref]])
       (try
         (let [x# (ji/kd-unwrap (yarn-get-impl ~ykey ~from yctx#))]
           (connect-result yctx# ~ykey x# d#))
@@ -302,7 +302,7 @@
 (defn make-multiyarn-route-key-fn [ykey k]
   (let [i (long (ji/regkw k))]
     (fn yank-route-key [^YankCtx yctx ^KDeferred _]
-      (tracer-> yctx t/trace-route-by ykey k)
+      (tracer-> yctx .traceRouteBy ykey k)
       (ji/kd-get (.fetch yctx i k)))))
 
 

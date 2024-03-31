@@ -19,35 +19,17 @@
    (if elide-tracing notrace-body trace-body)))
 
 
-(defprotocol Tracer
-  (trace-start [_ yk kind deps])
-  (trace-call [_ yk])
-  (trace-finish [_ yk value error async])
-  (trace-dep [_ yk dep])
-  (trace-route-by [_ yk rk-dep])
-  (capture-trace! [_]))
+(definterface Tracer
+  (traceStart [yk kind deps])
+  (traceCall [yk])
+  (traceFinish [yk value error async])
+  (traceDep [yk dep])
+  (traceRouteBy [yk rk-dep])
+  (captureTrace []))
 
-
-(deftype TraceLogCons
-           [yarn
-            event
-            value
-            next])
-
-
-(defrecord TraceLog
-           [yarn
-            event
-            value])
-
-
-(defrecord Trace
-           [at
-            base-at
-            done-at
-            poy
-            yarns
-            tracelog])
+(deftype TraceLogCons [yarn event value next])
+(defrecord TraceLog [yarn event value])
+(defrecord Trace [at base-at done-at poy yarns tracelog])
 
 
 (defmethod print-method Trace
@@ -82,24 +64,24 @@
 (deftype TracerImpl [^AtomicReference store extra]
 
   Tracer
-  (trace-start
+  (traceStart
     [_ yk kind deps]
     (aconj-tlog store yk ::trace-start (now))
     (aconj-tlog store yk ::trace-kind kind)
     (aconj-tlog store yk ::trace-all-deps deps))
 
-  (trace-call
+  (traceCall
     [_ yk]
     (aconj-tlog store yk ::trace-call (now))
     (aconj-tlog store yk ::trace-thread (.getName (Thread/currentThread))))
 
-  (trace-dep [_ yk dep]
+  (traceDep [_ yk dep]
     (aconj-tlog store yk ::trace-dep [dep (now)]))
 
-  (trace-route-by [_ yk rk-dep]
+  (traceRouteBy [_ yk rk-dep]
     (aconj-tlog store yk ::trace-route-by rk-dep))
 
-  (trace-finish
+  (traceFinish
     [_ yk value error deferred]
     (when deferred
       (aconj-tlog store yk ::trace-deferred true))
@@ -109,7 +91,7 @@
       (aconj-tlog store yk ::trace-error error))
     (aconj-tlog store yk ::trace-finish (now)))
 
-  (capture-trace!
+  (captureTrace
     [_]
     (map->Trace
      (assoc extra
@@ -129,6 +111,9 @@
                  :yarns yarns}]
       (TracerImpl. store extra))))
 
+
+(defn capture-trace! [t]
+  (.captureTrace ^Tracer t))
 
 (defn- safe-minus [a b]
   (when (and a b (not (zero? a)) (not (zero? b)))
