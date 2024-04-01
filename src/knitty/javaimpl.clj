@@ -19,7 +19,7 @@
   `(KwMapper/regkw ~k))
 
 (definline maxid []
-  `(KwMapper/maxi))
+  `(KwMapper/maxid))
 
 (defrecord YarnInfo
            [type key deps body-sexp])

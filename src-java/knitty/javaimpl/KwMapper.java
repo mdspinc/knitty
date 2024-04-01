@@ -23,8 +23,8 @@ public final class KwMapper {
         return INSTANCE.reg(kw);
     }
 
-    public static int maxi() {
-        return INSTANCE.kid + 1;
+    public static int maxid() {
+        return INSTANCE.maxi();
     }
 
     private Keyword[] ksa = new Keyword[INIT_SIZE];
@@ -34,7 +34,11 @@ public final class KwMapper {
     private int[] ksar = new int[INIT_SIZE];
     private int ncol;
 
-    public int reg(Keyword k) {
+    int maxi() {
+        return kid + 1;
+    }
+
+    int reg(Keyword k) {
         Integer v = ksm.get(k);
         if (v != null) {
             return v.intValue();
@@ -51,11 +55,11 @@ public final class KwMapper {
         }
     }
 
-    public Keyword get(int i) {
+    Keyword get(int i) {
         return ksa[i];
     }
 
-    public int getr(Keyword k, boolean cache) {
+    int getr(Keyword k, boolean cache) {
 
         int m = ksar.length - 1;
         int h = k.hasheq();
