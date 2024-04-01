@@ -48,10 +48,11 @@
   `(System/nanoTime))
 
 
-(defn- aconj-tlog [^AtomicReference a yarn event value]
-  (loop [g (.get a)]
-    (when-not (.compareAndSet a g (TraceLogCons. yarn event value g))
-     (recur (.get a)))))
+(defmacro ^:private aconj-tlog [a yarn event value]
+  `(let [v# ~value]
+     (loop [g# (.get ~a)]
+       (when-not (.compareAndSet ~a g# (TraceLogCons. ~yarn ~event v# g#))
+         (recur (.get ~a))))))
 
 
 (defn tracelog->seq [^TraceLogCons t]
