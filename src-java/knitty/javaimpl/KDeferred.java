@@ -236,11 +236,10 @@ public final class KDeferred
         }
     }
 
-    static final byte STATE_INIT = 0;
-    static final byte STATE_SUCC = 1;
-    static final byte STATE_ERRR = 2;
-    static final byte STATE_LSTN = 3;
-    static final byte STATE_LOCK = 4;
+    static final byte STATE_LSTN = 0;
+    static final byte STATE_LOCK = 1;
+    static final byte STATE_SUCC = 2;
+    static final byte STATE_ERRR = 3;
 
     private static final VarHandle STATE;
     private static final VarHandle OWNED;
@@ -274,8 +273,7 @@ public final class KDeferred
     boolean revokable;
     private Object value;
     private Object token;
-    private AListener lcFirst;
-    private AListener lcLast;
+    private AListener lss;
     private IPersistentMap meta;
     private ErrorLeakDetector eld;
 
@@ -347,35 +345,11 @@ public final class KDeferred
 
     public Object success(Object x, Object token) {
         byte s = this.state;
-        switch (s) {
-            case STATE_INIT:
-                s = (byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK);
-                if (s == STATE_INIT) {
-                    if (token == this.token) {
-                        this.value = x;
-                        this.state = STATE_SUCC;
-                        return Boolean.TRUE;
-                    } else {
-                        this.state = STATE_INIT;
-                        throw new IllegalStateException("invalid claim-token");
-                    }
-                }
-            case STATE_LSTN:
-            case STATE_LOCK:
-                return this.success0(s, x, token);
-            default:
-                return Boolean.FALSE;
-        }
-    }
-
-    private Object success0(byte s, Object x, Object token) {
-        byte s0;
         while (true) {
             switch (s) {
 
-                case STATE_INIT:
                 case STATE_LSTN:
-                    s0 = (byte) STATE.compareAndExchange(this, s, STATE_LOCK);
+                    byte s0 = (byte) STATE.compareAndExchange(this, s, STATE_LOCK);
                     if (s != s0) {
                         s = s0;
                         continue;
@@ -386,25 +360,18 @@ public final class KDeferred
                     }
 
                     this.value = x;
-                    if (s == STATE_INIT) {
-                        this.state = STATE_SUCC;
-                        return Boolean.TRUE;
+                    AListener node = this.lss;
+                    this.lss = null;
+                    this.state = STATE_SUCC;
 
-                    } else {
-                        AListener node = this.lcFirst;
-                        this.lcLast = null;
-                        this.lcFirst = null;
-                        this.state = STATE_SUCC;
-
-                        for (; node != null; node = node.next) {
-                            try {
-                                node.success(x);
-                            } catch (ArithmeticException e) {
-                                logError(e, "error in deferred handler");
-                            }
+                    for (; node != null; node = node.next) {
+                        try {
+                            node.success(x);
+                        } catch (ArithmeticException e) {
+                            logError(e, "error in deferred handler");
                         }
-                        return Boolean.TRUE;
                     }
+                    return Boolean.TRUE;
 
                 case STATE_LOCK:
                     Thread.onSpinWait();
@@ -426,32 +393,9 @@ public final class KDeferred
 
     public Object error(Object x, Object token) {
         byte s = this.state;
-        switch (s) {
-            case STATE_INIT:
-                s = (byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK);
-                if (s == STATE_INIT) {
-                    if (token == this.token) {
-                        this.value = x;
-                        this.state = STATE_ERRR;
-                        return Boolean.TRUE;
-                    } else {
-                        this.state = STATE_INIT;
-                        throw new IllegalStateException("invalid claim-token");
-                    }
-                }
-            case STATE_LSTN:
-            case STATE_LOCK:
-                return this.error0(s, x, token);
-            default:
-                return Boolean.FALSE;
-        }
-    }
-
-    private Object error0(byte s, Object x, Object token) {
         while (true) {
             switch (s) {
 
-                case STATE_INIT:
                 case STATE_LSTN:
                     byte s0 = (byte) STATE.compareAndExchange(this, s, STATE_LOCK);
                     if (s != s0) {
@@ -464,25 +408,18 @@ public final class KDeferred
                     }
 
                     this.value = x;
-                    if (s == STATE_INIT) {
-                        this.state = STATE_ERRR;
-                        return Boolean.TRUE;
+                    AListener node = this.lss;
+                    this.lss = null;
+                    this.state = STATE_ERRR;
 
-                    } else {
-                        AListener node = this.lcFirst;
-                        this.lcLast = null;
-                        this.lcFirst = null;
-                        this.state = STATE_ERRR;
-
-                        for (; node != null; node = node.next) {
-                            try {
-                                node.error(x);
-                            } catch (Throwable e) {
-                                logError(e, "error in deferred handler");
-                            }
+                    for (; node != null; node = node.next) {
+                        try {
+                            node.error(x);
+                        } catch (Throwable e) {
+                            logError(e, "error in deferred handler");
                         }
-                        return Boolean.TRUE;
                     }
+                    return Boolean.TRUE;
 
                 case STATE_LOCK:
                     Thread.onSpinWait();
@@ -505,17 +442,10 @@ public final class KDeferred
     private boolean listen0(byte s, AListener ls) {
         while (true) {
             switch (s) {
-                case STATE_INIT:
-                    if ((s = (byte) STATE.compareAndExchange(this, STATE_INIT, STATE_LOCK)) == STATE_INIT) {
-                        this.lcFirst = this.lcLast = ls;
-                        this.state = STATE_LSTN;
-                        return true;
-                    }
-                    continue;
                 case STATE_LSTN:
-                    if ((s = (byte) STATE.compareAndExchange(this, STATE_LSTN, STATE_LOCK)) == STATE_LSTN) {
-                        this.lcLast.next = ls;
-                        this.lcLast = ls;
+                    if ((s = (byte) STATE.compareAndExchange(this, s, STATE_LOCK)) == STATE_LSTN) {
+                        ls.next = this.lss;
+                        this.lss = ls;
                         this.state = STATE_LSTN;
                         return true;
                     }
@@ -558,7 +488,6 @@ public final class KDeferred
         IDeferredListener ls = (IDeferredListener) lss;
         while (true) {
             switch (this.state) {
-                case STATE_INIT:
                 case STATE_LSTN:
                 case STATE_LOCK:
                     if (this.listen0(new AListener.Dl(ls))) {
@@ -580,7 +509,6 @@ public final class KDeferred
         IFn onErr = (IFn) onErrr;
         while (true) {
             switch (this.state) {
-                case STATE_INIT:
                 case STATE_LSTN:
                 case STATE_LOCK:
                     if (this.listen0(new AListener.Fn(onSuc, onErr))) {
@@ -613,7 +541,6 @@ public final class KDeferred
         while (true) {
             byte s = this.state;
             switch (s) {
-                case STATE_INIT:
                 case STATE_LSTN:
                     byte nst = (byte) STATE.compareAndExchange(this, s, STATE_LOCK);
                     if (nst != s) {
@@ -793,7 +720,6 @@ public final class KDeferred
     public KDeferred bind(IFn valFn, IFn errFn, Object token) {
         while (true) {
             switch (this.state) {
-                case STATE_INIT:
                 case STATE_LSTN:
                     KDeferred dest = new KDeferred(token);
                     if (this.listen0(new BindListener(dest, valFn, errFn, token))) {
