@@ -284,10 +284,15 @@ public final class KAwaiter {
         }
     }
 
+    private static final Exception EXPECTED_ERR = new IllegalStateException("kdeferred expected to be in error state");
+    static {
+        EXPECTED_ERR.setStackTrace(new StackTraceElement[0]);
+    }
+
     private static class Arr extends Lx {
 
-        private int i;
         private final KDeferred[] ds;
+        private int i;
 
         Arr(int i, AFn ls, KDeferred[] ds) {
             super(ls);
@@ -300,8 +305,11 @@ public final class KAwaiter {
                 for (; i >= 0; --i) {
                     KDeferred d = ds[i];
                     if (d.state != OK) {
-                        d.listen(this);
-                        return;
+                        if (d.listen0(this)) {
+                            return;
+                        } else if (d.state != OK) {
+                            this.error(d.errorValue(EXPECTED_ERR));
+                        }
                     }
                 }
                 ls.invoke();
@@ -325,8 +333,11 @@ public final class KAwaiter {
                 while (da.hasNext()) {
                     KDeferred d = da.next();
                     if (d.state != OK) {
-                        d.listen(this);
-                        return;
+                        if (d.listen0(this)) {
+                            return;
+                        } else if (d.state != OK) {
+                            this.error(d.errorValue(EXPECTED_ERR));
+                        }
                     }
                 }
                 ls.invoke();
