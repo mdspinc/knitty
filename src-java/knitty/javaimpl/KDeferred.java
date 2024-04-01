@@ -240,6 +240,7 @@ public final class KDeferred
     static final byte STATE_LOCK = 1;
     static final byte STATE_SUCC = 2;
     static final byte STATE_ERRR = 3;
+    static final byte STATE_DONE_MASK = 2;
 
     private static final VarHandle STATE;
     private static final VarHandle OWNED;
@@ -569,13 +570,11 @@ public final class KDeferred
     }
 
     public boolean realized() {
-        byte s = this.state;
-        return s == STATE_SUCC || s == STATE_ERRR;
+        return (this.state & STATE_DONE_MASK) != 0;
     }
 
     public boolean isRealized() {
-        byte s = this.state;
-        return s == STATE_SUCC || s == STATE_ERRR;
+        return (this.state & STATE_DONE_MASK) != 0;
     }
 
     public Object successValue(Object fallback) {
