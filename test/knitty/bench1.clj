@@ -20,6 +20,7 @@
   (t/join-fixtures
    [(clear-known-yarns-fixture)]))
 
+#_
 (deftest ^:benchmark bench-deferred
 
   (binding [debug/*dropped-error-logging-enabled?* false]
@@ -166,7 +167,7 @@
    :emit-body (fn [i & xs] `(mfut (reduce unchecked-add ~i [~@xs]) 10)))
 
   (dotimes [i 1000]
-    (println ".. " i " / 100")
+    (println ".. " i " / 1000")
     (dotimes [_ 1000]
       (binding [knitty.core/*tracing* (rand-nth [false true])]
         @(yank {} (random-sample 0.01 (nodes-range :node 0 500)))))))
