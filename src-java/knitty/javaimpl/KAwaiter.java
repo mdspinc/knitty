@@ -5,184 +5,173 @@ import clojure.lang.AFn;
 
 public final class KAwaiter {
 
-    private static byte OK = KDeferred.STATE_SUCC;
-
-    public static void await(AFn ls) {
-        ls.invoke();
+    public static boolean await(AFn ls) {
+        return true;
     }
 
-    public static void await(AFn ls, KDeferred x1) {
-        if (x1.state == OK) {
-            ls.invoke();
+    public static boolean await(AFn ls, KDeferred x1) {
+        if (x1.state == 1) {
+            return true;
         } else {
             x1.listen(new L0(ls));
+            return false;
         }
     }
 
-    public static void await(AFn ls, KDeferred x1, KDeferred x2) {
-        if (x2.state == OK) {
-            if (x1.state == OK) {
-                ls.invoke();
-            } else {
-                x1.listen(new L0(ls));
-            }
+    private static final byte mixStates(KDeferred x1, KDeferred x2) {
+        return (byte) (((x1.state & 1) << 1) | (x2.state & 1));
+    }
+
+    public static boolean await(AFn ls, KDeferred x1, KDeferred x2) {
+        switch (mixStates(x1, x2)) {
+            case 0b00: x2.listen(new L1(ls, x1)); return false;
+            case 0b01: x2 = x1;
+            case 0b10: x2.listen(new L0(ls)); return false;
+            case 0b11: return true;
+        }
+        return true;
+    }
+
+    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3) {
+        switch (mixStates(x2, x3)) {
+            case 0b00: x3.listen(new L2(ls, x1, x2)); return false;
+            case 0b01: x3 = x2;
+            case 0b10: x3.listen(new L1(ls, x1)); return false;
+            case 0b11: return await(ls, x1);
+        }
+        return true;
+    }
+
+    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4) {
+        switch (mixStates(x3, x4)) {
+            case 0b00: x4.listen(new L3(ls, x1, x2, x3)); return false;
+            case 0b01: x4 = x3;
+            case 0b10: x4.listen(new L2(ls, x1, x2)); return false;
+            case 0b11: return await(ls, x1, x2);
+        }
+        return true;
+    }
+
+    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5) {
+        switch (mixStates(x4, x5)) {
+            case 0b00: x5.listen(new L4(ls, x1, x2, x3, x4)); return false;
+            case 0b01: x5 = x4;
+            case 0b10: x5.listen(new L3(ls, x1, x2, x3)); return false;
+            case 0b11: return await(ls, x1, x2, x3);
+        }
+        return true;
+    }
+
+    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6) {
+        switch (mixStates(x5, x6)) {
+            case 0b00: return awaitArr(ls, x1, x2, x3, x4, x5, x6);
+            case 0b01: x6 = x5;
+            case 0b10: x6.listen(new L4(ls, x1, x2, x3, x4)); return false;
+            case 0b11: return await(ls, x1, x2, x3, x4);
+        }
+        return true;
+    }
+
+    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7) {
+        if ((x1.state & x2.state & x3.state & x4.state) == 1) {
+            return await(ls, x5, x6, x7);
         } else {
-            x2.listen(new L1(ls, x1));
+            return awaitArr(ls, x1, x2, x3, x4, x5, x6, x7);
         }
     }
 
-    public static void await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3) {
-        if (x3.state == OK) {
-            if (x2.state == OK) {
-                if (x1.state == OK) {
-                    ls.invoke();
-                } else {
-                    x1.listen(new L0(ls));
-                }
-            } else {
-                x2.listen(new L1(ls, x1));
-            }
+    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8) {
+        if ((x1.state & x2.state & x3.state & x4.state) == 1) {
+            return await(ls, x5, x6, x7, x8);
         } else {
-            x3.listen(new L2(ls, x1, x2));
+            return awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8);
         }
     }
 
-    public static void await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4) {
-        if (x4.state == OK) {
-            if (x3.state == OK) {
-                if (x2.state == OK) {
-                    if (x1.state == OK) {
-                        ls.invoke();
-                    } else {
-                        x1.listen(new L0(ls));
-                    }
-                } else {
-                    x2.listen(new L1(ls, x1));
-                }
-            } else {
-                x3.listen(new L2(ls, x1, x2));
-            }
+    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9) {
+        if ((x1.state & x2.state & x3.state & x4.state) == 1) {
+            return await(ls, x5, x6, x7, x8, x9);
         } else {
-            x4.listen(new L3(ls, x1, x2, x3));
+            return awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9);
         }
     }
 
-    public static void await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5) {
-        if (x1.state == OK && x2.state == OK && x3.state == OK && x4.state == OK && x5.state == OK) {
-            ls.invoke();
+    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10) {
+        if ((x1.state & x2.state & x3.state & x4.state) == 1) {
+            return await(ls, x5, x6, x7, x8, x9, x10);
         } else {
-            awaitArr(ls, x1, x2, x3, x4, x5);
+            return awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10);
         }
     }
 
-    public static void await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6) {
-        if (x1.state == OK && x2.state == OK && x3.state == OK && x4.state == OK && x5.state == OK && x6.state == OK) {
-            ls.invoke();
+    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11) {
+        if ((x1.state & x2.state & x3.state & x4.state) == 1) {
+            return await(ls, x5, x6, x7, x8, x9, x10, x11);
         } else {
-            awaitArr(ls, x1, x2, x3, x4, x5, x6);
+            return awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11);
         }
     }
 
-    public static void await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7) {
-        if (x1.state == OK && x2.state == OK && x3.state == OK && x4.state == OK && x5.state == OK && x6.state == OK && x7.state == OK) {
-            ls.invoke();
+    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12) {
+        if ((x1.state & x2.state & x3.state & x4.state) == 1) {
+            return await(ls, x5, x6, x7, x8, x9, x10, x11, x12);
         } else {
-            awaitArr(ls, x1, x2, x3, x4, x5, x6, x7);
+            return awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12);
         }
     }
 
-    public static void await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8) {
-        if (x1.state == OK && x2.state == OK && x3.state == OK && x4.state == OK && x5.state == OK && x6.state == OK && x7.state == OK && x8.state == OK) {
-            ls.invoke();
+    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12, KDeferred x13) {
+        if ((x1.state & x2.state & x3.state & x4.state) == 1) {
+            return await(ls, x5, x6, x7, x8, x9, x10, x11, x12, x13);
         } else {
-            awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8);
+            return awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13);
         }
     }
 
-    public static void await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9) {
-        if (x1.state == OK && x2.state == OK && x3.state == OK && x4.state == OK && x5.state == OK && x6.state == OK && x7.state == OK && x8.state == OK && x9.state == OK) {
-            ls.invoke();
+    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,  KDeferred x12, KDeferred x13, KDeferred x14) {
+        if ((x1.state & x2.state & x3.state & x4.state) == 1) {
+            return await(ls, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14);
         } else {
-            awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9);
+            return awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14);
         }
     }
 
-    public static void await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10) {
-        if (x1.state == OK && x2.state == OK && x3.state == OK && x4.state == OK && x5.state == OK && x6.state == OK && x7.state == OK && x8.state == OK && x9.state == OK && x10.state == OK) {
-            ls.invoke();
+    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12, KDeferred x13, KDeferred x14, KDeferred x15) {
+        if ((x1.state & x2.state & x3.state & x4.state) == 1) {
+            return await(ls, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15);
         } else {
-            awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10);
+            return awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15);
         }
     }
 
-    public static void await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11) {
-        if (x1.state == OK && x2.state == OK && x3.state == OK && x4.state == OK && x5.state == OK && x6.state == OK && x7.state == OK && x8.state == OK && x9.state == OK && x10.state == OK && x11.state == OK) {
-            ls.invoke();
+    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12, KDeferred x13, KDeferred x14, KDeferred x15, KDeferred x16) {
+        if ((x1.state & x2.state & x3.state & x4.state) == 1) {
+            return await(ls, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16);
         } else {
-            awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11);
+            return awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16);
         }
     }
 
-    public static void await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12) {
-        if (x1.state == OK && x2.state == OK && x3.state == OK && x4.state == OK && x5.state == OK && x6.state == OK && x7.state == OK && x8.state == OK && x9.state == OK && x10.state == OK && x11.state == OK && x12.state == OK) {
-            ls.invoke();
-        } else {
-            awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12);
-        }
-    }
-
-    public static void await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12, KDeferred x13) {
-        if (x1.state == OK && x2.state == OK && x3.state == OK && x4.state == OK && x5.state == OK && x6.state == OK && x7.state == OK && x8.state == OK && x9.state == OK && x10.state == OK && x11.state == OK && x12.state == OK && x13.state == OK) {
-            ls.invoke();
-        } else {
-            awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13);
-        }
-    }
-
-    public static void await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,  KDeferred x12, KDeferred x13, KDeferred x14) {
-        if (x1.state == OK && x2.state == OK && x3.state == OK && x4.state == OK && x5.state == OK && x6.state == OK && x7.state == OK && x8.state == OK && x9.state == OK && x10.state == OK && x11.state == OK && x12.state == OK && x13.state == OK && x14.state == OK) {
-            ls.invoke();
-        } else {
-            awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14);
-        }
-    }
-
-    public static void await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12, KDeferred x13, KDeferred x14, KDeferred x15) {
-        if (x1.state == OK && x2.state == OK && x3.state == OK && x4.state == OK && x5.state == OK && x6.state == OK && x7.state == OK && x8.state == OK && x9.state == OK && x10.state == OK && x11.state == OK && x12.state == OK && x13.state == OK && x14.state == OK && x15.state == OK) {
-            ls.invoke();
-        } else {
-            awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15);
-        }
-    }
-
-    public static void await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12, KDeferred x13, KDeferred x14, KDeferred x15, KDeferred x16) {
-        if (x1.state == OK && x2.state == OK && x3.state == OK && x4.state == OK && x5.state == OK && x6.state == OK && x7.state == OK && x8.state == OK && x9.state == OK && x10.state == OK && x11.state == OK && x12.state == OK && x13.state == OK && x14.state == OK && x15.state == OK && x16.state == OK) {
-            ls.invoke();
-        } else {
-            awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16);
-        }
-    }
-
-    public static void awaitArr(AFn ls, KDeferred[] ds, int len) {
+    public static boolean awaitArr(AFn ls, KDeferred[] ds, int len) {
         for (int i = len - 1; i >= 0; --i) {
             KDeferred d = ds[i];
-            if (d.state != OK) {
+            if (d.state != 1) {
                 d.listen(new Arr(i - 1, ls, ds));
-                return;
+                return false;
             }
         }
-        ls.invoke();
+        return true;
     }
 
-    public static void awaitArr(AFn ls, KDeferred... ds) {
+    public static boolean awaitArr(AFn ls, KDeferred... ds) {
         for (int i = ds.length - 1; i >= 0; --i) {
             KDeferred d = ds[i];
-            if (d.state != OK) {
+            if (d.state != 1) {
                 d.listen(new Arr(i - 1, ls, ds));
-                return;
+                return false;
             }
         }
-        ls.invoke();
+        return true;
     }
 
     public static KDeferred[] createArr(long n) {
@@ -239,7 +228,9 @@ public final class KAwaiter {
         }
 
         public void success(Object _x) {
-            await(ls, x1);
+            if (await(ls, x1)) {
+                ls.invoke();
+            }
         }
     }
 
@@ -258,7 +249,9 @@ public final class KAwaiter {
         }
 
         public void success(Object _x) {
-            await(ls, x1, x2);
+            if (await(ls, x1, x2)) {
+                ls.invoke();
+            }
         }
     }
 
@@ -280,7 +273,36 @@ public final class KAwaiter {
         }
 
         public void success(Object _x) {
-            await(ls, x1, x2, x3);
+            if (await(ls, x1, x2, x3)) {
+                ls.invoke();
+            }
+        }
+    }
+
+    private static final class L4 extends Lx {
+
+        private final KDeferred x1;
+        private final KDeferred x2;
+        private final KDeferred x3;
+        private final KDeferred x4;
+
+        L4(
+                AFn ls,
+                KDeferred x1,
+                KDeferred x2,
+                KDeferred x3,
+                KDeferred x4) {
+            super(ls);
+            this.x1 = x1;
+            this.x2 = x2;
+            this.x3 = x3;
+            this.x4 = x4;
+        }
+
+        public void success(Object _x) {
+            if (await(ls, x1, x2, x3, x4)) {
+                ls.invoke();
+            }
         }
     }
 
@@ -304,10 +326,10 @@ public final class KAwaiter {
             try {
                 for (; i >= 0; --i) {
                     KDeferred d = ds[i];
-                    if (d.state != OK) {
+                    if (d.state != 1) {
                         if (d.listen0(this)) {
                             return;
-                        } else if (d.state != OK) {
+                        } else if (d.state != 1) {
                             this.error(d.errorValue(EXPECTED_ERR));
                         }
                     }
@@ -332,10 +354,10 @@ public final class KAwaiter {
             try {
                 while (da.hasNext()) {
                     KDeferred d = da.next();
-                    if (d.state != OK) {
+                    if (d.state != 1) {
                         if (d.listen0(this)) {
                             return;
-                        } else if (d.state != OK) {
+                        } else if (d.state != 1) {
                             this.error(d.errorValue(EXPECTED_ERR));
                         }
                     }

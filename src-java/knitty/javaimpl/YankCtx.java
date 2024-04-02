@@ -111,7 +111,9 @@ public final class YankCtx implements ILookup {
                 ds[di++] = r;
             }
         }
-        KAwaiter.awaitArr(callback, ds, di);
+        if (KAwaiter.awaitArr(callback, ds, di)) {
+            callback.invoke();
+        }
     }
 
     public KDeferred yank1(Object x) {

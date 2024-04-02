@@ -237,10 +237,10 @@ public final class KDeferred
     }
 
     static final byte STATE_LSTN = 0;
-    static final byte STATE_LOCK = 1;
-    static final byte STATE_SUCC = 2;
-    static final byte STATE_ERRR = 3;
-    static final byte STATE_DONE_MASK = 2;
+    static final byte STATE_SUCC = 1;
+    static final byte STATE_ERRR = 2;
+    static final byte STATE_LOCK = 4;
+    static final byte STATE_DONE_MASK = STATE_SUCC | STATE_ERRR;
 
     private static final VarHandle STATE;
     private static final VarHandle OWNED;
