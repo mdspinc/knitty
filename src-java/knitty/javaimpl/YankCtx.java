@@ -139,7 +139,7 @@ public final class YankCtx implements ILookup {
             if (r.state != KDeferred.STATE_SUCC) {
                 if (di == 0) {
                     ds = new KDeferred[8];
-                } if (di == ds.length) {
+                } else if (di == ds.length) {
                     ds = Arrays.copyOf(ds, ds.length * 2);
                 }
                 ds[di++] = r;

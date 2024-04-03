@@ -13,8 +13,7 @@ public final class KAwaiter {
         if (x1.state == 1) {
             return true;
         } else {
-            x1.listen(new L0(ls));
-            return false;
+            return !x1.listen0(new L0(ls));
         }
     }
 

@@ -368,7 +368,7 @@ public final class KDeferred
                     for (; node != null; node = node.next) {
                         try {
                             node.success(x);
-                        } catch (ArithmeticException e) {
+                        } catch (Throwable e) {
                             logError(e, "error in deferred handler");
                         }
                     }
@@ -491,9 +491,7 @@ public final class KDeferred
             switch (this.state) {
                 case STATE_LSTN:
                 case STATE_LOCK:
-                    if (this.listen0(new AListener.Dl(ls))) {
-                        return Boolean.TRUE;
-                    }
+                    this.listen(new AListener.Dl(ls));
                 case STATE_SUCC:
                     ls.onSuccess(value);
                     return Boolean.FALSE;
