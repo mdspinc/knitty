@@ -360,47 +360,10 @@
   `(fail-always-yarn ~ykey ~(str "input-only yarn " ykey)))
 
 
-(defn yank' [poy yarns registry tracer]
-  (let [yctx (YankCtx. poy registry tracer)
-        res (ji/kd-create)]
-    (.addListener res (.canceller yctx))
-    (.yank yctx yarns
-           (fn
-             ([]
-              (when-not (ji/kd-realized? res)
-                (ji/kd-success! res (.freezePoy yctx) nil)))
-             ([e]
-              (when-not (ji/kd-realized? res)
-                (ji/kd-error! res
-                              (ex-info "failed to yank"
-                                       (assoc (ex-data e)
-                                              :knitty/yank-error? true
-                                              :knitty/yanked-poy poy
-                                              :knitty/failed-poy (.freezePoy yctx)
-                                              :knitty/yanked-yarns yarns)
-                                       e)
-                              nil)))))
-    res))
+(definline yank' [poy yarns registry tracer]
+  `(let [yctx# (YankCtx. ~poy ~registry ~tracer)]
+     (.yank yctx# ~yarns)))
 
-(defn yank1' [poy yarn registry tracer]
-  (let [yctx (YankCtx. poy registry tracer)
-        res (ji/kd-create)]
-    (.addListener res (.canceller yctx))
-    (ji/kd-bind
-     (.yank1 yctx yarn)
-     (fn [x]
-       (.freezeVoid yctx)
-       (ji/kd-success! res x nil))
-     (fn [e]
-       (when-not (ji/kd-realized? res)
-         (ji/kd-error! res
-                       (ex-info "failed to yank"
-                                (assoc (ex-data e)
-                                       :knitty/yank-error? true
-                                       :knitty/yanked-poy poy
-                                       :knitty/failed-poy (.freezePoy yctx)
-                                       :knitty/yanked-yarn yarn)
-                                e)
-                       nil)))
-     nil)
-    res))
+(definline yank1' [poy yarn registry tracer]
+  `(let [yctx# (YankCtx. ~poy ~registry ~tracer)]
+     (.yank1 yctx# ~yarn)))

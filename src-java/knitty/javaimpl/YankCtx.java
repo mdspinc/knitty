@@ -7,13 +7,22 @@ import java.util.concurrent.CancellationException;
 
 import clojure.lang.AFn;
 import clojure.lang.Associative;
+import clojure.lang.ExceptionInfo;
 import clojure.lang.IEditableCollection;
+import clojure.lang.IExceptionInfo;
 import clojure.lang.ITransientAssociative;
 import clojure.lang.Keyword;
+import clojure.lang.PersistentArrayMap;
+import clojure.lang.PersistentVector;
 import clojure.lang.ILookup;
-import manifold.deferred.IDeferredListener;
 
 public final class YankCtx implements ILookup {
+
+    private static final Keyword KNITTY_ERROR = Keyword.find("knitty","error");
+    private static final Keyword KNITTY_YANKED_YARNS = Keyword.find("knitty", "yanked-yarns");
+    private static final Keyword KNITTY_FAILED_POY = Keyword.find("knitty", "failed-poyd");
+    private static final Keyword KNITTY_YANKED_POY = Keyword.find("knitty", "yanked-poy");
+    private static final Keyword KNITTY_YANK_ERROR = Keyword.find("knitty", "yank-error?");
 
     private static final Object NONE = new Object();
     private static final KVCons NIL = new KVCons(null, null, null);
@@ -77,7 +86,32 @@ public final class YankCtx implements ILookup {
         return a1x == null ? a11 : a1x;
     }
 
-    public void yank(Iterable<?> yarns, AFn callback) {
+    private Exception wrapYankErr(Object error0, Object yarns) {
+
+        Throwable error;
+        if (error0 instanceof Throwable) {
+           error = (Throwable) error0;
+        } else {
+            error = new ExceptionInfo(
+                "invalid error object",
+                     PersistentArrayMap.EMPTY.assoc(KNITTY_ERROR, error0)
+            );
+        }
+
+        return new ExceptionInfo(
+            "failed to yank",
+            ((error instanceof IExceptionInfo ? ((IExceptionInfo) error).getData() : PersistentArrayMap.EMPTY)
+                .assoc(KNITTY_YANK_ERROR, true)
+                .assoc(KNITTY_YANKED_POY, inputs)
+                .assoc(KNITTY_FAILED_POY, this.freezePoy())
+                .assoc(KNITTY_YANKED_YARNS, yarns)
+            ),
+            error);
+    }
+
+    public KDeferred yank(Iterable<?> yarns) {
+
+        KDeferred res = KDeferred.create();
 
         int di = 0;
         KDeferred[] ds = null;
@@ -88,8 +122,8 @@ public final class YankCtx implements ILookup {
                 Keyword k = (Keyword) x;
                 int i0 = this.kwm.getr(k, true);
                 if (i0 == -1) {
-                    callback.invoke(new IllegalArgumentException("unknown yarn " + x));
-                    return;
+                    res.error(wrapYankErr(new IllegalArgumentException("unknown yarn " + x), yarns), null);
+                    return res;
                 }
                 r = this.fetch(i0, k);
             } else {
@@ -97,8 +131,8 @@ public final class YankCtx implements ILookup {
                 Keyword k = (Keyword) KEYFN.invoke(y.invoke());
                 int i0 = this.kwm.getr(k, true);
                 if (i0 == -1) {
-                    callback.invoke(new IllegalArgumentException("unknown yarn " + k));
-                    return;
+                    res.error(wrapYankErr(new IllegalArgumentException("unknown yarn " + k), yarns), null);
+                    return res;
                 }
                 r = this.fetch(i0, k, y);
             }
@@ -111,28 +145,73 @@ public final class YankCtx implements ILookup {
                 ds[di++] = r;
             }
         }
-        if (KAwaiter.awaitArr(callback, ds, di)) {
-            callback.invoke();
+
+        AFn ls = new AFn() {
+            public Object invoke() {
+                if (!res.realized()) {
+                    res.success(freezePoy(), null);
+                }
+                return null;
+            }
+
+            @Override
+            public Object invoke(Object err) {
+                if (!res.realized()) {
+                    res.error(wrapYankErr(err, yarns), null);
+                }
+                return null;
+            }
+        };
+
+        if (KAwaiter.awaitArr(ls, ds, di)) {
+            res.success(freezePoy(), null);
+        } else {
+            res.listen0(canceller());
         }
+
+        return res;
     }
 
     public KDeferred yank1(Object x) {
+
+        KDeferred d;
         if (x instanceof Keyword) {
             Keyword k = (Keyword) x;
             int i0 = this.kwm.getr((Keyword) x, true);
             if (i0 == -1) {
-                return KDeferred.wrapErr(new IllegalArgumentException("unknown yarn " + x));
+                d = KDeferred.wrapErr(new IllegalArgumentException("unknown yarn " + x));
+            } else {
+                d = this.fetch(i0, k);
             }
-            return this.fetch(i0, k);
         } else {
             AFn y = (AFn) x;
             Keyword k = (Keyword) KEYFN.invoke(y.invoke());
             int i0 = this.kwm.getr(k, true);
             if (i0 == -1) {
-                return KDeferred.wrapErr(new IllegalArgumentException("unknown yarn " + k));
+                d = KDeferred.wrapErr(new IllegalArgumentException("unknown yarn " + k));
+            } else {
+                d = this.fetch(i0, k, y);
             }
-            return this.fetch(i0, k, y);
         }
+
+        KDeferred res = KDeferred.create();
+        AListener ls = new AListener() {
+            public void success(Object x) {
+                freezeVoid();
+                res.success(x, null);
+            }
+            public void error(Object e) {
+                res.error(wrapYankErr(e, PersistentVector.create(x)), null);
+            }
+        };
+
+        if (d.listen0(ls)) {
+            res.listen0(canceller());
+        } else {
+            freezeVoid();
+            return d;
+        };
+        return res;
     }
 
     public Object valAt(Object key) {
@@ -276,15 +355,15 @@ public final class YankCtx implements ILookup {
         }
     }
 
-    public IDeferredListener canceller() {
-        return new IDeferredListener() {
-            public Object onSuccess(Object _v) {
-                if (!isFrozen()) {
+    public AListener canceller() {
+        return new AListener() {
+
+            public void success(Object _v) {
+                if (added != null) {
                     cancel(null);
                 }
-                return null;
             }
-            public Object onError(Object e) {
+            public void error(Object e) {
                 if (!isFrozen()) {
                     Throwable t;
                     try {
@@ -294,7 +373,6 @@ public final class YankCtx implements ILookup {
                     }
                     cancel(t);
                 }
-                return null;
             }
         };
     }
