@@ -21,6 +21,7 @@
     (doseq [p (ji/yarn-deps (yarns n))]
       (check-no-cycle root p (cons p path) yarns))))
 
+
 (deftype Registry [ycache asmap all-deps]
 
   YarnProvider
@@ -44,6 +45,10 @@
   (containsKey [_ k] (contains? asmap k))
   (entryAt [_ k] (find asmap k))
   (assoc [_ k v]
+
+    (let [k' (ji/yarn-key v)]
+      (when (not= k k')
+        (throw (ex-info "yarn key mismatch" {:knitty/assoc-key k, :knitty/yarn k'}))))
 
     (doseq [p (ji/yarn-deps v)]
       (when-not (contains? asmap p)
