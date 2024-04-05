@@ -11,14 +11,12 @@
   :plugins [[lein-aot-filter "0.1.0"]
             [lein-shell "0.5.0"]]
 
-  :source-paths ["src"]
-  :java-source-paths ["src-java"]
-
-  :aot-include [#"knitty\.javaimpl\..*"]
   :aot [knitty.core]
-  :jvm-opts ["-Djdk.attach.allowAttachSelf"]
-
-  :javac-options ["-target" "17" "-source" "17"]
+  :aot-include [#"knitty\.javaimpl\..*"]
+  :java-source-paths ["src-java"]
+  :javac-options ["--release" "17"]
+  :jvm-opts ["-Djdk.attach.allowAttachSelf" "-server"]
+  :source-paths ["src"]
 
   :profiles {:dev {:dependencies [[criterium "0.4.6"]
                                   [com.clojure-goes-fast/clj-async-profiler "1.1.1"]
