@@ -176,6 +176,5 @@
   (list*
    `do
    (for [b body]
-     `(binding [*ns* *ns*]
-        (in-ns 'knitty.knitty-test)
+     `(binding [*ns* ~*ns*]
         (eval '~b)))))
