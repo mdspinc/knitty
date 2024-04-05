@@ -243,13 +243,13 @@ public final class KDeferred
     static final byte STATE_DONE_MASK = STATE_SUCC | STATE_ERRR;
 
     private static final VarHandle STATE;
-    private static final VarHandle OWNED;
+    private static final VarHandle FREE;
 
     static {
         try {
             MethodHandles.Lookup l = MethodHandles.lookup();
             STATE = l.findVarHandle(KDeferred.class, "state", Byte.TYPE);
-            OWNED = l.findVarHandle(KDeferred.class, "owned", Boolean.TYPE);
+            FREE = l.findVarHandle(KDeferred.class, "free", Boolean.TYPE);
         } catch (ReflectiveOperationException var1) {
             throw new ExceptionInInitializerError(var1);
         }
@@ -270,7 +270,7 @@ public final class KDeferred
     }
 
     volatile byte state;
-    boolean owned;
+    boolean free = true;
     boolean revokable;
     private Object value;
     private Object token;
@@ -306,8 +306,8 @@ public final class KDeferred
         this.state = state;
     }
 
-    final boolean owned() {
-        return (boolean) OWNED.getAndSet(this, true);
+    public final boolean own() {
+        return free && (boolean) FREE.getAndSet(this, false);
     }
 
     public synchronized IPersistentMap meta() {
@@ -341,15 +341,38 @@ public final class KDeferred
     }
 
     public Object success(Object x) {
-        return success(x, null);
+        if (this.state == STATE_LSTN && this.lss == null && STATE.compareAndSet(this, STATE_LSTN, STATE_LOCK)) {
+            if (this.lss == null && this.token == null) {
+                this.value = x;
+                this.state = STATE_SUCC;
+                return Boolean.TRUE;
+            } else {
+                this.state = STATE_LSTN;
+            }
+        }
+        return success0(x, token);
     }
 
     public Object success(Object x, Object token) {
+        if (this.state == STATE_LSTN && this.lss == null && STATE.compareAndSet(this, STATE_LSTN, STATE_LOCK)) {
+            if (this.lss == null && this.token == token) {
+                this.value = x;
+                this.state = STATE_SUCC;
+                return Boolean.TRUE;
+            } else {
+                this.state = STATE_LSTN;
+            }
+        }
+        return success0(x, token);
+    }
+
+    public Boolean success0(Object x, Object token) {
         byte s = this.state;
         while (true) {
             switch (s) {
 
                 case STATE_LSTN:
+
                     byte s0 = (byte) STATE.compareAndExchange(this, s, STATE_LOCK);
                     if (s != s0) {
                         s = s0;
@@ -389,10 +412,32 @@ public final class KDeferred
     }
 
     public Object error(Object x) {
-        return error(x, null);
+        if (this.state == STATE_LSTN && this.lss == null && STATE.compareAndSet(this, STATE_LSTN, STATE_LOCK)) {
+            if (this.lss == null && this.token == null) {
+                this.value = x;
+                this.state = STATE_ERRR;
+                return Boolean.TRUE;
+            } else {
+                this.state = STATE_LSTN;
+            }
+        }
+        return error0(x, token);
     }
 
     public Object error(Object x, Object token) {
+        if (this.state == STATE_LSTN && this.lss == null && STATE.compareAndSet(this, STATE_LSTN, STATE_LOCK)) {
+            if (this.lss == null && this.token == token) {
+                this.value = x;
+                this.state = STATE_ERRR;
+                return Boolean.TRUE;
+            } else {
+                this.state = STATE_LSTN;
+            }
+        }
+        return error0(x, token);
+    }
+
+    public Boolean error0(Object x, Object token) {
         byte s = this.state;
         while (true) {
             switch (s) {
@@ -491,7 +536,11 @@ public final class KDeferred
             switch (this.state) {
                 case STATE_LSTN:
                 case STATE_LOCK:
-                    this.listen(new AListener.Dl(ls));
+                    if (this.listen0(new AListener.Dl(ls))) {
+                        return Boolean.TRUE;
+                    } else {
+                        continue;
+                    }
                 case STATE_SUCC:
                     ls.onSuccess(value);
                     return Boolean.FALSE;
@@ -512,6 +561,8 @@ public final class KDeferred
                 case STATE_LOCK:
                     if (this.listen0(new AListener.Fn(onSuc, onErr))) {
                         return Boolean.TRUE;
+                    } else {
+                        continue;
                     }
                 case STATE_SUCC:
                     onSuc.invoke(value);

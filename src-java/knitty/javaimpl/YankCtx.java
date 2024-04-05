@@ -239,7 +239,7 @@ public final class YankCtx implements ILookup {
         return inputs.valAt(key, fallback);
     }
 
-    public KDeferred pull(int i) {
+    public final KDeferred pull(int i) {
         int i0 = i >> ASHIFT;
         int i1 = i & AMASK;
 
@@ -262,9 +262,6 @@ public final class YankCtx implements ILookup {
     }
 
     private boolean fetch0(KDeferred d, Keyword k) {
-        if (d.owned()) {
-            return false;
-        }
         Object x = inputs.valAt(k, NONE);
         if (x != NONE) {
             d.chain(x, token);
@@ -280,17 +277,17 @@ public final class YankCtx implements ILookup {
         return true;
     }
 
-    public KDeferred fetch(int i, Keyword k, AFn y) {
+    public final KDeferred fetch(int i, Keyword k, AFn y) {
         KDeferred d = pull(i);
-        if (!d.owned && fetch0(d, k)) {
+        if (d.own() && fetch0(d, k)) {
             y.invoke(this, d);
         }
         return d;
     }
 
-    public KDeferred fetch(int i, Keyword k) {
+    public final KDeferred fetch(int i, Keyword k) {
         KDeferred d = pull(i);
-        if (!d.owned && fetch0(d, k)) {
+        if (d.own() && fetch0(d, k)) {
             AFn y = this.yarn(i);
             y.invoke(this, d);
         }
@@ -321,7 +318,7 @@ public final class YankCtx implements ILookup {
 
     public void freezeVoid() {
         for (KVCons a = this.freeze(); a.d != null; a = a.next) {
-            if (!a.d.owned()) {
+            if (a.d.own()) {
                 a.d.error(RevokeException.DEFERRED_REVOKED, this.token);
             }
         }
@@ -335,20 +332,20 @@ public final class YankCtx implements ILookup {
         if (added.next.d != null && inputs instanceof IEditableCollection) {
             ITransientAssociative t = (ITransientAssociative) ((IEditableCollection) inputs).asTransient();
             for (KVCons a = added; a.d != null; a = a.next) {
-                if (a.d.owned()) {
-                    t = t.assoc(a.k, a.d.unwrap());
-                } else {
+                if (a.d.own()) {
                     a.d.error(RevokeException.DEFERRED_REVOKED, this.token);
+                } else {
+                    t = t.assoc(a.k, a.d.unwrap());
                 }
             }
             return (Associative) t.persistent();
         } else {
             Associative t = inputs;
             for (KVCons a = added; a.d != null; a = a.next) {
-                if (a.d.owned()) {
-                    t = t.assoc(a.k, a.d.unwrap());
-                } else {
+                if (a.d.own()) {
                     a.d.error(RevokeException.DEFERRED_REVOKED, this.token);
+                } else {
+                    t = t.assoc(a.k, a.d.unwrap());
                 }
             }
             return t;
