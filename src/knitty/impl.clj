@@ -5,7 +5,7 @@
             [manifold.executor]
             [manifold.utils])
   (:import [clojure.lang AFn]
-           [knitty.javaimpl KDeferred YankCtx YarnProvider]))
+           [knitty.javaimpl KDeferred YankCtx YarnProvider KwMapper]))
 
 
 (set! *warn-on-reflection* true)
@@ -63,7 +63,7 @@
           (check-no-cycle k d [k] asmap)))
 
       (Registry.
-       (delay (make-array AFn (inc (ji/maxid))))
+       (delay (make-array AFn (inc (KwMapper/maxi))))
        (assoc asmap k v)
        all-deps'))))
 
@@ -90,7 +90,7 @@
 
 (defmacro yarn-get-impl
   ([yk ykey yctx]
-   `(yarn-get-impl ~yk ~ykey ~(ji/regkw ykey) ~yctx))
+   `(yarn-get-impl ~yk ~ykey ~(KwMapper/reg ykey) ~yctx))
   ([yk ykey ykeyi yctx]
    `(do
       (tracer-> ~yctx .traceDep ~yk ~ykey)
@@ -101,7 +101,7 @@
   [yk ykey yctx]
   `(do
      (tracer-> ~yctx .traceDep ~yk ~ykey)
-     (.pull ~yctx ~(ji/regkw ykey))))
+     (.pull ~yctx ~(KwMapper/reg ykey))))
 
 
 (deftype Lazy
@@ -125,7 +125,7 @@
     ~yctx
     ~yk
     ~ykey
-    ~(ji/regkw ykey)))
+    ~(KwMapper/reg ykey)))
 
 
 (defmacro yarn-get-case [yk keys-map yctx]
@@ -175,24 +175,24 @@
      (do
        (t/if-tracing
         (do
-          (ji/kd-chain-from ~dest ~result (.token ~yctx))
+          (.chain ~dest ~result (.-token ~yctx))
           (when-some [^knitty.trace.Tracer t# (.-tracer ~yctx)]
             (ji/kd-await
              (fn
                ([] (.traceFinish t# ~ykey (ji/kd-get ~dest) nil true))
                ([e#] (.traceFinish t# ~ykey nil e# true)))
-              ~dest)))
+             ~dest)))
         (do
           (ji/kd-chain-from ~dest ~result (.token ~yctx)))))
      (do
        (tracer-> ~yctx .traceFinish ~ykey ~result nil false)
-       (ji/kd-success! ~dest ~result (.token ~yctx)))))
+       (.success ~dest ~result (.-token ~yctx)))))
 
 
 (defmacro connect-error [yctx ykey error dest]
   `(do
      (tracer-> ~yctx .traceFinish ~ykey nil ~error false)
-     (ji/kd-error! ~dest ~error (.token ~yctx))))
+     (.error ~dest ~error (.-token ~yctx))))
 
 
 (defn emit-yarn-impl
@@ -226,7 +226,7 @@
         (mapcat identity
                 (for [[ds _dk] bind
                       :when (#{:sync} (bind-param-type ds))]
-                  [ds `(ji/kd-get ~ds)]))
+                  [ds `(.get ~ds)]))
 
         all-deps-tr (into
                      []
@@ -238,8 +238,9 @@
                          [[dk pt]])))]
 
     `(ji/decl-yarn
-      ~ykey ~(set deps)
-      (fn [~yctx d#]
+      ~ykey
+      ~(set deps)
+      (fn [~yctx ^KDeferred d#]
         (maybe-future-with
          ~executor
          (tracer-> ~yctx .traceStart ~ykey :yarn ~all-deps-tr)
@@ -249,10 +250,10 @@
               (fn
                 ([]
                  (try
-                   (let [z# (let [~@deref-syncs]
-                              (tracer-> ~yctx .traceCall ~ykey)
-                              (~coerce-deferred ~the-fn-body))]
-                     (connect-result ~yctx ~ykey z# d#))
+                   (let [~@deref-syncs]
+                     (tracer-> ~yctx .traceCall ~ykey)
+                     (let [z# (~coerce-deferred ~the-fn-body)]
+                       (connect-result ~yctx ~ykey z# d#)))
                    (catch Throwable e#
                      (connect-error ~yctx ~ykey e# d#))))
                 ([e#]
@@ -275,12 +276,12 @@
 
 (defn gen-yarn
   [ykey bind expr opts]
-  (ji/regkw ykey)
+  (KwMapper/reg ykey)
   (let [deps (grab-yarn-bindmap-deps bind)
         {:keys [keep-deps-order]} opts
         bind (if keep-deps-order
                bind
-               (sort-by (comp #(when (keyword? %) (ji/regkw %)) second) bind))]
+               (sort-by (comp #(when (keyword? %) (KwMapper/reg %)) second) bind))]
     (emit-yarn-impl expr ykey bind opts deps)))
 
 
@@ -305,7 +306,7 @@
 
 
 (defn make-multiyarn-route-key-fn [ykey k]
-  (let [i (long (ji/regkw k))]
+  (let [i (long (KwMapper/reg k))]
     (fn yank-route-key [^YankCtx yctx ^KDeferred _]
       (tracer-> yctx .traceRouteBy ykey k)
       (ji/kd-get (.fetch yctx i k)))))
@@ -321,7 +322,7 @@
 
 (defn gen-yarn-multi
   [ykey route-key mult-options]
-  (ji/regkw ykey)
+  (KwMapper/reg ykey)
   `(do
      (defmulti ~(yarn-multifn ykey)
        (make-multiyarn-route-key-fn ~ykey ~route-key)
@@ -337,8 +338,8 @@
                ([] (try
                      (multifn# yctx# d#)
                      (catch Throwable e#
-                       (ji/kd-error! d# e# (.token yctx#)))))
-               ([e#] (ji/kd-error! d# e# (.token yctx#))))
+                       (ji/kd-error! d# e# (.-token yctx#)))))
+               ([e#] (ji/kd-error! d# e# (.-token yctx#))))
              r#)))))))
 
 
@@ -358,7 +359,7 @@
    fail-always-yarn
    ykey
    #{}
-   (fn [yctx d] (ji/kd-error! d (java.lang.UnsupportedOperationException. (str msg)) (.token yctx)))))
+   (fn [yctx d] (ji/kd-error! d (java.lang.UnsupportedOperationException. (str msg)) (.-token yctx)))))
 
 
 (defn gen-yarn-input [ykey]

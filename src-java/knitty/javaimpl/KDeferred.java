@@ -14,7 +14,8 @@ import clojure.lang.ISeq;
 import clojure.lang.Keyword;
 import clojure.lang.PersistentArrayMap;
 import clojure.lang.RT;
-
+import clojure.lang.Util;
+import io.aleph.dirigiste.Executor;
 import manifold.deferred.IDeferred;
 import manifold.deferred.IDeferredListener;
 import manifold.deferred.IMutableDeferred;
@@ -630,6 +631,19 @@ public final class KDeferred
         return this.state == STATE_SUCC ? value : fallback;
     }
 
+    @SuppressWarnings("unchecked")
+    private <T extends Throwable> void throwErr() throws T {
+        Object err = value;
+        if (err instanceof Throwable) {
+            throw (T) err;
+        } else {
+            throw new ExceptionInfo(
+                "invalid error object",
+                    PersistentArrayMap.EMPTY.assoc(Keyword.find("error"), err)
+            );
+        }
+    }
+
     public Object errorValue(Object fallback) {
         if (this.state == STATE_ERRR) {
             this.clearEld();
@@ -642,17 +656,15 @@ public final class KDeferred
         return this.state == STATE_SUCC ? value : this;
     }
 
-    public Object get() {
-        byte s = this.state;
-        switch (s) {
-            case STATE_SUCC:
-                return value;
-            case STATE_ERRR:
-                this.clearEld();
-                throwErr(value);
-            default:
-                throw new IllegalStateException("kdeferred is not realized");
+    private final Object getErr() {
+        if (this.state == STATE_ERRR) {
+            throwErr();
         }
+        throw new IllegalStateException("kdeferred is not realized");
+    }
+
+    public final Object get() {
+        return (this.state == STATE_SUCC) ? value : getErr();
     }
 
     private CountDownLatch acquireCountdDownLatch() {
@@ -667,8 +679,7 @@ public final class KDeferred
             case STATE_SUCC:
                 return value;
             case STATE_ERRR:
-                this.clearEld();
-                throwErr(value);
+                throwErr();
         }
 
         if (ms <= 0) {
@@ -678,15 +689,14 @@ public final class KDeferred
         try {
             acquireCountdDownLatch().await(ms, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
-            throwErr(e);
+            throw Util.sneakyThrow(e);
         }
 
         switch (this.state) {
             case STATE_SUCC:
                 return value;
             case STATE_ERRR:
-                this.clearEld();
-                throwErr(value);
+                throwErr();
         }
 
         return timeoutValue;
@@ -698,22 +708,20 @@ public final class KDeferred
             case STATE_SUCC:
                 return value;
             case STATE_ERRR:
-                this.clearEld();
-                throwErr(value);
+                throwErr();
         }
 
         try {
             acquireCountdDownLatch().await();
         } catch (InterruptedException e) {
-            throwErr(e);
+            throw Util.sneakyThrow(e);
         }
 
         switch (this.state) {
             case STATE_SUCC:
                 return value;
             case STATE_ERRR:
-                this.clearEld();
-                throwErr(value);
+                throwErr();
         }
 
         throw new IllegalStateException();
@@ -730,7 +738,8 @@ public final class KDeferred
             if (x instanceof IDeferred) {
                 Object xx = ((IDeferred) x).successValue(x);
                 if (x == xx) {
-                    break;
+                    this.chain0((IDeferred) x, token);
+                    return;
                 }
                 x = xx;
             } else {
@@ -738,13 +747,14 @@ public final class KDeferred
                 return;
             }
         }
-        this.chain0((IDeferred) x, token);
     }
 
     private void chain0(IDeferred x, Object token) {
         if (x instanceof KDeferred) {
             KDeferred xx = (KDeferred) x;
-            if (!xx.listen0(new KdChainListener(this, token))) {
+            if (xx.listen0(new KdChainListener(this, token))) {
+                this.revokeTo(xx);
+            } else {
                 switch (xx.state) {
                     case STATE_SUCC:
                         this.success(xx.value, token); break;
@@ -752,8 +762,6 @@ public final class KDeferred
                         xx.clearEld();
                         this.error(xx.value, token); break;
                 }
-            } else if (xx.revokable) {
-                this.listen(new KdRevokeListener(xx));
             }
         } else {
             ChainListener ls = new ChainListener(this, token);
@@ -836,18 +844,6 @@ public final class KDeferred
             kd.listen0(new RevokeListener(d, canceller, errCallback));
             kd.chain(d, null);
             return kd;
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private static <T extends Throwable> void throwErr(Object err) throws T {
-        if (err instanceof Throwable) {
-            throw (T) err;
-        } else {
-            throw new ExceptionInfo(
-                "invalid error object",
-                    PersistentArrayMap.EMPTY.assoc(Keyword.find("error"), err)
-            );
         }
     }
 }

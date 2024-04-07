@@ -9,41 +9,25 @@ import clojure.lang.Keyword;
 public final class KwMapper {
 
     private static int INIT_SIZE = 64;  // pow of 2!
-    private static KwMapper INSTANCE = new KwMapper();
+    private static final Object LOCK = new Object();
 
-    public static KwMapper getIntance() {
-        return INSTANCE;
-    }
+    private static Keyword[] ksa = new Keyword[INIT_SIZE];
+    private static final Map<Keyword, Integer> ksm = new ConcurrentHashMap<>(INIT_SIZE);
 
-    public static void resetKeywordsPoolForTests() {
-        INSTANCE = new KwMapper();
-    }
+    private static int kid;
+    private static int[] ksar = new int[INIT_SIZE];
+    private static int ncol;
 
-    public static int regkw(Keyword kw) {
-        return INSTANCE.reg(kw);
-    }
-
-    public static int maxid() {
-        return INSTANCE.maxi();
-    }
-
-    private Keyword[] ksa = new Keyword[INIT_SIZE];
-    private final Map<Keyword, Integer> ksm = new ConcurrentHashMap<>(INIT_SIZE);
-
-    private int kid;
-    private int[] ksar = new int[INIT_SIZE];
-    private int ncol;
-
-    int maxi() {
+    public static int maxi() {
         return kid + 1;
     }
 
-    int reg(Keyword k) {
+    public static int reg(Keyword k) {
         Integer v = ksm.get(k);
         if (v != null) {
             return v.intValue();
         } else {
-            synchronized (this) {
+            synchronized (LOCK) {
                 int t = ++kid;
                 ksm.put(k, t);
                 if (t >= ksa.length) {
@@ -55,11 +39,11 @@ public final class KwMapper {
         }
     }
 
-    Keyword get(int i) {
+    public static Keyword get(int i) {
         return ksa[i];
     }
 
-    int getr(Keyword k, boolean cache) {
+    public static int getr(Keyword k, boolean cache) {
 
         int m = ksar.length - 1;
         int h = k.hasheq();
@@ -86,16 +70,17 @@ public final class KwMapper {
         return ksm.getOrDefault(k, -1).intValue();
     }
 
-    private synchronized void invalidateKsar() {
+    private static void invalidateKsar() {
+        synchronized (LOCK) {
+            int ncap = Integer.highestOneBit(ksar.length) * 2;
+            int maxcap = Integer.highestOneBit(ksm.size() * 32);
+            int maxcol = Integer.max(0, (int) (Math.log((float) ksar.length / maxcap) + Math.E));
 
-        int ncap = Integer.highestOneBit(ksar.length) * 2;
-        int maxcap = Integer.highestOneBit(ksm.size() * 32);
-        int maxcol = Integer.max(0, (int) (Math.log((float) ksar.length / maxcap) + Math.E));
-
-        if (ncol < maxcol || ncap >= maxcap) {
-            ncol++;
-        } else {
-            this.ksar = new int[ncap];
+            if (ncol < maxcol || ncap >= maxcap) {
+                ncol++;
+            } else {
+                ksar = new int[ncap];
+            }
         }
     }
 }

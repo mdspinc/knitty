@@ -15,19 +15,13 @@
      (log/warn e msg))))
 
 
-(definline regkw [k]
-  `(KwMapper/regkw ~k))
-
-(definline maxid []
-  `(KwMapper/maxid))
-
 (defrecord YarnInfo
            [type key deps body-sexp])
 
 (defmacro decl-yarn
   ([ykey deps bodyf]
    (assert (qualified-keyword? ykey))
-   (regkw ykey)
+   (KwMapper/reg ykey)
    `(decl-yarn ~(symbol (name ykey)) ~ykey ~deps ~bodyf))
   ([fnname ykey deps [_fn [ctx dst] & body]]
    `(fn

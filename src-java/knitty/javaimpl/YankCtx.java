@@ -14,6 +14,7 @@ import clojure.lang.ITransientAssociative;
 import clojure.lang.Keyword;
 import clojure.lang.PersistentArrayMap;
 import clojure.lang.PersistentVector;
+import manifold.deferred.IDeferred;
 import clojure.lang.ILookup;
 
 public final class YankCtx implements ILookup {
@@ -28,7 +29,7 @@ public final class YankCtx implements ILookup {
     private static final KVCons NIL = new KVCons(null, null, null);
     private static final Keyword KEYFN = Keyword.find("key");
 
-    private static final int ASHIFT = 4;
+    private static final int ASHIFT = 5;
     private static final int ASIZE = 1 << ASHIFT;
     private static final int AMASK = ASIZE - 1;
 
@@ -45,11 +46,10 @@ public final class YankCtx implements ILookup {
         }
     }
 
-    final Associative inputs;
-    private volatile KVCons added;
-
+    private volatile KVCons added = NIL;
     private final KDeferred[][] a0;
-    private final KwMapper kwm;
+
+    private final Associative inputs;
     private final AFn[] yarnsCache;
     private final YarnProvider yankerProvider;
 
@@ -70,20 +70,21 @@ public final class YankCtx implements ILookup {
     }
 
     public YankCtx(Associative inputs, YarnProvider yp, Object tracer) {
-        this.kwm = KwMapper.getIntance();
+        this.a0 = new KDeferred[((KwMapper.maxi() + AMASK) >> ASHIFT)][];
         this.inputs = inputs;
-        this.yankerProvider = yp;
         this.yarnsCache = yp.ycache();
+        this.yankerProvider = yp;
         this.tracer = tracer;
         this.token = new Object();
-        this.added = NIL;
-        this.a0 = new KDeferred[((this.kwm.maxi() + AMASK) >> ASHIFT)][];
     }
 
-    private KDeferred[] createChunk(int i0) {
+    private final KDeferred[] createChunk(int i0) {
         KDeferred[] a11 = new KDeferred[ASIZE];
-        KDeferred[] a1x = (KDeferred[]) AR0.compareAndExchange(a0, i0, null, a11);
-        return a1x == null ? a11 : a1x;
+        if (AR0.compareAndSet(a0, i0, null, a11)) {
+            return a11;
+        } else {
+            return (KDeferred[]) AR0.getVolatile(a0, i0);
+        }
     }
 
     private Exception wrapYankErr(Object error0, Object yarns) {
@@ -120,7 +121,7 @@ public final class YankCtx implements ILookup {
             KDeferred r;
             if (x instanceof Keyword) {
                 Keyword k = (Keyword) x;
-                int i0 = this.kwm.getr(k, true);
+                int i0 = KwMapper.getr(k, true);
                 if (i0 == -1) {
                     res.error(wrapYankErr(new IllegalArgumentException("unknown yarn " + x), yarns), null);
                     return res;
@@ -129,7 +130,7 @@ public final class YankCtx implements ILookup {
             } else {
                 AFn y = (AFn) x;
                 Keyword k = (Keyword) KEYFN.invoke(y.invoke());
-                int i0 = this.kwm.getr(k, true);
+                int i0 = KwMapper.getr(k, true);
                 if (i0 == -1) {
                     res.error(wrapYankErr(new IllegalArgumentException("unknown yarn " + k), yarns), null);
                     return res;
@@ -177,7 +178,7 @@ public final class YankCtx implements ILookup {
         KDeferred d;
         if (x instanceof Keyword) {
             Keyword k = (Keyword) x;
-            int i0 = this.kwm.getr((Keyword) x, true);
+            int i0 = KwMapper.getr((Keyword) x, true);
             if (i0 == -1) {
                 d = KDeferred.wrapErr(new IllegalArgumentException("unknown yarn " + x));
             } else {
@@ -186,7 +187,7 @@ public final class YankCtx implements ILookup {
         } else {
             AFn y = (AFn) x;
             Keyword k = (Keyword) KEYFN.invoke(y.invoke());
-            int i0 = this.kwm.getr(k, true);
+            int i0 = KwMapper.getr(k, true);
             if (i0 == -1) {
                 d = KDeferred.wrapErr(new IllegalArgumentException("unknown yarn " + k));
             } else {
@@ -222,7 +223,7 @@ public final class YankCtx implements ILookup {
         if ((key instanceof Keyword)) {
             Keyword k = (Keyword) key;
             if (k.getNamespace() != null) {
-                int i = kwm.getr(k, false);
+                int i = KwMapper.getr(k, false);
                 if (i != -1) {
                     int i0 = i >> ASHIFT;
                     int i1 = i & AMASK;
@@ -241,20 +242,23 @@ public final class YankCtx implements ILookup {
 
     public final KDeferred pull(int i) {
         int i0 = i >> ASHIFT;
-        int i1 = i & AMASK;
-
         KDeferred[] a1 = (KDeferred[]) AR0.getVolatile(a0, i0);
         if (a1 == null) {
             a1 = this.createChunk(i0);
         }
+
+        int i1 = i & AMASK;
         KDeferred v = (KDeferred) AR1.getVolatile(a1, i1);
         if (v != null) {
             return v;
         }
 
         KDeferred d = new KDeferred(token);
-        KDeferred d0 = (KDeferred) AR1.compareAndExchange(a1, i1, null, d);
-        return d0 != null ? d0 : d;
+        if (AR1.compareAndSet(a1, i1, null, d)) {
+            return d;
+        } else {
+            return (KDeferred) AR1.getVolatile(a1, i1);
+        }
     }
 
     public Object token() {
@@ -269,7 +273,6 @@ public final class YankCtx implements ILookup {
         }
         KVCons a = added;
         while (a != null && !ADDED.compareAndSet(this, a, new KVCons(a, k, d))) a = added;
-
         if (a == null) {
             d.error(RevokeException.YANK_FINISHED, token);
             return false;
@@ -279,7 +282,7 @@ public final class YankCtx implements ILookup {
 
     public final KDeferred fetch(int i, Keyword k, AFn y) {
         KDeferred d = pull(i);
-        if (d.own() && fetch0(d, k)) {
+        if (d.free && d.own() && fetch0(d, k)) {
             y.invoke(this, d);
         }
         return d;
@@ -287,7 +290,7 @@ public final class YankCtx implements ILookup {
 
     public final KDeferred fetch(int i, Keyword k) {
         KDeferred d = pull(i);
-        if (d.own() && fetch0(d, k)) {
+        if (d.free && d.own() && fetch0(d, k)) {
             AFn y = this.yarn(i);
             y.invoke(this, d);
         }
@@ -299,7 +302,7 @@ public final class YankCtx implements ILookup {
         if (y != null) {
             return y;
         }
-        y = yankerProvider.yarn(kwm.get(i));
+        y = yankerProvider.yarn(KwMapper.get(i));
         YSC.setVolatile(yarnsCache, i, y);
         return y;
     }
@@ -318,7 +321,7 @@ public final class YankCtx implements ILookup {
 
     public void freezeVoid() {
         for (KVCons a = this.freeze(); a.d != null; a = a.next) {
-            if (a.d.own()) {
+            if (a.d.free && a.d.own()) {
                 a.d.error(RevokeException.DEFERRED_REVOKED, this.token);
             }
         }
@@ -326,13 +329,13 @@ public final class YankCtx implements ILookup {
 
     public Associative freezePoy() {
         KVCons added = this.freeze();
-        if (added == NIL) {
+        if (added.next == null) {
             return inputs;
         }
         if (added.next.d != null && inputs instanceof IEditableCollection) {
             ITransientAssociative t = (ITransientAssociative) ((IEditableCollection) inputs).asTransient();
             for (KVCons a = added; a.d != null; a = a.next) {
-                if (a.d.own()) {
+                if (a.d.free && a.d.own()) {
                     a.d.error(RevokeException.DEFERRED_REVOKED, this.token);
                 } else {
                     t = t.assoc(a.k, a.d.unwrap());
@@ -342,7 +345,7 @@ public final class YankCtx implements ILookup {
         } else {
             Associative t = inputs;
             for (KVCons a = added; a.d != null; a = a.next) {
-                if (a.d.own()) {
+                if (a.d.free && a.d.own()) {
                     a.d.error(RevokeException.DEFERRED_REVOKED, this.token);
                 } else {
                     t = t.assoc(a.k, a.d.unwrap());
