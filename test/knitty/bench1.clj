@@ -15,11 +15,6 @@
    [(tracing-enabled-fixture false)
     (report-benchmark-fixture)]))
 
-
-(t/use-fixtures :each
-  (t/join-fixtures
-   [(clear-known-yarns-fixture)]))
-
 #_
 (deftest ^:benchmark bench-deferred
 
@@ -130,7 +125,6 @@
                   [:fut `md/future]]]
     (testing nf
       (doseq [tt [:sync :defer :lazy]]
-        (clear-known-yarns!)
         (build-yarns-graph
          :ids (range 100)
          :prefix :node

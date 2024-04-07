@@ -53,20 +53,6 @@
          (apply range range-args))))
 
 
-(defn clear-known-yarns! []
-  (alter-var-root #'*registry* (fn [_] (impl/create-registry)))
-  (knitty.javaimpl.KwMapper/resetKeywordsPoolForTests))
-
-
-(defn clear-known-yarns-fixture
-  []
-  (fn [t]
-    (try
-      (clear-known-yarns!)
-      (t)
-      (finally (clear-known-yarns!)))))
-
-
 (defn tracing-enabled-fixture
   [tracing-enabled]
   (fn [t]
@@ -177,4 +163,4 @@
    `do
    (for [b body]
      `(binding [*ns* ~*ns*]
-        (eval '~b)))))
+        (eval '~b)))))34
