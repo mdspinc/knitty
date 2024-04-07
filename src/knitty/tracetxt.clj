@@ -8,7 +8,7 @@
 
 
 (defn- format-inst [t]
-  (.format inst-format t))
+  (.format ^java.text.SimpleDateFormat inst-format t))
 
 
 (def ^:private format-dep-kind
