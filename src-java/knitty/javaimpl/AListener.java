@@ -1,6 +1,7 @@
 package knitty.javaimpl;
 
 import clojure.lang.IFn;
+import io.aleph.dirigiste.Executor;
 import manifold.deferred.IDeferredListener;
 
 public abstract class AListener {
@@ -12,6 +13,14 @@ public abstract class AListener {
 
     public static AListener fromFn(Object onVal, Object onErr) {
         return new Fn((IFn) onVal, (IFn) onErr);
+    }
+
+    public static AListener fromDl(IDeferredListener ls) {
+        return new Dl(ls);
+    }
+
+    public static AListener viaExecutor(AListener ls, Executor executor) {
+        return executor == null ? ls : new Ex(ls, executor);
     }
 
     static final class Dl extends AListener {
@@ -42,11 +51,34 @@ public abstract class AListener {
         }
 
         public void success(Object x) {
-            this.onSucc.invoke(x);
+            if (onSucc != null) {
+                this.onSucc.invoke(x);
+            }
         }
 
         public void error(Object e) {
-            this.onErr.invoke(e);
+            if (onErr != null) {
+                this.onErr.invoke(e);
+            }
+        }
+    }
+
+    static final class Ex extends AListener {
+
+        private final AListener ls;
+        private final Executor executor;
+
+        Ex(AListener ls, Executor executor) {
+            this.ls = ls;
+            this.executor = executor;
+        }
+
+        public void success(Object x) {
+            executor.execute(() -> this.ls.success(x));
+        }
+
+        public void error(Object e) {
+            executor.execute(() -> this.ls.error(e));
         }
     }
 }

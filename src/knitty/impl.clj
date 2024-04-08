@@ -1,7 +1,7 @@
 (ns knitty.impl
   (:require [clojure.set :as set]
-            [knitty.javaimpl :as ji]
             [knitty.trace :as t]
+            [knitty.deferred :as kd]
             [manifold.executor]
             [manifold.utils])
   (:import [clojure.lang AFn]
@@ -12,13 +12,51 @@
 (set! *unchecked-math* :warn-on-boxed)
 
 
+(defrecord YarnInfo
+           [type key deps body-sexp])
+
+(defmacro decl-yarn
+  ([ykey deps bodyf]
+   (assert (qualified-keyword? ykey))
+   (KwMapper/reg ykey)
+   `(decl-yarn ~(symbol (name ykey)) ~ykey ~deps ~bodyf))
+  ([fnname ykey deps [_fn [ctx dst] & body]]
+   `(fn
+      ~fnname
+      ([] ~(if (and (keyword? ykey)
+                    (set? deps))
+             (->YarnInfo
+              :knitty/yarn-info
+              ykey
+              deps
+              body)
+             (list
+              `->YarnInfo
+              :knitty/yarn-info
+              ykey
+              deps
+              (list `quote body))))
+      ([~(vary-meta ctx assoc :tag "knitty.javaimpl.YankCtx")
+        ~(vary-meta dst assoc :tag "knitty.javaimpl.KDeferred")]
+       ~@body))))
+
+
+(definline yarn-deps [y]
+  `(:deps (~y)))
+
+(definline yarn-key [y]
+  `(:key (~y)))
+
+(definline yarn-yank [y ctx d]
+  `(~y ~ctx ~d))
+
 (defn- check-no-cycle
   [root n path yarns]
   (if (= root n)
     (throw (ex-info "detected yarns cycle"
                     {:knitty/yarns-cycle (vec (reverse path))
                      :knitty/yarn root}))
-    (doseq [p (ji/yarn-deps (yarns n))]
+    (doseq [p (yarn-deps (yarns n))]
       (check-no-cycle root p (cons p path) yarns))))
 
 
@@ -33,7 +71,7 @@
 
   clojure.lang.IPersistentCollection
   (count [_] (count asmap))
-  (cons [t x] (.assoc t (ji/yarn-key x) x))
+  (cons [t x] (.assoc t (yarn-key x) x))
   (equiv [_ o] (and (instance? Registry o) (= asmap (.-asmap ^Registry o))))
   (empty [_] (Registry. (delay (make-array AFn 0)) {} {}))
 
@@ -46,15 +84,15 @@
   (entryAt [_ k] (find asmap k))
   (assoc [_ k v]
 
-    (let [k' (ji/yarn-key v)]
+    (let [k' (yarn-key v)]
       (when (not= k k')
         (throw (ex-info "yarn key mismatch" {:knitty/assoc-key k, :knitty/yarn k'}))))
 
-    (doseq [p (ji/yarn-deps v)]
+    (doseq [p (yarn-deps v)]
       (when-not (contains? asmap p)
         (throw (ex-info "yarn has unknown dependency" {:knitty/yarn k, :knitty/dependency p}))))
 
-    (let [deps (ji/yarn-deps v)
+    (let [deps (yarn-deps v)
           all-deps' (assoc all-deps k (apply set/union deps (map all-deps deps)))]
 
       (when (contains? (all-deps' k) k)
@@ -177,13 +215,13 @@
         (do
           (.chain ~dest ~result (.-token ~yctx))
           (when-some [^knitty.trace.Tracer t# (.-tracer ~yctx)]
-            (ji/kd-await
+            (kd/kd-await!
              (fn
-               ([] (.traceFinish t# ~ykey (ji/kd-get ~dest) nil true))
+               ([] (.traceFinish t# ~ykey (kd/kd-get ~dest) nil true))
                ([e#] (.traceFinish t# ~ykey nil e# true)))
              ~dest)))
         (do
-          (ji/kd-chain-from ~dest ~result (.token ~yctx)))))
+          (.chain ~dest ~result (.token ~yctx)))))
      (do
        (tracer-> ~yctx .traceFinish ~ykey ~result nil false)
        (.success ~dest ~result (.-token ~yctx)))))
@@ -237,7 +275,7 @@
                          (for [[_ k] dk] [k :case])
                          [[dk pt]])))]
 
-    `(ji/decl-yarn
+    `(decl-yarn
       ~ykey
       ~(set deps)
       (fn [~yctx ^KDeferred d#]
@@ -246,7 +284,7 @@
          (tracer-> ~yctx .traceStart ~ykey :yarn ~all-deps-tr)
          (try
            (let [~@yank-deps]
-             (ji/kd-await
+             (kd/kd-await!
               (fn
                 ([]
                  (try
@@ -287,12 +325,12 @@
 
 (defn gen-yarn-ref
   [ykey from]
-  `(ji/decl-yarn
+  `(decl-yarn
     ~ykey #{~from}
     (fn [yctx# d#]
       (tracer-> yctx# .traceStart ~ykey :knot [[~from :ref]])
       (try
-        (let [x# (ji/kd-unwrap (yarn-get-impl ~ykey ~from yctx#))]
+        (let [x# (.unwrap (yarn-get-impl ~ykey ~from yctx#))]
           (connect-result yctx# ~ykey x# d#))
         (catch Throwable e#
           (connect-error yctx# ~ykey e# d#))))))
@@ -309,14 +347,14 @@
   (let [i (long (KwMapper/reg k))]
     (fn yank-route-key [^YankCtx yctx ^KDeferred _]
       (tracer-> yctx .traceRouteBy ykey k)
-      (ji/kd-get (.fetch yctx i k)))))
+      (.get (.fetch yctx i k)))))
 
 
 (defn yarn-multi-deps [multifn route-key]
   (into #{route-key}
         (comp (map val)
               (keep #(%))
-              (mapcat ji/yarn-deps))
+              (mapcat yarn-deps))
         (methods multifn)))
 
 
@@ -328,18 +366,18 @@
        (make-multiyarn-route-key-fn ~ykey ~route-key)
        ~@mult-options)
      (let [multifn# ~(yarn-multifn ykey)]
-       (ji/decl-yarn
+       (decl-yarn
         ~ykey
         (yarn-multi-deps multifn# ~route-key)
         (fn [yctx# d#]
           (let [r# (yarn-get-impl ~ykey ~route-key yctx#)]
-            (ji/kd-await
+            (kd/kd-await!
              (fn
                ([] (try
                      (multifn# yctx# d#)
                      (catch Throwable e#
-                       (ji/kd-error! d# e# (.-token yctx#)))))
-               ([e#] (ji/kd-error! d# e# (.-token yctx#))))
+                       (.error d# e# (.-token yctx#)))))
+               ([e#] (.error d# e# (.-token yctx#))))
              r#)))))))
 
 
@@ -351,15 +389,15 @@
        ~(yarn-multifn yk)
        rv#
        ([] y#)
-       ([yctx# d#] (ji/yarn-yank y# yctx# d#)))))
+       ([yctx# d#] (yarn-yank y# yctx# d#)))))
 
 
 (defn fail-always-yarn [ykey msg]
-  (ji/decl-yarn
+  (decl-yarn
    fail-always-yarn
    ykey
    #{}
-   (fn [yctx d] (ji/kd-error! d (java.lang.UnsupportedOperationException. (str msg)) (.-token yctx)))))
+   (fn [yctx d] (.error d (java.lang.UnsupportedOperationException. (str msg)) (.-token yctx)))))
 
 
 (defn gen-yarn-input [ykey]

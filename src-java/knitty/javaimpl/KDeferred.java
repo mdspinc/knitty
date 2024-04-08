@@ -128,19 +128,19 @@ public final class KDeferred
         }
 
         public void success(Object x) {
-            if (x instanceof IDeferred) {
-                kd.chain(x, token);
-            } else {
+            //if (x instanceof IDeferred) {
+            //    kd.chain(x, token);
+            //} else {
                 kd.success(x, token);
-            }
+            //}
         }
 
         public void error(Object x) {
-            if (x instanceof IDeferred) {
-                kd.chain(x, token);
-            } else {
+            //if (x instanceof IDeferred) {
+            //    kd.chain(x, token);
+            //} else {
                 kd.error(x, token);
-            }
+            //}
         }
     }
 
@@ -155,20 +155,20 @@ public final class KDeferred
         }
 
         public Object onSuccess(Object x) {
-            if (x instanceof IDeferred) {
-                kd.chain(x, token);
-            } else {
+            //if (x instanceof IDeferred) {
+            //    kd.chain(x, token);
+            //} else {
                 kd.success(x, token);
-            }
+            //}
             return null;
         }
 
         public Object onError(Object x) {
-            if (x instanceof IDeferred) {
-                kd.chain(x, token);
-            } else {
+            //if (x instanceof IDeferred) {
+            //    kd.chain(x, token);
+            //} else {
                 kd.error(x, token);
-            }
+            //}
             return null;
         }
 
@@ -188,6 +188,7 @@ public final class KDeferred
             };
         }
     }
+
     private final static class RevokeListener extends AListener {
 
         private final IDeferred d;
@@ -734,19 +735,16 @@ public final class KDeferred
     }
 
     public void chain(Object x, Object token) {
-        while (true) {
-            if (x instanceof IDeferred) {
-                Object xx = ((IDeferred) x).successValue(x);
-                if (x == xx) {
-                    this.chain0((IDeferred) x, token);
-                    return;
-                }
-                x = xx;
-            } else {
-                this.success(x, token);
+        if (x instanceof IDeferred) {
+            Object xx = ((IDeferred) x).successValue(x);
+            if (x == xx) {
+                this.chain0((IDeferred) x, token);
                 return;
+            } else {
+                x = xx;
             }
         }
+        this.success(x, token);
     }
 
     private void chain0(IDeferred x, Object token) {
@@ -772,8 +770,14 @@ public final class KDeferred
             }
         }
     }
+    public KDeferred bind(IFn valFn, IFn errFn, Object token, Executor executor) {
+        KDeferred dest = new KDeferred(token);
+        this.listen(AListener.viaExecutor(new BindListener(dest, valFn, errFn, token), executor));
+        return dest;
+    }
 
     public KDeferred bind(IFn valFn, IFn errFn, Object token) {
+        loop:
         while (true) {
             switch (this.state) {
                 case STATE_LSTN:
@@ -786,16 +790,21 @@ public final class KDeferred
                     Thread.onSpinWait();
                     continue;
                 case STATE_SUCC:
-                    return wrap(valFn.invoke(value));
+                    break loop;
                 case STATE_ERRR:
                     if (errFn == null) {
                         return this;
                     } else {
                         this.clearEld();
-                        return wrap(errFn.invoke(value));
+                        valFn = errFn;
                     }
-
+                    break loop;
             }
+        }
+        try {
+            return wrap(valFn.invoke(value));
+        } catch (Throwable e) {
+            return wrapErr(e);
         }
     }
 

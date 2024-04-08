@@ -2,6 +2,7 @@ package knitty.javaimpl;
 
 import java.util.Iterator;
 import clojure.lang.AFn;
+import manifold.deferred.IDeferred;
 
 public final class KAwaiter {
 
@@ -181,7 +182,7 @@ public final class KAwaiter {
         a[(int) i] = d;
     }
 
-    public static void awaitIter(AFn ls, Iterator<KDeferred> ds) {
+    public static void awaitIter(AFn ls, Iterator<?> ds) {
         if (ds.hasNext()) {
             new Iter(ds, ls).success(null);
         } else {
@@ -342,9 +343,9 @@ public final class KAwaiter {
 
     private static class Iter extends Lx {
 
-        private final Iterator<KDeferred> da;
+        private final Iterator<?> da;
 
-        Iter(Iterator<KDeferred> da, AFn ls) {
+        Iter(Iterator<?> da, AFn ls) {
             super(ls);
             this.da = da;
         }
@@ -352,14 +353,18 @@ public final class KAwaiter {
         public void success(Object x) {
             try {
                 while (da.hasNext()) {
-                    KDeferred d = da.next();
-                    if (d.state != 1) {
-                        if (d.listen0(this)) {
-                            return;
-                        } else if (d.state != 1) {
-                            this.error(d.errorValue(EXPECTED_ERR));
+                    Object p = da.next();
+                    if (p instanceof IDeferred && ((IDeferred) p).successValue(this) == this) {
+                        KDeferred d = KDeferred.wrapDeferred((IDeferred) p);
+                        if (d.state != 1) {
+                            if (d.listen0(this)) {
+                                return;
+                            } else if (d.state != 1) {
+                                this.error(d.errorValue(EXPECTED_ERR));
+                            }
                         }
                     }
+
                 }
                 ls.invoke();
             } catch (Throwable e) {

@@ -1,8 +1,9 @@
 (ns knitty.core
-  (:require [knitty.impl :as impl]
-            [knitty.javaimpl :as ji]
+  (:require [clojure.spec.alpha :as s]
+            [knitty.deferred :as kd]
+            [knitty.impl :as impl]
             [knitty.trace :as trace]
-            [clojure.spec.alpha :as s]))
+            ))
 
 
 (def ^:dynamic *registry* (impl/create-registry))
@@ -23,7 +24,7 @@
   ([yarn]
    (register-yarn yarn false))
   ([yarn no-override]
-   (let [k (ji/yarn-key yarn)]
+   (let [k (impl/yarn-key yarn)]
      (when-not (qualified-keyword? k)
        (throw (ex-info "yarn must be a qualified keyword" {::yarn k, ::class (type k)})))
      (if no-override
@@ -236,7 +237,7 @@
     (trace/if-tracing
      (if t
        (let [td (delay (trace/capture-trace! t))
-             r' (ji/kd-bind
+             r' (kd/bind
                  r
                  (fn [x]
                    (vary-meta x update :knitty/trace conj @td))
@@ -247,8 +248,8 @@
                      (assoc (ex-data e) :knitty/trace (conj (:knitty/trace poy) @td))
                      (ex-cause e))))
                  nil)]
-         (reset-meta! r' {:knitty/trace (ji/kd-after* r (conj (:knitty/trace poy) @td))})
-         (ji/kd-revoke-to r' r)
+         (reset-meta! r' {:knitty/trace (kd/bind r (fn [_] (conj (:knitty/trace poy) @td)))})
+         (kd/kd-revoke-to r' r)
          r')
        r)
      r)))
@@ -267,7 +268,7 @@
     (trace/if-tracing
      (if t
        (let [td (delay (trace/capture-trace! t))
-             r' (ji/kd-bind
+             r' (kd/bind
                  r
                  (fn [x]
                    x)
@@ -278,8 +279,8 @@
                      (assoc (ex-data e) :knitty/trace (conj (:knitty/trace poy) @td))
                      (ex-cause e))))
                  nil)]
-         (reset-meta! r' {:knitty/trace (ji/kd-after* r (conj (:knitty/trace poy) @td))})
-         (ji/kd-revoke-to r' r)
+         (reset-meta! r' {:knitty/trace (kd/bind r (fn [_] (conj (:knitty/trace poy) @td)))})
+         (kd/kd-revoke-to r' r)
          r')
        r)
      r)))
@@ -289,13 +290,3 @@
   "Returns true when exception is rethrown by 'yank'."
   [ex]
   (:knitty/yank-error? (ex-data ex) false))
-
-
-(defn revoke
-  "Returns new deferred with attached canceller.
-   Canceller function is called when `yank` flow is stopped before source deferred is realized.
-  "
-  ([d cancel-fn]
-   (ji/kd-revoke d cancel-fn nil))
-  ([d cancel-fn err-callback]
-   (ji/kd-revoke d cancel-fn err-callback)))

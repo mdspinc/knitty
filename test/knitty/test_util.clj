@@ -1,7 +1,6 @@
 (ns knitty.test-util
   (:require [knitty.core :refer [*registry* defyarn]]
             [knitty.impl :as impl]
-            [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.pprint :as pp]
             [clojure.string :as str]

@@ -3,8 +3,7 @@
             [knitty.core :refer [yank yank1]]
             [knitty.test-util :refer :all]
             [manifold.debug :as debug]
-            [manifold.deferred :as md]
-            [knitty.javaimpl :as ji]))
+            [manifold.deferred :as md]))
 
 
 (set! *warn-on-reflection* true)
