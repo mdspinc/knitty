@@ -1,7 +1,4 @@
 (require
- '[manifold.deferred :as md])
-
-(require
  '[knitty.core
    :as kt
    :refer [yarn
@@ -12,6 +9,9 @@
            bind-yarn
            yank
            yank1]])
+
+(require
+ '[knitty.deferred :as kd])
 
 
 (defyarn zero    ;; define "yarn" - single slot/value
@@ -49,7 +49,7 @@
 
 (defyarn one-slow
   {z zero}
-  (md/future              ;; expression may be deferred
+  (kd/future              ;; expression may be deferred
     (Thread/sleep (long (rand-int 20)))
     (inc z)))
 
@@ -63,8 +63,8 @@
    ^:defer yd one         ;; autowrap synchronous values via md/success-deferred
    z two
    }
-  (md/chain               ;; all functions from md/ can be used
-   (md/zip xd yd)         ;; including md/timeout!, md/let-flow, md/alt ...
+  (kd/bind                ;; all functions from md/ also can be used
+   (kd/zip xd yd)         ;; including md/timeout!, md/let-flow, md/alt ...
    (fn [[x y]]
      (+ x y z))))
 
@@ -84,7 +84,7 @@
   )
 
 (defyarn-method four "const" {} 4)
-(defyarn-method four "2*2" {x two} (md/future (* x x)))
+(defyarn-method four "2*2" {x two} (kd/future (* x x)))
 (defyarn-method four "3+1" {x one, y three} (+ x y))
 (defyarn-method four :default {s four-stategy} (throw (ex-info "unknown strategy" {::s s})))
 
@@ -150,7 +150,7 @@
 
 ;; view all traces at once
 (knitty.traceviz/view-trace
- (md/chain
+ (kd/bind->
   {}
   #(yank % [two])
   #(yank % [five])
