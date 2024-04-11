@@ -6,6 +6,10 @@
   :knitty/invalid-yarn-binding     {:level :error}
   :knitty/invalid-defyarn          {:level :error}}
 
+ :lint-as
+ {knitty.deferred/letm           clojure.core/let
+  knitty.deferred/bind->         clojure.core/->
+  knitty.deferred/while          clojure.core/while}
 
  :hooks
  {:analyze-call
