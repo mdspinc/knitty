@@ -151,13 +151,13 @@
 (m/defmonad deferred-m
   [m-zero anil
    m-bind bind
-   m-result wrap-val])
+   m-result wrap])
 
 
 (defmacro with-monad-deferred
   [& exprs]
   `(let [~'m-bind   bind
-         ~'m-result wrap-val
+         ~'m-result wrap
          ~'m-zero   anil]
      (with-symbol-macros ~@exprs)))
 
