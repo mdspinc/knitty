@@ -1,15 +1,25 @@
 package knitty.javaimpl;
 
 import clojure.lang.IFn;
+import clojure.lang.Var;
 import io.aleph.dirigiste.Executor;
 import manifold.deferred.IDeferredListener;
 
 public abstract class AListener {
 
     AListener next;
+    final Object frame;
 
     public abstract void success(Object x);
     public abstract void error(Object e);
+
+    public AListener() {
+        this.frame = Var.cloneThreadBindingFrame();
+    }
+
+    protected final void resetFrame() {
+        Var.resetThreadBindingFrame(frame);
+    }
 
     public static AListener fromFn(Object onVal, Object onErr) {
         return new Fn((IFn) onVal, (IFn) onErr);
@@ -74,11 +84,11 @@ public abstract class AListener {
         }
 
         public void success(Object x) {
-            executor.execute(() -> this.ls.success(x));
+            executor.execute(() -> { this.resetFrame(); this.ls.success(x); });
         }
 
         public void error(Object e) {
-            executor.execute(() -> this.ls.error(e));
+            executor.execute(() -> { this.resetFrame(); this.ls.error(e); });
         }
     }
 }

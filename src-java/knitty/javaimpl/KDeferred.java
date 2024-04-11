@@ -15,6 +15,7 @@ import clojure.lang.Keyword;
 import clojure.lang.PersistentArrayMap;
 import clojure.lang.RT;
 import clojure.lang.Util;
+import clojure.lang.Var;
 import io.aleph.dirigiste.Executor;
 import manifold.deferred.IDeferred;
 import manifold.deferred.IDeferredListener;
@@ -128,19 +129,12 @@ public final class KDeferred
         }
 
         public void success(Object x) {
-            //if (x instanceof IDeferred) {
-            //    kd.chain(x, token);
-            //} else {
-                kd.success(x, token);
-            //}
+            kd.success(x, token);
         }
 
         public void error(Object x) {
-            //if (x instanceof IDeferred) {
-            //    kd.chain(x, token);
-            //} else {
-                kd.error(x, token);
-            //}
+
+            kd.error(x, token);
         }
     }
 
@@ -155,20 +149,12 @@ public final class KDeferred
         }
 
         public Object onSuccess(Object x) {
-            //if (x instanceof IDeferred) {
-            //    kd.chain(x, token);
-            //} else {
-                kd.success(x, token);
-            //}
+             kd.success(x, token);
             return null;
         }
 
         public Object onError(Object x) {
-            //if (x instanceof IDeferred) {
-            //    kd.chain(x, token);
-            //} else {
-                kd.error(x, token);
-            //}
+            kd.error(x, token);
             return null;
         }
 
@@ -390,13 +376,16 @@ public final class KDeferred
                     this.lss = null;
                     this.state = STATE_SUCC;
 
+                    Object frame = Var.getThreadBindingFrame();
                     for (; node != null; node = node.next) {
                         try {
+                            node.resetFrame();
                             node.success(x);
                         } catch (Throwable e) {
                             logError(e, "error in deferred handler");
                         }
                     }
+                    Var.resetThreadBindingFrame(frame);
                     return Boolean.TRUE;
 
                 case STATE_LOCK:
@@ -460,13 +449,16 @@ public final class KDeferred
                     this.lss = null;
                     this.state = STATE_ERRR;
 
+                    Object frame = Var.getThreadBindingFrame();
                     for (; node != null; node = node.next) {
                         try {
+                            node.resetFrame();
                             node.error(x);
                         } catch (Throwable e) {
                             logError(e, "error in deferred handler");
                         }
                     }
+                    Var.resetThreadBindingFrame(frame);
                     return Boolean.TRUE;
 
                 case STATE_LOCK:
@@ -514,13 +506,26 @@ public final class KDeferred
         byte s = this.state;
         while (true) {
             switch (s) {
-                case STATE_SUCC:
-                    ls.success(value);
+                case STATE_SUCC: {
+                    Object frame = Var.getThreadBindingFrame();
+                    try {
+                        ls.resetFrame();
+                        ls.success(value);
+                    } finally {
+                        Var.resetThreadBindingFrame(frame);
+                    }
                     return false;
-                case STATE_ERRR:
-                    this.clearEld();
-                    ls.error(value);
+                }
+                case STATE_ERRR: {
+                    Object frame = Var.getThreadBindingFrame();
+                    try {
+                        this.clearEld();
+                        ls.error(value);
+                    } finally {
+                        Var.resetThreadBindingFrame(frame);
+                    }
                     return false;
+                }
                 default:
                     if (this.listen0(s, ls)) {
                         return true;
