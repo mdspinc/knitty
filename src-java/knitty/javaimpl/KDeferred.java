@@ -480,6 +480,9 @@ public final class KDeferred
     }
 
     private boolean listen0(byte s, AListener ls) {
+        if (ls.next != null) {
+            throw new IllegalArgumentException("listener is already used for another deferred");
+        }
         while (true) {
             switch (s) {
                 case STATE_LSTN:

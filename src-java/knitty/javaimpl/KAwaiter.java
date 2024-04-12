@@ -313,21 +313,21 @@ public final class KAwaiter {
 
     private static class Arr extends Lx {
 
+        private final int ii;
         private final KDeferred[] ds;
-        private int i;
 
-        Arr(int i, AFn ls, KDeferred[] ds) {
+        Arr(int ii, AFn ls, KDeferred[] ds) {
             super(ls);
-            this.i = i;
+            this.ii = ii;
             this.ds = ds;
         }
 
         public void success(Object x) {
             try {
-                for (; i >= 0; --i) {
+                for (int i = this.ii; i >= 0; --i) {
                     KDeferred d = ds[i];
                     if (d.state != 1) {
-                        if (d.listen0(this)) {
+                        if (d.listen0(new Arr(i - 1, ls, ds))) {
                             return;
                         } else if (d.state != 1) {
                             this.error(d.errorValue(EXPECTED_ERR));
@@ -357,7 +357,7 @@ public final class KAwaiter {
                     if (p instanceof IDeferred && ((IDeferred) p).successValue(this) == this) {
                         KDeferred d = KDeferred.wrapDeferred((IDeferred) p);
                         if (d.state != 1) {
-                            if (d.listen0(this)) {
+                            if (d.listen0(new Iter(da, ls))) {
                                 return;
                             } else if (d.state != 1) {
                                 this.error(d.errorValue(EXPECTED_ERR));
