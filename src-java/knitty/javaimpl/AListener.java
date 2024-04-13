@@ -5,7 +5,7 @@ import clojure.lang.Var;
 import io.aleph.dirigiste.Executor;
 import manifold.deferred.IDeferredListener;
 
-public abstract class AListener {
+abstract class AListener {
 
     AListener next;
     final Object frame;
@@ -13,20 +13,12 @@ public abstract class AListener {
     public abstract void success(Object x);
     public abstract void error(Object e);
 
-    public AListener() {
+    AListener() {
         this.frame = Var.cloneThreadBindingFrame();
     }
 
     protected final void resetFrame() {
         Var.resetThreadBindingFrame(frame);
-    }
-
-    public static AListener fromFn(Object onVal, Object onErr) {
-        return new Fn((IFn) onVal, (IFn) onErr);
-    }
-
-    public static AListener fromDl(IDeferredListener ls) {
-        return new Dl(ls);
     }
 
     public static AListener viaExecutor(AListener ls, Executor executor) {

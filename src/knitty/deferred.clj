@@ -337,7 +337,7 @@
 
          (deferred? x)
          (let [y (wrap x)]
-           (if (.listen0 y (knitty.javaimpl.AListener/fromFn g ef))
+           (if (.listen0 y g ef)
              d
              (recur (try (.get y) (catch Throwable t (ef t))))))
 
@@ -345,7 +345,7 @@
          (let [y (unwrap1 (f x))]
            (if (deferred? y)
              (let [y (wrap y)]
-               (if (.listen0 y (knitty.javaimpl.AListener/fromFn g ef))
+               (if (.listen0 y g ef)
                  d
                  (recur (try (.get y) (catch Throwable t (ef t))))))
              (recur y)))

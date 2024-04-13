@@ -475,7 +475,17 @@ public final class KDeferred
         }
     }
 
-    public boolean listen0(AListener ls) {
+    public boolean listen0(IFn onSuc, IFn onErr) {
+        byte s = this.state;
+        return (s & STATE_DONE_MASK) == 0 && listen0(s, new AListener.Fn(onSuc, onErr));
+    }
+
+    public boolean listen0(IDeferredListener ls) {
+        byte s = this.state;
+        return (s & STATE_DONE_MASK) == 0 && listen0(s, new AListener.Dl(ls));
+    }
+
+    boolean listen0(AListener ls) {
         return listen0(this.state, ls);
     }
 
@@ -493,96 +503,88 @@ public final class KDeferred
                         return true;
                     }
                     continue;
-                case STATE_LOCK:
-                    Thread.onSpinWait();
-                    s = this.state;
-                    continue;
                 case STATE_SUCC:
                     return false;
                 case STATE_ERRR:
                     return false;
+                case STATE_LOCK:
+                    s = this.state;
+                    Thread.onSpinWait();
+                    continue;
             }
         }
     }
 
-    public boolean listen(AListener ls) {
-        byte s = this.state;
-        while (true) {
-            switch (s) {
-                case STATE_SUCC: {
-                    Object frame = Var.getThreadBindingFrame();
-                    try {
-                        ls.resetFrame();
-                        ls.success(value);
-                    } finally {
-                        Var.resetThreadBindingFrame(frame);
-                    }
-                    return false;
-                }
-                case STATE_ERRR: {
-                    Object frame = Var.getThreadBindingFrame();
-                    try {
-                        this.clearEld();
-                        ls.error(value);
-                    } finally {
-                        Var.resetThreadBindingFrame(frame);
-                    }
-                    return false;
-                }
-                default:
-                    if (this.listen0(s, ls)) {
-                        return true;
-                    } else {
-                        s = this.state;
-                        continue;
-                    }
+    public void listen(IFn onSuc, IFn onErr) {
+        if (this.listen0(onSuc, onErr)) {
+            return;
+        }
+        if (this.state == STATE_SUCC) {
+            onSuc.invoke(this.value);
+        } else {
+            onErr.invoke(this.value);
+        }
+    }
+
+    public void listen(IDeferredListener ls) {
+        if (this.listen0(ls)) {
+            return;
+        }
+        if (this.state == STATE_SUCC) {
+            ls.onSuccess(this.value);
+        } else {
+            ls.onError(this.value);
+        }
+    }
+
+    void listen(AListener ls) {
+        if (this.listen0(ls)) {
+            return;
+        }
+        Object frame = Var.getThreadBindingFrame();
+        try {
+            ls.resetFrame();
+            if (this.state == STATE_SUCC) {
+                ls.success(value);
+            } else {
+                this.clearEld();
+                ls.error(value);
             }
+        } finally {
+            Var.resetThreadBindingFrame(frame);
         }
     }
 
     public Object addListener(Object lss) {
         IDeferredListener ls = (IDeferredListener) lss;
-        while (true) {
-            switch (this.state) {
-                case STATE_LSTN:
-                case STATE_LOCK:
-                    if (this.listen0(new AListener.Dl(ls))) {
-                        return Boolean.TRUE;
-                    } else {
-                        continue;
-                    }
-                case STATE_SUCC:
-                    ls.onSuccess(value);
-                    return Boolean.FALSE;
-                case STATE_ERRR:
-                    this.clearEld();
-                    ls.onError(value);
-                    return Boolean.FALSE;
-            }
+        if (this.listen0(ls)) {
+            return Boolean.TRUE;
         }
+
+        if (this.state == STATE_SUCC) {
+            ls.onSuccess(value);
+        } else {
+            this.clearEld();
+            ls.onError(value);
+        }
+        return Boolean.FALSE;
     }
 
     public Object onRealized(Object onSucc, Object onErrr) {
         IFn onSuc = (IFn) onSucc;
         IFn onErr = (IFn) onErrr;
-        while (true) {
-            switch (this.state) {
-                case STATE_LSTN:
-                case STATE_LOCK:
-                    if (this.listen0(new AListener.Fn(onSuc, onErr))) {
-                        return Boolean.TRUE;
-                    } else {
-                        continue;
-                    }
-                case STATE_SUCC:
-                    onSuc.invoke(value);
-                    return Boolean.FALSE;
-                case STATE_ERRR:
-                    this.clearEld();
-                    onErr.invoke(value);
-                    return Boolean.FALSE;
-            }
+
+        if (this.listen0(onSuc, onErr)) {
+            return Boolean.TRUE;
         }
+
+        if (this.state == STATE_SUCC) {
+            onSuc.invoke(value);
+        } else {
+            this.clearEld();
+            onErr.invoke(value);
+        }
+        return Boolean.FALSE;
     }
 
     public Object cancelListener(Object listener) {
@@ -785,12 +787,13 @@ public final class KDeferred
     }
 
     public KDeferred bind(IFn valFn, IFn errFn, Object token) {
+        byte s;
         loop:
         while (true) {
-            switch (this.state) {
+            switch ((s = this.state)) {
                 case STATE_LSTN:
                     KDeferred dest = new KDeferred(token);
-                    if (this.listen0(new BindListener(dest, valFn, errFn, token))) {
+                    if (this.listen0(s, new BindListener(dest, valFn, errFn, token))) {
                         return dest;
                     }
                     continue;
