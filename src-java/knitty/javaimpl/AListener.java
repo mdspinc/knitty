@@ -1,8 +1,9 @@
 package knitty.javaimpl;
 
+import java.util.concurrent.Executor;
+
 import clojure.lang.IFn;
 import clojure.lang.Var;
-import io.aleph.dirigiste.Executor;
 import manifold.deferred.IDeferredListener;
 
 abstract class AListener {
