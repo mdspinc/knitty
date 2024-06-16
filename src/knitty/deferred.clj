@@ -5,11 +5,12 @@
   (:refer-clojure :exclude [future future-call run! while reduce] )
   (:require [clojure.algo.monads :as m]
             [clojure.core :as c]
-            [clojure.tools.macro :refer [with-symbol-macros]]
             [clojure.tools.logging :as log]
+            [clojure.tools.macro :refer [with-symbol-macros]]
             [manifold.deferred :as md])
-  (:import  [knitty.javaimpl KDeferred KAwaiter]
-            [manifold.deferred IDeferred IMutableDeferred]))
+  (:import [java.util.concurrent Executor]
+           [knitty.javaimpl KAwaiter KDeferred]
+           [manifold.deferred IDeferred IMutableDeferred]))
 
 
 (set! *warn-on-reflection* true)
@@ -112,14 +113,21 @@
        (.bind (KDeferred/wrapDeferred d') val-fn err-fn token)
        (try (KDeferred/wrap (val-fn d')) (catch Throwable e (wrap-err e)))))))
 
-
-(defn bind*
-  ([d val-fn executor]
+(defn bind-ex
+  ([d ^Executor executor val-fn]
    (.bind (wrap d) val-fn nil nil executor))
-  ([d val-fn err-fn executor]
+  ([d ^Executor executor val-fn err-fn]
    (.bind (wrap d) val-fn err-fn nil executor))
-  ([d val-fn err-fn token executor]
+  ([d ^Executor executor val-fn err-fn token]
    (.bind (wrap d) val-fn err-fn token executor)))
+
+(defn onto
+  ([d ^Executor executor]
+   (let [dd (create)]
+     (bind-ex d executor
+              (fn [x] (success! dd x))
+              (fn [e] (error! dd e)))
+     dd)))
 
 (defn bind-err
   ([mv f] (bind mv identity f))

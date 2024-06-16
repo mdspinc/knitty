@@ -17,7 +17,6 @@ import clojure.lang.PersistentArrayMap;
 import clojure.lang.RT;
 import clojure.lang.Util;
 import clojure.lang.Var;
-
 import manifold.deferred.IDeferred;
 import manifold.deferred.IDeferredListener;
 import manifold.deferred.IMutableDeferred;
@@ -781,6 +780,7 @@ public final class KDeferred
             }
         }
     }
+
     public KDeferred bind(IFn valFn, IFn errFn, Object token, Executor executor) {
         KDeferred dest = new KDeferred(token);
         this.listen(AListener.viaExecutor(new BindListener(dest, valFn, errFn, token), executor));
