@@ -3,9 +3,9 @@
   :url "http://example.com/FIXME"
   :license {:name "MIT License" :url "http://opensource.org/licenses/MIT"}
 
-  :dependencies [[org.clojure/clojure "1.10.0"]
-                 [manifold/manifold "0.4.1"]
-                 [org.hdrhistogram/HdrHistogram "2.1.12"]
+  :dependencies [[org.clojure/clojure "1.11.3"]
+                 [manifold/manifold "0.4.3"]
+                 [org.hdrhistogram/HdrHistogram "2.2.2"]
                  [macroz/tangle "0.2.2"]
                  [org.clojure/algo.monads "0.2.0"]
                  ]
@@ -21,7 +21,7 @@
   :source-paths ["src"]
 
   :profiles {:dev {:dependencies [[criterium/criterium "0.4.6"]
-                                  [com.clojure-goes-fast/clj-async-profiler "1.1.1"]
+                                  [com.clojure-goes-fast/clj-async-profiler "1.2.2"]
                                   [prismatic/plumbing "0.6.0"]
                                   [funcool/promesa "11.0.678"]
                                   ]
