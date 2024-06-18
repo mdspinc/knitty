@@ -93,6 +93,13 @@
 
 ;; ==
 
+(defn on
+  ([x on-any]
+   (let [f (fn [_] (on-any))]
+     (.onRealized (wrap x) f f)))
+  ([x on-ok on-err]
+   (.onRealized (wrap x) on-ok on-err)))
+
 (defn bind
 
   ([d val-fn]
@@ -133,12 +140,12 @@
   ([mv f] (bind mv identity f))
   ([mv exc f] (bind-err mv (fn [e] (if (instance? exc e) (f e) (wrap-err e))))))
 
-(defn bind-after
+(defn bind-fin
   ([d f0]
    (bind
     d
-    (fn [x] (f0) x)
-    (fn [e] (f0) (wrap-err e)))))
+    (fn [x] (bind (f0) (fn [_] x)))
+    (fn [e] (bind (f0) (fn [_] (wrap-err e)))))))
 
 (defmacro bind-> [expr & forms]
   (list*
