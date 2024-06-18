@@ -3,7 +3,6 @@ package knitty.javaimpl;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.lang.ref.Cleaner;
-import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
@@ -54,14 +53,14 @@ public final class KDeferred
         }
     }
 
-    private final static class BindListener extends AListener {
+    private final static class Bind extends AListener {
 
         private final KDeferred dest;
         private final Object token;
         private final IFn valFn; // non-null
         private final IFn errFn; // nullable
 
-        private BindListener(KDeferred dest, IFn valFn, IFn errFn, Object token) {
+        private Bind(KDeferred dest, IFn valFn, IFn errFn, Object token) {
             this.dest = dest;
             this.token = token;
             this.valFn = valFn;
@@ -103,10 +102,10 @@ public final class KDeferred
         }
     }
 
-    private static class CdlListener extends AListener {
+    private static class Cdl extends AListener {
         final CountDownLatch cdl;
 
-        CdlListener(CountDownLatch cdl) {
+        Cdl(CountDownLatch cdl) {
             this.cdl = cdl;
         }
 
@@ -119,12 +118,12 @@ public final class KDeferred
         }
     }
 
-    private final static class KdChainListener extends AListener {
+    private final static class Chain extends AListener {
 
         private final KDeferred kd;
         private final Object token;
 
-        public KdChainListener(KDeferred kd, Object token) {
+        public Chain(KDeferred kd, Object token) {
             this.kd = kd;
             this.token = token;
         }
@@ -139,50 +138,45 @@ public final class KDeferred
         }
     }
 
-    private final static class ChainListener implements IDeferredListener {
+    private final static class ChainSuccess extends AFn {
 
         private final KDeferred kd;
         private final Object token;
 
-        public ChainListener(KDeferred kd, Object token) {
+        public ChainSuccess(KDeferred kd, Object token) {
             this.kd = kd;
             this.token = token;
         }
 
-        public Object onSuccess(Object x) {
-             kd.success(x, token);
+        public Object invoke(Object x) {
+            kd.success(x, token);
             return null;
-        }
-
-        public Object onError(Object x) {
-            kd.error(x, token);
-            return null;
-        }
-
-        public IFn successCallback() {
-            return new AFn() {
-                public Object invoke(Object x) {
-                    return onSuccess(x);
-                }
-            };
-        }
-
-        public IFn errorCallback() {
-            return new AFn() {
-                public Object invoke(Object x) {
-                    return onError(x);
-                }
-            };
         }
     }
 
-    private final static class RevokeListener extends AListener {
+    private final static class ChainError extends AFn {
+
+        private final KDeferred kd;
+        private final Object token;
+
+        public ChainError(KDeferred kd, Object token) {
+            this.kd = kd;
+            this.token = token;
+        }
+
+        public Object invoke(Object x) {
+            kd.error(x, token);
+            return null;
+        }
+    }
+
+    private final static class Revoke extends AListener {
 
         private final IDeferred d;
         private final IFn canceller;
         private final IFn errCallback;
 
-        public RevokeListener(IDeferred d, IFn canceller, IFn errCallback) {
+        public Revoke(IDeferred d, IFn canceller, IFn errCallback) {
             this.d = d;
             this.canceller = canceller;
             this.errCallback = errCallback;
@@ -204,11 +198,11 @@ public final class KDeferred
         }
     }
 
-    private final static class KdRevokeListener extends AListener {
+    private final static class KdRevoke extends AListener {
 
         private final KDeferred d;
 
-        public KdRevokeListener(KDeferred d) {
+        public KdRevoke(KDeferred d) {
             this.d = d;
         }
 
@@ -696,7 +690,7 @@ public final class KDeferred
 
     private CountDownLatch acquireCountdDownLatch() {
         CountDownLatch cdl = new CountDownLatch(1);
-        this.listen(new CdlListener(cdl));
+        this.listen(new Cdl(cdl));
         return cdl;
     }
 
@@ -756,7 +750,7 @@ public final class KDeferred
 
     public void revokeTo(KDeferred d) {
         if (d.revokable && !d.realized()) {
-            this.listen(new KdRevokeListener(d));
+            this.listen(new KdRevoke(d));
         }
     }
 
@@ -776,7 +770,7 @@ public final class KDeferred
     private void chain0(IDeferred x, Object token) {
         if (x instanceof KDeferred) {
             KDeferred xx = (KDeferred) x;
-            if (xx.listen0(new KdChainListener(this, token))) {
+            if (xx.listen0(new Chain(this, token))) {
                 this.revokeTo(xx);
             } else {
                 switch (xx.state) {
@@ -788,19 +782,13 @@ public final class KDeferred
                 }
             }
         } else {
-            ChainListener ls = new ChainListener(this, token);
-            if (x instanceof IMutableDeferred) {
-                ((IMutableDeferred) x).addListener(ls);
-            } else {
-                Objects.requireNonNull(x);
-                ((IDeferred) x).onRealized(ls.successCallback(), ls.errorCallback());
-            }
+            x.onRealized(new ChainSuccess(this, token), new ChainError(this, token));
         }
     }
 
     public KDeferred bind(IFn valFn, IFn errFn, Object token, Executor executor) {
         KDeferred dest = new KDeferred(token);
-        this.listen(AListener.viaExecutor(new BindListener(dest, valFn, errFn, token), executor));
+        this.listen(AListener.viaExecutor(new Bind(dest, valFn, errFn, token), executor));
         return dest;
     }
 
@@ -811,7 +799,7 @@ public final class KDeferred
             switch ((s = this.state)) {
                 case STATE_LSTN:
                     KDeferred dest = new KDeferred(token);
-                    if (this.listen0(s, new BindListener(dest, valFn, errFn, token))) {
+                    if (this.listen0(s, new Bind(dest, valFn, errFn, token))) {
                         return dest;
                     }
                     continue;
@@ -879,7 +867,7 @@ public final class KDeferred
         } else {
             KDeferred kd = new KDeferred();
             kd.revokable = true;
-            kd.listen0(new RevokeListener(d, canceller, errCallback));
+            kd.listen0(new Revoke(d, canceller, errCallback));
             kd.chain(d, null);
             return kd;
         }
