@@ -10,12 +10,11 @@ import clojure.lang.Associative;
 import clojure.lang.ExceptionInfo;
 import clojure.lang.IEditableCollection;
 import clojure.lang.IExceptionInfo;
+import clojure.lang.ILookup;
 import clojure.lang.ITransientAssociative;
 import clojure.lang.Keyword;
 import clojure.lang.PersistentArrayMap;
 import clojure.lang.PersistentVector;
-import manifold.deferred.IDeferred;
-import clojure.lang.ILookup;
 
 public final class YankCtx implements ILookup {
 

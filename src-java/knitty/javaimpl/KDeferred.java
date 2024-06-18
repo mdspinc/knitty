@@ -3,6 +3,7 @@ package knitty.javaimpl;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.lang.ref.Cleaner;
+import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
@@ -266,18 +267,18 @@ public final class KDeferred
     private IPersistentMap meta;
     private ErrorLeakDetector eld;
 
-    private void fireEld(Object err) {
+    private void fireError(Object err) {
         if (!(err instanceof RevokeException)) {
-            ErrorLeakDetector eld = new ErrorLeakDetector(err);
-            this.eld = eld;
-            ELD_CLEANER.register(this, eld);
+            ErrorLeakDetector x = new ErrorLeakDetector(err);
+            this.eld = x;
+            ELD_CLEANER.register(this, x);
         }
     }
 
-    public void clearEld() {
-        ErrorLeakDetector eld = this.eld;
-        if (eld != null) {
-            eld.err = null;
+    public void consumeError() {
+        ErrorLeakDetector x = this.eld;
+        if (x != null) {
+            x.err = null;
             this.eld = null;
         }
     }
@@ -376,16 +377,19 @@ public final class KDeferred
                     this.lss = null;
                     this.state = STATE_SUCC;
 
-                    Object frame = Var.getThreadBindingFrame();
-                    for (; node != null; node = node.next) {
-                        try {
-                            node.resetFrame();
-                            node.success(x);
-                        } catch (Throwable e) {
-                            logError(e, "error in deferred handler");
+                    if (node != null) {
+                        Object frame = Var.getThreadBindingFrame();
+                        for (; node != null; node = node.next) {
+                            try {
+                                node.resetFrame();
+                                node.success(x);
+                            } catch (Throwable e) {
+                                logError(e, String.format("error in deferred success-handler: %s", node));
+                            }
                         }
+                        Var.resetThreadBindingFrame(frame);
                     }
-                    Var.resetThreadBindingFrame(frame);
+
                     return Boolean.TRUE;
 
                 case STATE_LOCK:
@@ -407,6 +411,7 @@ public final class KDeferred
             if (this.lss == null && this.token == null) {
                 this.value = x;
                 this.state = STATE_ERRR;
+                this.fireError(x);
                 return Boolean.TRUE;
             } else {
                 this.state = STATE_LSTN;
@@ -420,6 +425,7 @@ public final class KDeferred
             if (this.lss == null && this.token == token) {
                 this.value = x;
                 this.state = STATE_ERRR;
+                this.fireError(x);
                 return Boolean.TRUE;
             } else {
                 this.state = STATE_LSTN;
@@ -449,16 +455,21 @@ public final class KDeferred
                     this.lss = null;
                     this.state = STATE_ERRR;
 
-                    Object frame = Var.getThreadBindingFrame();
-                    for (; node != null; node = node.next) {
-                        try {
-                            node.resetFrame();
-                            node.error(x);
-                        } catch (Throwable e) {
-                            logError(e, "error in deferred handler");
+                    if (node == null) {
+                        this.fireError(x);
+                    } else {
+                        Object frame = Var.getThreadBindingFrame();
+                        for (; node != null; node = node.next) {
+                            try {
+                                node.resetFrame();
+                                node.error(x);
+                            } catch (Throwable e) {
+                                logError(e, String.format("error in deferred error-handler: %s", node));
+                            }
                         }
+                        Var.resetThreadBindingFrame(frame);
                     }
-                    Var.resetThreadBindingFrame(frame);
+
                     return Boolean.TRUE;
 
                 case STATE_LOCK:
@@ -547,7 +558,7 @@ public final class KDeferred
             if (this.state == STATE_SUCC) {
                 ls.success(value);
             } else {
-                this.clearEld();
+                this.consumeError();
                 ls.error(value);
             }
         } finally {
@@ -564,7 +575,7 @@ public final class KDeferred
         if (this.state == STATE_SUCC) {
             ls.onSuccess(value);
         } else {
-            this.clearEld();
+            this.consumeError();
             ls.onError(value);
         }
         return Boolean.FALSE;
@@ -581,7 +592,7 @@ public final class KDeferred
         if (this.state == STATE_SUCC) {
             onSuc.invoke(value);
         } else {
-            this.clearEld();
+            this.consumeError();
             onErr.invoke(value);
         }
         return Boolean.FALSE;
@@ -657,7 +668,7 @@ public final class KDeferred
 
     public Object errorValue(Object fallback) {
         if (this.state == STATE_ERRR) {
-            this.clearEld();
+            this.consumeError();
             return value;
         }
         return fallback;
@@ -667,7 +678,7 @@ public final class KDeferred
         return this.state == STATE_SUCC ? value : this;
     }
 
-    private final Object getErr() {
+    private Object getErr() {
         if (this.state == STATE_ERRR) {
             throwErr();
         }
@@ -767,7 +778,7 @@ public final class KDeferred
                     case STATE_SUCC:
                         this.success(xx.value, token); break;
                     case STATE_ERRR:
-                        xx.clearEld();
+                        xx.consumeError();
                         this.error(xx.value, token); break;
                 }
             }
@@ -776,6 +787,7 @@ public final class KDeferred
             if (x instanceof IMutableDeferred) {
                 ((IMutableDeferred) x).addListener(ls);
             } else {
+                Objects.requireNonNull(x);
                 ((IDeferred) x).onRealized(ls.successCallback(), ls.errorCallback());
             }
         }
@@ -807,7 +819,7 @@ public final class KDeferred
                     if (errFn == null) {
                         return this;
                     } else {
-                        this.clearEld();
+                        this.consumeError();
                         valFn = errFn;
                     }
                     break loop;
@@ -830,7 +842,7 @@ public final class KDeferred
 
     public static KDeferred wrapErr(Object e) {
         KDeferred d = new KDeferred(STATE_ERRR, e);
-        d.fireEld(e);
+        d.fireError(e);
         return d;
     }
 

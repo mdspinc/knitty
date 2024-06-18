@@ -1,5 +1,6 @@
 package knitty.javaimpl;
 
+import java.util.Objects;
 import java.util.concurrent.Executor;
 
 import clojure.lang.IFn;
@@ -41,6 +42,10 @@ abstract class AListener {
         public void error(Object e) {
             this.ls.onError(e);
         }
+
+        public String toString() {
+            return super.toString() + "[ls=" + Objects.toString(ls) + "]";
+        }
     }
 
     static final class Fn extends AListener {
@@ -64,6 +69,10 @@ abstract class AListener {
                 this.onErr.invoke(e);
             }
         }
+
+        public String toString() {
+            return super.toString() + "[onSucc=" + Objects.toString(onSucc) + ", onErr=" + Objects.toString(onErr) + "]";
+        }
     }
 
     static final class Ex extends AListener {
@@ -82,6 +91,10 @@ abstract class AListener {
 
         public void error(Object e) {
             executor.execute(() -> { this.resetFrame(); this.ls.error(e); });
+        }
+
+        public String toString() {
+            return super.toString() + "[ls=" + Objects.toString(ls) + ", executor=" + Objects.toString(executor) + "]";
         }
     }
 }
