@@ -387,6 +387,7 @@ public final class YankCtx implements ILookup {
         }
         for (KVCons a = this.freeze(); a.d != null; a = a.next) {
             a.d.error(ex, token);
+            a.d.consumeError();
         }
     }
 }
