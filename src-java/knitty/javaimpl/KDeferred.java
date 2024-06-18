@@ -410,8 +410,8 @@ public final class KDeferred
         if (this.state == STATE_LSTN && this.lss == null && STATE.compareAndSet(this, STATE_LSTN, STATE_LOCK)) {
             if (this.lss == null && this.token == null) {
                 this.value = x;
-                this.state = STATE_ERRR;
                 this.fireError(x);
+                this.state = STATE_ERRR;
                 return Boolean.TRUE;
             } else {
                 this.state = STATE_LSTN;
@@ -424,8 +424,8 @@ public final class KDeferred
         if (this.state == STATE_LSTN && this.lss == null && STATE.compareAndSet(this, STATE_LSTN, STATE_LOCK)) {
             if (this.lss == null && this.token == token) {
                 this.value = x;
-                this.state = STATE_ERRR;
                 this.fireError(x);
+                this.state = STATE_ERRR;
                 return Boolean.TRUE;
             } else {
                 this.state = STATE_LSTN;
@@ -458,6 +458,7 @@ public final class KDeferred
                     if (node == null) {
                         this.fireError(x);
                     } else {
+                        this.consumeError();
                         Object frame = Var.getThreadBindingFrame();
                         for (; node != null; node = node.next) {
                             try {
@@ -521,7 +522,6 @@ public final class KDeferred
                 case STATE_LOCK:
                     s = this.state;
                     Thread.onSpinWait();
-                    continue;
             }
         }
     }
@@ -533,6 +533,7 @@ public final class KDeferred
         if (this.state == STATE_SUCC) {
             onSuc.invoke(this.value);
         } else {
+            this.consumeError();
             onErr.invoke(this.value);
         }
     }
@@ -544,6 +545,7 @@ public final class KDeferred
         if (this.state == STATE_SUCC) {
             ls.onSuccess(this.value);
         } else {
+            this.consumeError();
             ls.onError(this.value);
         }
     }
