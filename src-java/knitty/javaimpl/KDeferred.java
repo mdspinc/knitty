@@ -275,7 +275,7 @@ public final class KDeferred
         }
     }
 
-    public void consumeError() {
+    public final void consumeError() {
         ErrorLeakDetector x = this.eld;
         if (x != null) {
             x.err = null;
@@ -453,11 +453,13 @@ public final class KDeferred
                     this.value = x;
                     AListener node = this.lss;
                     this.lss = null;
-                    this.state = STATE_ERRR;
-
                     if (node == null) {
                         this.fireError(x);
-                    } else {
+                    }
+
+                    this.state = STATE_ERRR;
+
+                    if (node != null) {
                         this.consumeError();
                         Object frame = Var.getThreadBindingFrame();
                         for (; node != null; node = node.next) {
@@ -657,6 +659,7 @@ public final class KDeferred
 
     @SuppressWarnings("unchecked")
     private <T extends Throwable> void throwErr() throws T {
+        this.consumeError();
         Object err = value;
         if (err instanceof Throwable) {
             throw (T) err;
