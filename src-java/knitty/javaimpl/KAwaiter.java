@@ -1,6 +1,7 @@
 package knitty.javaimpl;
 
 import java.util.Iterator;
+
 import clojure.lang.AFn;
 import manifold.deferred.IDeferred;
 
@@ -331,12 +332,13 @@ public final class KAwaiter {
                             return;
                         } else if (d.state != 1) {
                             this.error(d.errorValue(EXPECTED_ERR));
+                            return;
                         }
                     }
                 }
                 ls.invoke();
             } catch (Throwable e) {
-                KDeferred.logError(e, "error in awaiter callback");
+                KDeferred.logError(e, String.format("error in awaiter callback: %s", ls));
             }
         }
     }
@@ -361,14 +363,14 @@ public final class KAwaiter {
                                 return;
                             } else if (d.state != 1) {
                                 this.error(d.errorValue(EXPECTED_ERR));
+                                return;
                             }
                         }
                     }
-
                 }
                 ls.invoke();
             } catch (Throwable e) {
-                KDeferred.logError(e, "error in awaiter callback");
+                KDeferred.logError(e, String.format("error in awaiter callback: %s", ls));
             }
         }
     }
