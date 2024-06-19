@@ -248,7 +248,8 @@
                      (assoc (ex-data e) :knitty/trace (conj (:knitty/trace poy) @td))
                      (ex-cause e))))
                  nil)]
-         (reset-meta! r' {:knitty/trace (kd/bind r (fn [_] (conj (:knitty/trace poy) @td)))})
+         (let [f (fn [_] (conj (:knitty/trace poy) @td))]
+           (reset-meta! r' {:knitty/trace (kd/bind r f f)}))
          (kd/kd-revoke-to r' r)
          r')
        r)
@@ -279,7 +280,8 @@
                      (assoc (ex-data e) :knitty/trace (conj (:knitty/trace poy) @td))
                      (ex-cause e))))
                  nil)]
-         (reset-meta! r' {:knitty/trace (kd/bind r (fn [_] (conj (:knitty/trace poy) @td)))})
+         (let [f (fn [_] (conj (:knitty/trace poy) @td))]
+           (reset-meta! r' {:knitty/trace (kd/bind r f f)}))
          (kd/kd-revoke-to r' r)
          r')
        r)
