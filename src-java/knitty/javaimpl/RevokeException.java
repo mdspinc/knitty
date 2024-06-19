@@ -1,6 +1,8 @@
 package knitty.javaimpl;
 
-public class RevokeException extends RuntimeException {
+import java.util.concurrent.CancellationException;
+
+public class RevokeException extends CancellationException {
 
     public static final RevokeException DEFERRED_REVOKED = new RevokeException("deferred is revoked");
     public static final RevokeException YANK_FINISHED = new RevokeException("yank is already finished");
@@ -14,6 +16,12 @@ public class RevokeException extends RuntimeException {
     }
 
     public RevokeException(String message, Throwable cause) {
-        super(message, cause, false, false);
+        super(message);
+        addSuppressed(cause);
+    }
+
+    @Override
+    public synchronized Throwable fillInStackTrace() {
+        return this;
     }
 }
