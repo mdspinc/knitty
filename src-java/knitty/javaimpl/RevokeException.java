@@ -17,7 +17,9 @@ public class RevokeException extends CancellationException {
 
     public RevokeException(String message, Throwable cause) {
         super(message);
-        addSuppressed(cause);
+        if (cause != null) {
+            addSuppressed(cause);
+        }
     }
 
     @Override
