@@ -286,7 +286,7 @@ public final class KDeferred
     private ErrorLeakDetector eld;
 
     private void fireError(Object err) {
-        if (!(err instanceof RevokeException)) {
+        if (!(err instanceof CancellationException)) {
             ErrorLeakDetector x = new ErrorLeakDetector(new Exception((Throwable) err));
             this.eld = x;
             ELD_CLEANER.register(this, x);
