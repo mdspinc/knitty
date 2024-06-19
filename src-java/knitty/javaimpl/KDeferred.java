@@ -5,6 +5,7 @@ import java.lang.invoke.VarHandle;
 import java.lang.ref.Cleaner;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
@@ -773,7 +774,7 @@ public final class KDeferred
     }
 
     public void revokeTo(KDeferred d) {
-        if (!d.realized()) {
+        if (d.revokable && !d.realized()) {
             this.listen(new KdRevoke(d));
         }
     }
