@@ -3,6 +3,8 @@ package knitty.javaimpl;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.lang.ref.Cleaner;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
@@ -30,6 +32,31 @@ public final class KDeferred
         IDeferred,
         IMutableDeferred {
 
+    public static final BlockingQueue<Object> ELD_LEAKED_ERRORS = new ArrayBlockingQueue<>(128);
+
+    public static final Thread ELD_LOGGER = new Thread(new Runnable() {
+        public void run() {
+            while (!Thread.interrupted()) {
+                Object e;
+                try {
+                    e = ELD_LEAKED_ERRORS.take();
+                } catch (InterruptedException ex) {
+                    return;
+                }
+                try {
+                    logWarn(e, "unconsumed deferred in error state");
+                } catch (Exception e1) {
+                    e1.printStackTrace();
+                }
+            }
+        }
+    }, "knitty-error-leak-logger");
+
+    static {
+        ELD_LOGGER.setDaemon(true);
+        ELD_LOGGER.start();
+    }
+
     private static final Cleaner ELD_CLEANER =
         Cleaner.create(r -> new Thread(r, "knitty-error-leak-detector"));
 
@@ -44,11 +71,8 @@ public final class KDeferred
         public void run() {
             Object e = this.err;
             if (e != null) {
-                try {
-                    logWarn(e, "unconsumed deferred in error state");
-                } catch (Exception e1) {
-                    e1.printStackTrace();
-                }
+                this.err = null;
+                ELD_LEAKED_ERRORS.offer(e);
             }
         }
     }
@@ -263,7 +287,7 @@ public final class KDeferred
 
     private void fireError(Object err) {
         if (!(err instanceof RevokeException)) {
-            ErrorLeakDetector x = new ErrorLeakDetector(err);
+            ErrorLeakDetector x = new ErrorLeakDetector(new Exception((Throwable) err));
             this.eld = x;
             ELD_CLEANER.register(this, x);
         }
@@ -749,7 +773,7 @@ public final class KDeferred
     }
 
     public void revokeTo(KDeferred d) {
-        if (d.revokable && !d.realized()) {
+        if (!d.realized()) {
             this.listen(new KdRevoke(d));
         }
     }
