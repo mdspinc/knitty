@@ -41,6 +41,11 @@
 (definline wrap* [x]
   `(let* [x# ~x] (wrap (manifold.deferred/->deferred x# x#))))
 
+(defmacro do-wrap [& body]
+  `(try
+     (wrap (do ~@body))
+     (catch Throwable e# (wrap-err e#))))
+
 (defn future-call [f]
   (let [frame (clojure.lang.Var/cloneThreadBindingFrame)
         d (create)]
