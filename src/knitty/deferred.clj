@@ -80,11 +80,11 @@
 ;; ==
 
 (defmacro success!
-  ([d x] `(success! ~d ~x nil))
+  ([d x] `(let* [^IMutableDeferred d# ~d] (.success d# ~x)))
   ([d x token] `(let* [^IMutableDeferred d# ~d] (.success d# ~x ~token))))
 
 (defmacro error!
-  ([d x] `(error! ~d ~x nil))
+  ([d x] (let* [^IMutableDeferred d# ~d] (.error d# ~x)))
   ([d x token] `(let* [^IMutableDeferred d# ~d] (.error d# ~x ~token))))
 
 (definline deferred? [x]
@@ -430,6 +430,37 @@
      (fn [_] (bind (.next it) f))
      (fn [_] (.hasNext it))
      nil)))
+
+;; ==
+
+(defn semaphore [n]
+  (let [s (atom [n []])]
+    (letfn [(conj-fds
+              [[^long n' fds'] f d]
+              (if (pos? n')
+                [(dec n') fds']
+                [n' (conj fds' [f d])]))
+
+            (pop-fds
+              [[^long n' fds']]
+              (if (empty? fds')
+                [(unchecked-inc n') fds']
+                [n' (pop fds')]))
+
+            (maybe-release
+              []
+              (let [[[_ fds0]] (swap-vals! s pop-fds)]
+                (when-let [[f d] (peek fds0)]
+                  (kd-chain-from d (do-wrap f) nil))))
+
+            (semaphore-fn [f]
+              (let [d (create)
+                    [[^long n0] [^long n1]] (swap-vals! s conj-fds f d)]
+                (on d maybe-release)
+                (when-not (== n0 n1)
+                  (kd-chain-from d (do-wrap f) nil))
+                d))]
+      semaphore-fn)))
 
 ;; ==
 
