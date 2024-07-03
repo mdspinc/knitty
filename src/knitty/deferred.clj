@@ -84,7 +84,7 @@
   ([d x token] `(let* [^IMutableDeferred d# ~d] (.success d# ~x ~token))))
 
 (defmacro error!
-  ([d x] (let* [^IMutableDeferred d# ~d] (.error d# ~x)))
+  ([d x] `(let* [^IMutableDeferred d# ~d] (.error d# ~x)))
   ([d x token] `(let* [^IMutableDeferred d# ~d] (.error d# ~x ~token))))
 
 (definline deferred? [x]
