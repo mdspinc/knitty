@@ -159,7 +159,7 @@
 (defmacro bind-> [expr & forms]
   (list*
    `->
-   expr
+   `(do-wrap ~expr)
    (map (comp (partial list `bind)
               #(if (seq? %) `(fn [x#] (-> x# ~%)) %))
         forms)))
