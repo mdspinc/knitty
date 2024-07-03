@@ -1,7 +1,6 @@
 package knitty.javaimpl;
 
 import java.util.Objects;
-import java.util.concurrent.Executor;
 
 import clojure.lang.IFn;
 import clojure.lang.Var;
@@ -21,10 +20,6 @@ abstract class AListener {
 
     protected final void resetFrame() {
         Var.resetThreadBindingFrame(frame);
-    }
-
-    public static AListener viaExecutor(AListener ls, Executor executor) {
-        return executor == null ? ls : new Ex(ls, executor);
     }
 
     static final class Dl extends AListener {
@@ -72,29 +67,6 @@ abstract class AListener {
 
         public String toString() {
             return super.toString() + "[onSucc=" + Objects.toString(onSucc) + ", onErr=" + Objects.toString(onErr) + "]";
-        }
-    }
-
-    static final class Ex extends AListener {
-
-        private final AListener ls;
-        private final Executor executor;
-
-        Ex(AListener ls, Executor executor) {
-            this.ls = ls;
-            this.executor = executor;
-        }
-
-        public void success(Object x) {
-            executor.execute(() -> { this.resetFrame(); this.ls.success(x); });
-        }
-
-        public void error(Object e) {
-            executor.execute(() -> { this.resetFrame(); this.ls.error(e); });
-        }
-
-        public String toString() {
-            return super.toString() + "[ls=" + Objects.toString(ls) + ", executor=" + Objects.toString(executor) + "]";
         }
     }
 }
