@@ -95,10 +95,13 @@
 
 (defn on
   ([x on-any]
-   (let [f (fn [_] (on-any))]
-     (.onRealized (wrap x) f f)))
+   (.onRealized (wrap x)
+               (fn val [x] (if (deferred? x) (on x on-any) (on-any)))
+               (fn err [_] (on-any))))
   ([x on-ok on-err]
-   (.onRealized (wrap x) on-ok on-err)))
+   (.onRealized (wrap x)
+                (fn val [x] (if (deferred? x) (on x on-ok on-err) (on-ok x)))
+                (fn err [e] (on-err e)))))
 
 (defn bind
 
