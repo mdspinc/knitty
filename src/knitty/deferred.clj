@@ -451,14 +451,14 @@
               []
               (let [[[_ fds0]] (swap-vals! s pop-fds)]
                 (when-let [[f d] (peek fds0)]
-                  (kd-chain-from d (do-wrap f) nil))))
+                  (kd-chain-from d (do-wrap (f)) nil))))
 
             (semaphore-fn [f]
               (let [d (create)
                     [[^long n0] [^long n1]] (swap-vals! s conj-fds f d)]
                 (on d maybe-release)
                 (when-not (== n0 n1)
-                  (kd-chain-from d (do-wrap f) nil))
+                  (kd-chain-from d (do-wrap (f)) nil))
                 d))]
       semaphore-fn)))
 
