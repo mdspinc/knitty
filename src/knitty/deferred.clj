@@ -139,10 +139,11 @@
 (defn onto
   ([d ^Executor executor]
    (let [dd (create)]
-     (bind-ex d executor
-              (fn [x] (success! dd x))
-              (fn [e] (error! dd e)))
+     (on d
+         (fn [x] (.execute executor #(success! dd x)))
+         (fn [e] (.execute executor #(error! dd e))))
      dd)))
+
 
 (defn bind-err
   ([mv f] (bind mv identity f))
@@ -167,6 +168,34 @@
   ([d cancel-fn] (revoke d cancel-fn nil))
   ([d cancel-fn err-handler] (KDeferred/revoke d cancel-fn err-handler)))
 
+(defn connect
+  ([d-from d-dest]
+   (connect d-from d-dest nil))
+  ([d-from d-dest token]
+   (on (wrap d-from)
+       (fn [x] (success! d-dest x token))
+       (fn [e] (error! d-dest e token)))))
+
+(defn- join0 [x d t]
+  (on x
+      (fn [x]
+        (if (deferred? x)
+          (join0 x d t)
+          (success! d x t)))
+      (fn [e]
+        (if (deferred? e)
+          (join0 e d t)
+          (error! d e t)))))
+
+(defn join [d]
+  (cond
+    (not (deferred? d)) (wrap d)
+    (and (realized? d) (not (deferred? (unwrap1 d)))) d
+    :else (let [d0 (create d)]
+            (join0 d d0 d)
+            d0)))
+
+;; ==
 
 (def anil (wrap-val nil))
 
