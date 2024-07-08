@@ -2,7 +2,7 @@
 (KnittyLoader/touch)
 
 (ns knitty.deferred
-  (:refer-clojure :exclude [future future-call run! while reduce])
+  (:refer-clojure :exclude [future future-call run! while reduce loop])
   (:require [clojure.algo.monads :as m]
             [clojure.core :as c]
             [clojure.tools.logging :as log]
@@ -305,7 +305,7 @@
        res#)))
 (defn zip
   ([] (wrap-val []))
-  ([a] (bind a vector))
+  ([a] (bind a (fn [x] [x])))
   ([a b] (zip-inline a b))
   ([a b c] (zip-inline a b c))
   ([a b c d] (zip-inline a b c d))
@@ -374,29 +374,45 @@
   [f p x]
   (let [d (create)
         ef (fn [e] (error! d e))]
-    (bind
+    (on
      x
      (fn g [x]
        (cond
 
          (deferred? x)
-         (let [y (wrap x)]
-           (if (.listen0 y g ef)
-             d
+         (let [y (KDeferred/wrapDeferred x)]
+           (when-not (.listen0 y g ef)
              (recur (try (.get y) (catch Throwable t (ef t))))))
 
          (p x)
          (let [y (unwrap1 (f x))]
            (if (deferred? y)
-             (let [y (wrap y)]
-               (if (.listen0 y g ef)
-                 d
+             (let [y (KDeferred/wrapDeferred y)]
+               (when-not (.listen0 y g ef)
                  (recur (try (.get y) (catch Throwable t (ef t))))))
              (recur y)))
 
          :else
-         (success! d x))))
+         (success! d x)))
+     ef)
     d))
+
+
+(deftype DRecur [args])
+
+(defmacro recur [& args]
+  `(bind (zip ~@args) #(DRecur. %)))
+
+(defmacro loop
+  [bindings & body]
+  (let [bs (partition 2 bindings)
+        syms (map first bs)
+        init (map second bs)]
+    `(iterate-while
+      (fn [r#] (let [[~@syms] (.-args ^DRecur r#)] ~@body))
+      (fn [r#] (instance? DRecur r#))
+      (knitty.deferred/recur ~@init)
+      )))
 
 (defmacro while
   ([body]

@@ -320,6 +320,13 @@
                    (md/recur (md/future (incx x)))
                    x))))))
 
+  (testing :knitty-loop
+    (bench :loop100
+           @(kd/loop [x (md/future 0)]
+              (if (< x 100)
+                (kd/recur (md/future (incx x)))
+                x))))
+
   (testing :knitty-reduce
     (bench :loop100
            @(kd/reduce

@@ -9,7 +9,9 @@
  :lint-as
  {knitty.deferred/letm           clojure.core/let
   knitty.deferred/bind->         clojure.core/->
-  knitty.deferred/while          clojure.core/while}
+  knitty.deferred/while          clojure.core/while
+  knitty.deferred/loop           clojure.core/loop
+  knitty.deferred/recur          clojure.core/recur}
 
  :hooks
  {:analyze-call
