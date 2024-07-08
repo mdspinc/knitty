@@ -2,7 +2,7 @@
 (KnittyLoader/touch)
 
 (ns knitty.deferred
-  (:refer-clojure :exclude [future future-call run! while reduce] )
+  (:refer-clojure :exclude [future future-call run! while reduce])
   (:require [clojure.algo.monads :as m]
             [clojure.core :as c]
             [clojure.tools.logging :as log]
@@ -101,8 +101,8 @@
 (defn on
   ([x on-any]
    (.onRealized (wrap x)
-               (fn val [x] (if (deferred? x) (on x on-any) (on-any)))
-               (fn err [_] (on-any))))
+                (fn val [x] (if (deferred? x) (on x on-any) (on-any)))
+                (fn err [_] (on-any))))
   ([x on-ok on-err]
    (.onRealized (wrap x)
                 (fn val [x] (if (deferred? x) (on x on-ok on-err) (on-ok x)))
@@ -304,13 +304,13 @@
 
 (defmacro ^:private zip-inline [& xs]
   `(let [~@(mapcat identity (for [x xs] [x `(wrap ~x)]))]
-         (let [res# (create)]
-               (kd-await!
-                (fn
-                  ([] (success! res# ~(vec (for [x xs] `(kd-get ~x))) nil))
-                  ([e#] (error! res# e# nil)))
-                ~@xs)
-               res#)))
+     (let [res# (create)]
+       (kd-await!
+        (fn
+          ([] (success! res# ~(vec (for [x xs] `(kd-get ~x))) nil))
+          ([e#] (error! res# e# nil)))
+        ~@xs)
+       res#)))
 (defn zip
   ([] (wrap-val []))
   ([a] (bind a vector))
@@ -409,11 +409,19 @@
 (defmacro while
   ([body]
    `(iterate-while
-     (fn [x#] (when x# ~body))
+     (fn [x#]
+       (when x# ~body))
      identity
      true))
   ([pred & body]
-   `(while (bind ~pred (fn [c#] (when c# ~@body))))))
+   `(iterate-while
+     (fn [x#]
+       (when x#
+         (bind ~pred
+               (fn [c#] (when c# (bind (do ~@body)
+                                       (constantly true)))))))
+     identity
+     true)))
 
 (defn reduce [f initd xs]
   (bind
