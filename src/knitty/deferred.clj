@@ -108,25 +108,17 @@
                 (fn val [x] (if (deferred? x) (on x on-ok on-err) (on-ok x)))
                 (fn err [e] (on-err e)))))
 
+(defmacro ^:private bind-inline
+  ([d val-fn] `(.bind (wrap ~d) ~val-fn nil nil))
+  ([d val-fn err-fn] `(.bind (wrap ~d) ~val-fn ~err-fn nil))
+  ([d val-fn err-fn token] `(.bind (wrap ~d) ~val-fn ~err-fn ~token)))
+
 (defn bind
-
-  ([d val-fn]
-   (let [d' (unwrap1 d)]
-     (if (deferred? d')
-       (.bind (KDeferred/wrapDeferred d') val-fn nil nil)
-       (try (KDeferred/wrap (val-fn d')) (catch Throwable e (wrap-err e))))))
-
-  ([d val-fn err-fn]
-   (let [d' (unwrap1 d)]
-     (if (deferred? d')
-       (.bind (KDeferred/wrapDeferred d') val-fn err-fn nil)
-       (try (KDeferred/wrap (val-fn d')) (catch Throwable e (wrap-err e))))))
-
-  ([d val-fn err-fn token]
-   (let [d' (unwrap1 d)]
-     (if (deferred? d')
-       (.bind (KDeferred/wrapDeferred d') val-fn err-fn token)
-       (try (KDeferred/wrap (val-fn d')) (catch Throwable e (wrap-err e)))))))
+  {:inline (fn [d & args] (apply #'bind-inline nil nil d args))
+   :inline-arities #{2 3 4}}
+  ([d val-fn] (bind-inline d val-fn))
+  ([d val-fn err-fn] (bind-inline d val-fn err-fn))
+  ([d val-fn err-fn token] (bind-inline d val-fn err-fn token)))
 
 (defn bind-ex
   ([d ^Executor executor val-fn]
