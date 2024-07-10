@@ -20,6 +20,7 @@
    :concentrate false   ;; concentrate edges (merge)
    :hspace 0.5          ;; horizontal space between nodes
    :vspace 1.5          ;; vertical space between nodes
+   :show-unused false   ;; show unused nodes
    })
 
 
@@ -82,16 +83,21 @@
 
 
 (defn- render-tracegraph-dot [g]
+  (let [show-unused (:show-unused *options* false)]
   (tgl/graph->dot
 
    ;; nodes
-   (for [[k v] (sort-by #(some-> % second :start-at -) (:nodes g))]
+   (for [[k v] (sort-by #(some-> % second :start-at -) (:nodes g))
+         :when (or show-unused (not= (:type v) :lazy-unused))]
      (assoc v :id k))
 
    ;;regular links
    (sort-by
     (fn [[_ c]] (some-> c :time -))
-    (for [[[a b] c] (:links g)]
+    (for [[[a b] c] (:links g)
+          :when (or show-unused
+                    (and (not= (:type c) :maybe)
+                         (:used c)))]
       [(str (:yankid-dst c) "$" b)
        (str (:yankid-src c) "$" a)
        c]))
@@ -243,8 +249,7 @@
                 (= type :maybe)         "dashed"
                 cause                   "bold"
                 (= type :changed-input) "dotted"
-                :else                   "solid")})
-                }))
+                :else                   "solid")})})))
 
 
 (defn- fix-xdot-escapes [d]
