@@ -166,7 +166,7 @@
                         [:font {:face "monospace bold"
                                 :point-size 10
                                 :color "black"}
-                         (str id)]]])
+                         (graphviz-escape (str id))]]])
 
                  (not (#{:lazy-unused :leaked :knot} type))
                  (conj
