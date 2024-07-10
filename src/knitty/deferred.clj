@@ -385,7 +385,7 @@
              (recur (try (.get y) (catch Throwable t (ef t))))))
 
          (p x)
-         (let [y (unwrap1 (f x))]
+         (let [y (unwrap1 (try (f x) (catch Throwable t (wrap-err t))))]
            (if (deferred? y)
              (let [y (KDeferred/wrapDeferred y)]
                (when-not (.listen0 y g ef)
