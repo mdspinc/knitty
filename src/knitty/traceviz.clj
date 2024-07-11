@@ -257,20 +257,29 @@
   (str/replace d "\\" "⧵"))
 
 
+(defn maybe-parse-traces [x]
+  (or
+   (when (and (map? x)
+              (= :knitty/parsed-trace (:type x)))
+     x)
+   (some-> x
+           (t/find-traces)
+           (->> (map t/parse-trace))
+           (t/merge-parsed-traces))))
+
+
 (defn render-trace
   [traces & {:as options}]
   (binding [*options* (into *options* options)]
-    (when-let [traces (t/find-traces traces)]
-      (let [gs (map t/parse-trace traces)
-            g (t/merge-parsed-traces gs)]
-        (case (:format *options*)
-          :raw g
-          :edn (pr-str g)
-          :dot (render-tracegraph-dot g)
-          :xdot (fix-xdot-escapes (render-tracegraph-dot g))
-          :svg (tgl/dot->svg (render-tracegraph-dot g))
-          :png (tgl/dot->image (render-tracegraph-dot g) "png")
-          (tgl/dot->image (render-tracegraph-dot g) (name (:format *options*))))))))
+    (when-let [g (maybe-parse-traces traces)]
+      (case (:format *options*)
+        :raw g
+        :edn (pr-str g)
+        :dot (render-tracegraph-dot g)
+        :xdot (fix-xdot-escapes (render-tracegraph-dot g))
+        :svg (tgl/dot->svg (render-tracegraph-dot g))
+        :png (tgl/dot->image (render-tracegraph-dot g) "png")
+        (tgl/dot->image (render-tracegraph-dot g) (name (:format *options*)))))))
 
 
 (def xdot-available

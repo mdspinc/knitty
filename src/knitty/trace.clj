@@ -1,7 +1,6 @@
 (ns knitty.trace
-  (:require
-   [clojure.set :as set]
-   [manifold.deferred :as md])
+  (:require [clojure.set :as set]
+            [knitty.deferred :as kd])
   (:import [java.util.concurrent.atomic AtomicReference]))
 
 
@@ -160,7 +159,8 @@
                         (if-let [k (knot-ref t)]
                           (recur (ytlog k))
                           t))]
-    {:at at
+    {:type :knitty/parsed-trace
+     :at at
      :time (safe-minus done-at base-at)
      :base-at base-at
      :done-at done-at
@@ -228,7 +228,8 @@
   (let [nodes-a (into {} (:nodes a))
         nodes-b (into {} (:nodes b))
         ]
-    {:clusters (assoc (:clusters b)
+    {:type :knitty/parsed-trace
+     :clusters (assoc (:clusters b)
                       (:yankid a) {:at (:at a)
                                    :time (:time a)
                                    :base-at (:base-at a)
@@ -299,14 +300,14 @@
     (instance? clojure.lang.IExceptionInfo poy)
     (:knitty/trace (ex-data poy))
 
-    (and (md/deferred? poy)
+    (and (kd/deferred? poy)
          (:knitty/trace (meta poy)))
     (:knitty/trace (meta poy))
 
-    (md/deferred? poy)
-    (md/catch (md/chain poy find-traces*) find-traces*)))
+    (kd/deferred? poy)
+    (kd/bind poy find-traces* find-traces*)))
 
 
 (defn find-traces [poy]
   (when-let [t (find-traces* poy)]
-    (if (md/deferred? t) @t t)))
+    (if (kd/deferred? t) @t t)))
