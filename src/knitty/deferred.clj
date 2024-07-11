@@ -51,7 +51,7 @@
         d (create)]
     (.execute
      clojure.lang.Agent/soloExecutor
-     (fn []
+     (fn executor-task []
        (clojure.lang.Var/resetThreadBindingFrame frame)
        (try
          (when-not (.realized d)
@@ -132,8 +132,8 @@
   ([d ^Executor executor]
    (let [dd (create)]
      (on d
-         (fn [x] (.execute executor #(success! dd x)))
-         (fn [e] (.execute executor #(error! dd e))))
+         (fn on-val [x] (.execute executor #(success! dd x)))
+         (fn on-err [e] (.execute executor #(error! dd e))))
      dd)))
 
 
@@ -158,8 +158,8 @@
   ([d f0]
    (bind
     d
-    (fn [x] (bind (f0) (fn [_] x)))
-    (fn [e] (bind (f0) (fn [_] (wrap-err e)))))))
+    (fn on-val [x] (bind (f0) (fn ret-val [_] x)))
+    (fn on-err [e] (bind (f0) (fn ret-err [_] (wrap-err e)))))))
 
 (defmacro bind-> [expr & forms]
   (list*
@@ -178,16 +178,16 @@
    (connect d-from d-dest nil))
   ([d-from d-dest token]
    (on (wrap d-from)
-       (fn [x] (success! d-dest x token))
-       (fn [e] (error! d-dest e token)))))
+       (fn on-val [x] (success! d-dest x token))
+       (fn on-err [e] (error! d-dest e token)))))
 
 (defn- join0 [x d t]
   (on x
-      (fn [x]
+      (fn on-val [x]
         (if (deferred? x)
           (join0 x d t)
           (success! d x t)))
-      (fn [e]
+      (fn on-err [e]
         (if (deferred? e)
           (join0 e d t)
           (error! d e t)))))
@@ -311,14 +311,14 @@
   `(let [~@(mapcat identity (for [x xs] [x `(wrap ~x)]))]
      (let [res# (create)]
        (kd-await!
-        (fn
+        (fn ~(symbol (str "on-await" (count xs)))
           ([] (success! res# ~(vec (for [x xs] `(kd-get ~x))) nil))
           ([e#] (error! res# e# nil)))
         ~@xs)
        res#)))
 (defn zip
   ([] (wrap-val []))
-  ([a] (bind a (fn [x] [x])))
+  ([a] (bind a (fn on-await1 [x] [x])))
   ([a b] (zip-inline a b))
   ([a b c] (zip-inline a b c))
   ([a b c d] (zip-inline a b c d))
@@ -337,7 +337,7 @@
   ([a b c d e f g h i j k l m n o p & z]
    (bind
     (zip a b c d e f g h i j k l m n o p)
-    (fn [xg] (call-after-all' z #(into xg (map unwrap1) z))))))
+    (fn on-await* [xg] (call-after-all' z #(into xg (map unwrap1) z))))))
 
 
 (def ^:private ^java.util.Random alt-rnd (java.util.Random.))
@@ -386,22 +386,22 @@
 (defn iterate-while
   [f p x]
   (let [d (create)
-        ef (fn [e] (error! d e))]
+        ef (fn on-err [e] (error! d e))]
     (on
      x
-     (fn g [x]
+     (fn iter-step [x]
        (cond
 
          (deferred? x)
          (let [y (KDeferred/wrapDeferred x)]
-           (when-not (.listen0 y g ef)
+           (when-not (.listen0 y iter-step ef)
              (recur (try (.get y) (catch Throwable t (ef t))))))
 
          (p x)
          (let [y (unwrap1 (try (f x) (catch Throwable t (wrap-err t))))]
            (if (deferred? y)
              (let [y (KDeferred/wrapDeferred y)]
-               (when-not (.listen0 y g ef)
+               (when-not (.listen0 y iter-step ef)
                  (recur (try (.get y) (catch Throwable t (ef t))))))
              (recur y)))
 
@@ -422,25 +422,24 @@
         syms (map first bs)
         init (map second bs)]
     `(iterate-while
-      (fn [r#] (let [[~@syms] (.-args ^DRecur r#)] ~@body))
-      (fn [r#] (instance? DRecur r#))
+      (fn ~'loop-step [r#] (let [[~@syms] (.-args ^DRecur r#)] ~@body))
+      (fn ~'loop-done? [r#] (instance? DRecur r#))
       (knitty.deferred/recur ~@init)
       )))
 
 (defmacro while
   ([body]
    `(iterate-while
-     (fn [x#]
-       (when x# ~body))
+     (fn ~'while-step [x#] (when x# ~body))
      identity
      true))
   ([pred & body]
    `(iterate-while
-     (fn [x#]
+     (fn ~'while-step [x#]
        (when x#
          (bind ~pred
-               (fn [c#] (when c# (bind (do ~@body)
-                                       (constantly true)))))))
+               (fn ~'while-body [c#] (when c# (bind (do ~@body)
+                                                  (constantly true)))))))
      identity
      true)))
 
@@ -448,16 +447,16 @@
   (bind
    (let [it (iterator xs)]
      (iterate-while
-      (fn [a] (bind (.next it) #(f a %)))
-      (fn [a] (and (not (reduced? a)) (.hasNext it)))
+      (fn step [a] (bind (.next it) #(f a %)))
+      (fn done? [a] (and (not (reduced? a)) (.hasNext it)))
       initd))
    unreduced))
 
 (defn run! [f xs]
   (let [it (iterator xs)]
     (iterate-while
-     (fn [_] (bind (.next it) f))
-     (fn [_] (.hasNext it))
+     (fn step [_] (bind (.next it) f))
+     (fn done? [_] (.hasNext it))
      nil)))
 
 ;; ==
