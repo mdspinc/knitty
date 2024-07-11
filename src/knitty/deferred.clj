@@ -137,9 +137,22 @@
      dd)))
 
 
+(defn- map-subset? [a-map b-map]
+  (every? (fn [[k :as e]] (= e (find b-map k))) a-map))
+
+(defn- build-err-predicate [ee]
+  (cond
+    (fn? ee) ee
+    (and (class? ee) (.isAssignableFrom Throwable ee)) (fn check-ex-instance [e] (instance? ee e))
+    (map? ee) (fn check-ex-data [e] (some-> e ex-data (->> (map-subset? ee))))
+    :else (throw (ex-info "expected exception class, predicate fn or ex-data submap" {::ex ee}))
+    ))
+
 (defn bind-err
   ([mv f] (bind mv identity f))
-  ([mv exc f] (bind-err mv (fn [e] (if (instance? exc e) (f e) (wrap-err e))))))
+  ([mv exc f]
+   (let [ep (build-err-predicate exc)]
+     (bind-err mv (fn on-err [e] (if (ep e) (f e) (wrap-err e)))))))
 
 (defn bind-fin
   ([d f0]
