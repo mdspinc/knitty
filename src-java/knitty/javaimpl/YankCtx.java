@@ -11,6 +11,7 @@ import clojure.lang.ExceptionInfo;
 import clojure.lang.IEditableCollection;
 import clojure.lang.IExceptionInfo;
 import clojure.lang.ILookup;
+import clojure.lang.IPersistentMap;
 import clojure.lang.ITransientAssociative;
 import clojure.lang.Keyword;
 import clojure.lang.PersistentArrayMap;
@@ -18,15 +19,15 @@ import clojure.lang.PersistentVector;
 
 public final class YankCtx implements ILookup {
 
-    private static final Keyword KNITTY_ERROR = Keyword.find("knitty","error");
-    private static final Keyword KNITTY_YANKED_YARNS = Keyword.find("knitty", "yanked-yarns");
-    private static final Keyword KNITTY_FAILED_POY = Keyword.find("knitty", "failed-poyd");
-    private static final Keyword KNITTY_YANKED_POY = Keyword.find("knitty", "yanked-poy");
-    private static final Keyword KNITTY_YANK_ERROR = Keyword.find("knitty", "yank-error?");
+    private static final Keyword KNITTY_ERROR = Keyword.intern("knitty/error");
+    private static final Keyword KNITTY_YANKED_YARNS = Keyword.intern("knitty/yanked-yarns");
+    private static final Keyword KNITTY_FAILED_POY = Keyword.intern("knitty/failed-poyd");
+    private static final Keyword KNITTY_YANKED_POY = Keyword.intern("knitty/yanked-poy");
+    private static final Keyword KNITTY_YANK_ERROR = Keyword.intern("knitty/yank-error?");
 
     private static final Object NONE = new Object();
     private static final KVCons NIL = new KVCons(null, null, null);
-    private static final Keyword KEYFN = Keyword.find("key");
+    private static final Keyword KEYFN = Keyword.intern("key");
 
     private static final int ASHIFT = 5;
     private static final int ASIZE = 1 << ASHIFT;
@@ -98,15 +99,20 @@ public final class YankCtx implements ILookup {
             );
         }
 
-        return new ExceptionInfo(
-            "failed to yank",
-            ((error instanceof IExceptionInfo ? ((IExceptionInfo) error).getData() : PersistentArrayMap.EMPTY)
-                .assoc(KNITTY_YANK_ERROR, true)
-                .assoc(KNITTY_YANKED_POY, inputs)
-                .assoc(KNITTY_FAILED_POY, this.freezePoy())
-                .assoc(KNITTY_YANKED_YARNS, yarns)
-            ),
-            error);
+        IPersistentMap exdata;
+        if (error instanceof  IExceptionInfo) {
+            exdata = ((IExceptionInfo) error).getData();
+        } else {
+            exdata = PersistentArrayMap.EMPTY;
+        }
+
+        exdata = exdata
+            .assoc(KNITTY_FAILED_POY, this.freezePoy())
+            .assoc(KNITTY_YANKED_POY, inputs)
+            .assoc(KNITTY_YANKED_YARNS, yarns)
+            .assoc(KNITTY_YANK_ERROR, true);
+
+        return new ExceptionInfo("failed to yank", exdata, error);
     }
 
     public KDeferred yank(Iterable<?> yarns) {
@@ -179,7 +185,7 @@ public final class YankCtx implements ILookup {
             Keyword k = (Keyword) x;
             int i0 = KwMapper.getr((Keyword) x, true);
             if (i0 == -1) {
-                d = KDeferred.wrapErr(new IllegalArgumentException("unknown yarn " + x));
+                d = KDeferred.wrapErr(wrapYankErr(new IllegalArgumentException("unknown yarn " + x), PersistentVector.create(x)));
             } else {
                 d = this.fetch(i0, k);
             }
@@ -188,7 +194,7 @@ public final class YankCtx implements ILookup {
             Keyword k = (Keyword) KEYFN.invoke(y.invoke());
             int i0 = KwMapper.getr(k, true);
             if (i0 == -1) {
-                d = KDeferred.wrapErr(new IllegalArgumentException("unknown yarn " + k));
+                d = KDeferred.wrapErr(wrapYankErr(new IllegalArgumentException("unknown yarn " + k), PersistentVector.create(x)));
             } else {
                 d = this.fetch(i0, k, y);
             }
