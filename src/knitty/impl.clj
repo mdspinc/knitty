@@ -1,11 +1,19 @@
 (ns knitty.impl
   (:require [clojure.set :as set]
-            [knitty.trace :as t]
             [knitty.deferred :as kd]
+            [knitty.trace :as t]
             [manifold.executor]
             [manifold.utils])
   (:import [clojure.lang AFn]
-           [knitty.javaimpl KDeferred YankCtx YarnProvider KwMapper]))
+           [java.util.concurrent
+            ForkJoinPool
+            ForkJoinPool$ForkJoinWorkerThreadFactory
+            TimeUnit]
+           [knitty.javaimpl
+            KDeferred
+            KwMapper
+            YankCtx
+            YarnProvider]))
 
 
 (set! *warn-on-reflection* true)
@@ -111,8 +119,11 @@
 
 
 (defn bind-param-type [ds]
-  (let [{:keys [defer lazy case maybe]} (meta ds)]
+  ;; TODO: validate
+  (let [{:keys [defer lazy case maybe fork]} (meta ds)]
     (cond
+      (and fork defer) :fork-defer
+      (and fork (not (or lazy case maybe defer))) :fork-sync
       lazy   :lazy
       defer  :defer
       maybe  :maybe
@@ -189,7 +200,6 @@
          (throw (ex-info "invalid yank-fn arg" {:knitty/yankfn-arg k#
                                                 :knytty/yankfn-known-args ~(set (keys keys-map))}))))))
 
-
 (defmacro force-lazy-result [v]
   `(let [v# ~v]
      (if (instance? Lazy v#)
@@ -197,31 +207,31 @@
        v#)))
 
 
-(defn resolve-executor-var [e]
-  (when-let [ee (var-get e)]
-    (if (ifn? ee) (ee) ee)))
+(defmacro do-pool-fork [ctx & body]
+  `(.fork (.pool ~ctx) (fn* ^:once [] ~@body)))
 
 
-(defmacro maybe-future-with [executor-var & body]
-  (if-not executor-var
-    `(do ~@body)
-    `(manifold.utils/future-with (resolve-executor-var ~executor-var) ~@body)))
+(defmacro pool-run [ctx & body]
+  `(.run (.pool ~ctx) (fn* ^:once [] ~@body)))
+
+
+(defmacro yarn-get-fork [yk ykey yctx]
+  `(let [d# (.pull ~yctx ~(KwMapper/reg ykey))]
+     (when-not (.owned d#)
+       (do-pool-fork ~yctx (yarn-get-impl ~yk ~ykey ~yctx)))
+     d#))
 
 
 (defmacro connect-result [yctx ykey result dest]
   `(if (instance? manifold.deferred.IDeferred ~result)
      (do
-       (t/if-tracing
-        (do
-          (.chain ~dest ~result (.-token ~yctx))
-          (when-some [^knitty.trace.Tracer t# (.-tracer ~yctx)]
-            (kd/kd-await!
-             (fn
-               ([] (.traceFinish t# ~ykey (kd/kd-get ~dest) nil true))
-               ([e#] (.traceFinish t# ~ykey nil e# true)))
-             ~dest)))
-        (do
-          (.chain ~dest ~result (.token ~yctx)))))
+       (kd/on ~result
+              (fn ~'on-val [x#]
+                (tracer-> ~yctx .traceFinish ~ykey x# nil true)
+                (pool-run ~yctx (.success ~dest x# (.-token ~yctx))))
+              (fn ~'on-err [e#]
+                (tracer-> ~yctx .traceFinish ~ykey nil e# true)
+                (pool-run ~yctx (.error ~dest e# (.-token ~yctx))))))
      (do
        (tracer-> ~yctx .traceFinish ~ykey ~result nil false)
        (.success ~dest ~result (.-token ~yctx)))))
@@ -235,7 +245,7 @@
 
 (defn emit-yarn-impl
   [the-fn-body ykey bind yarn-meta deps]
-  (let [{:keys [executor]} yarn-meta
+  (let [{:keys [fork]} yarn-meta
         yctx '__yank_ctx
 
         yank-deps
@@ -243,18 +253,21 @@
                 (for [[ds dk] bind]
                   [ds
                    (case (bind-param-type ds)
-                     :sync   `(yarn-get-impl   ~ykey ~dk ~yctx)
-                     :lazy   `(yarn-get-lazy   ~ykey ~dk ~yctx)
-                     :defer  `(yarn-get-impl   ~ykey ~dk ~yctx)
-                     :maybe  `(yarn-get-maybe  ~ykey ~dk ~yctx)
-                     :case   `(yarn-get-case   ~ykey ~dk ~yctx))]))
+                     :sync       `(yarn-get-impl   ~ykey ~dk ~yctx)
+                     :defer      `(yarn-get-impl   ~ykey ~dk ~yctx)
+                     :fork-sync  `(yarn-get-fork   ~ykey ~dk ~yctx)
+                     :fork-defer `(yarn-get-fork   ~ykey ~dk ~yctx)
+                     :lazy       `(yarn-get-lazy   ~ykey ~dk ~yctx)
+                     :maybe      `(yarn-get-maybe  ~ykey ~dk ~yctx)
+                     :case       `(yarn-get-case   ~ykey ~dk ~yctx))]))
 
         sync-deps
         (for [[ds _dk] bind
-              :when (#{:sync} (bind-param-type ds))]
+              :when (#{:sync :fork-sync} (bind-param-type ds))]
           ds)
 
-        param-types (set (for [[ds _dk] bind] (bind-param-type ds)))
+        param-types (set (for [[ds _dk] bind] (let [p (bind-param-type ds)]
+                                                (get {:fork-defer :defer, :fork-sync :sync} p p))))
 
         coerce-deferred (if (param-types :lazy)
                           `force-lazy-result
@@ -263,8 +276,8 @@
         deref-syncs
         (mapcat identity
                 (for [[ds _dk] bind
-                      :when (#{:sync} (bind-param-type ds))]
-                  [ds `(.get ~ds)]))
+                      :when (#{:sync :fork-sync} (bind-param-type ds))]
+                  [ds `(kd/kd-get ~ds)]))
 
         all-deps-tr (into
                      []
@@ -273,15 +286,19 @@
                            :let [pt (bind-param-type ds)]]
                        (if (= :case pt)
                          (for [[_ k] dk] [k :case])
-                         [[dk pt]])))]
+                         [[dk pt]])))
+
+        do-maybe-fork (if fork `do-pool-fork `do)
+        ;;
+        ]
 
     `(decl-yarn
       ~ykey
       ~(set deps)
       (fn [~yctx ^KDeferred d#]
-        (maybe-future-with
-         ~executor
-         (tracer-> ~yctx .traceStart ~ykey :yarn ~all-deps-tr)
+        (tracer-> ~yctx .traceStart ~ykey :yarn ~all-deps-tr)
+        (~do-maybe-fork
+         ~yctx
          (try
            (let [~@yank-deps]
              (kd/kd-await!
@@ -404,10 +421,58 @@
   `(fail-always-yarn ~ykey ~(str "input-only yarn " ykey)))
 
 
-(definline yank' [poy yarns registry tracer]
-  `(let [yctx# (YankCtx. ~poy ~registry ~tracer)]
+(definline yank' [poy yarns registry tracer fj-pool]
+  `(let [yctx# (YankCtx. ~poy ~registry ~fj-pool ~tracer)]
      (.yank yctx# ~yarns)))
 
-(definline yank1' [poy yarn registry tracer]
-  `(let [yctx# (YankCtx. ~poy ~registry ~tracer)]
+(definline yank1' [poy yarn registry tracer fj-pool]
+  `(let [yctx# (YankCtx. ~poy ~registry ~fj-pool ~tracer)]
      (.yank1 yctx# ~yarn)))
+
+
+(defn enumerate-fjp-factory [name-prefix]
+  (let [c (atom 0)
+        f ForkJoinPool/defaultForkJoinWorkerThreadFactory]
+    (reify ForkJoinPool$ForkJoinWorkerThreadFactory
+      (newThread [_ pool]
+        (let [w (.newThread f pool)]
+          (.setName w (str name-prefix "-" (swap! c inc)))
+          w)))))
+
+
+(defn create-fjp
+  [{:keys [parallelism
+           factory
+           factory-prefix
+           exception-handler
+           max-size
+           min-size
+           saturate
+           keep-alive-seconds
+           min-runnable
+           async-mode
+           ]}]
+  {:pre [(or (not factory) (factory-prefix))]}
+  (let [parallelism (or parallelism (.availableProcessors (Runtime/getRuntime)))
+        factory (or factory (enumerate-fjp-factory factory-prefix))
+        saturate
+        (when saturate
+          (reify java.util.function.Predicate
+            (test [_ pool]
+              (boolean (saturate pool)))))
+        exception-handler
+        (when exception-handler
+          (reify java.lang.Thread$UncaughtExceptionHandler
+            (uncaughtException [_ thread exception] (exception-handler thread exception))))]
+    (ForkJoinPool.
+     parallelism
+     factory
+     exception-handler
+     (boolean async-mode)
+     (int (or min-size 0))
+     (int (or max-size 32768))
+     (int (or min-runnable 1))
+     saturate
+     (or keep-alive-seconds 60)
+     TimeUnit/SECONDS)
+    ))

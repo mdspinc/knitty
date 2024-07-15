@@ -1,13 +1,24 @@
 (ns knitty.core
   (:require [clojure.spec.alpha :as s]
+            [clojure.tools.logging :as log]
             [knitty.deferred :as kd]
             [knitty.impl :as impl]
-            [knitty.trace :as trace]
-            ))
+            [knitty.trace :as trace])
+  (:import [java.util.concurrent Executor]))
 
 
-(def ^:dynamic *registry* (impl/create-registry))
-(def ^:dynamic *tracing* false)
+(def ^:dynamic *registry*
+  (impl/create-registry))
+
+(def ^:dynamic *tracing*
+  false)
+
+(def ^:dynamic ^Executor *executor*
+  (impl/create-fjp
+   {:parallelism (.availableProcessors (Runtime/getRuntime))
+    :factory-prefix "knitty-fjp"
+    :exception-handler (fn [t e] (log/errorf e "uncaught exception in %s" t))
+    :async-mode true}))
 
 
 (defn enable-tracing!
@@ -15,7 +26,7 @@
   ([]
    (enable-tracing! true))
   ([enable]
-    (alter-var-root #'*tracing* (constantly (boolean enable)))))
+   (alter-var-root #'*tracing* (constantly (boolean enable)))))
 
 
 (defn register-yarn
@@ -73,10 +84,12 @@
    useful for making forward declarations."
   [nm]
   {:pre [(ident? nm)]}
-  (let [k (keyword (or (namespace nm)
+  (let [spec (:spec (meta nm))
+        k (keyword (or (namespace nm)
                        (-> *ns* ns-name name))
                    (name nm))]
     `(do (register-yarn (impl/fail-always-yarn ~k ~(str "declared-only yarn " k)) true)
+         ~(when spec `(spec/def ~k ~spec))
          ~(when (simple-ident? nm) `(def ~nm ~k))
          ~k)))
 
@@ -233,27 +246,28 @@
                 clojure.lang.IFn [yarns]
                 (vec yarns))
         t (trace/if-tracing (when *tracing* (trace/create-tracer poy yarns)))
-        r (impl/yank' poy yarns *registry* t)]
-    (trace/if-tracing
-     (if t
-       (let [td (delay (trace/capture-trace! t))
-             r' (kd/bind
-                 r
-                 (fn [x]
-                   (vary-meta x update :knitty/trace conj @td))
-                 (fn [e]
-                   (throw
-                    (ex-info
-                     (ex-message e)
-                     (assoc (ex-data e) :knitty/trace (conj (:knitty/trace poy) @td))
-                     (ex-cause e))))
-                 nil)]
-         (let [f (fn [_] (conj (:knitty/trace poy) @td))]
-           (reset-meta! r' {:knitty/trace (kd/bind r f f)}))
-         (kd/kd-revoke-to r' r)
-         r')
-       r)
-     r)))
+        executor *executor*
+        r (impl/yank' poy yarns *registry* t (knitty.javaimpl.ExecutionPool/adapt executor))]
+    (->
+     (trace/if-tracing
+      (if t
+        (let [td (delay (trace/capture-trace! t))
+              r' (kd/bind
+                  r
+                  (fn [x]
+                    (vary-meta x update :knitty/trace conj @td))
+                  (fn [e]
+                    (throw
+                     (ex-info
+                      (ex-message e)
+                      (assoc (ex-data e) :knitty/trace (conj (:knitty/trace poy) @td))
+                      (ex-cause e)))))]
+          (let [f (fn [_] (conj (:knitty/trace poy) @td))]
+            (reset-meta! r' {:knitty/trace (kd/bind r f f)}))
+          r')
+        r)
+      r)
+     (kd/kd-revoke-to r))))
 
 
 (defn yank1
@@ -265,27 +279,28 @@
    "
   [poy yarn]
   (let [t (trace/if-tracing (when *tracing* (trace/create-tracer poy [yarn])))
-        r (impl/yank1' poy yarn *registry* t)]
-    (trace/if-tracing
-     (if t
-       (let [td (delay (trace/capture-trace! t))
-             r' (kd/bind
-                 r
-                 (fn [x]
-                   x)
-                 (fn [e]
-                   (throw
-                    (ex-info
-                     (ex-message e)
-                     (assoc (ex-data e) :knitty/trace (conj (:knitty/trace poy) @td))
-                     (ex-cause e))))
-                 nil)]
-         (let [f (fn [_] (conj (:knitty/trace poy) @td))]
-           (reset-meta! r' {:knitty/trace (kd/bind r f f)}))
-         (kd/kd-revoke-to r' r)
-         r')
-       r)
-     r)))
+        executor *executor*
+        r (impl/yank1' poy yarn *registry* t (knitty.javaimpl.ExecutionPool/adapt executor))]
+    (->
+     (trace/if-tracing
+      (if t
+        (let [td (delay (trace/capture-trace! t))
+              r' (kd/bind
+                  r
+                  (fn [x]
+                    x)
+                  (fn [e]
+                    (throw
+                     (ex-info
+                      (ex-message e)
+                      (assoc (ex-data e) :knitty/trace (conj (:knitty/trace poy) @td))
+                      (ex-cause e)))))]
+          (let [f (fn [_] (conj (:knitty/trace poy) @td))]
+            (reset-meta! r' {:knitty/trace (kd/bind r f f)}))
+          r')
+        r)
+      r)
+     (kd/kd-revoke-to r))))
 
 
 (defn yank-error?

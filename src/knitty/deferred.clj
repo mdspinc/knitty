@@ -75,7 +75,11 @@
   `(let [^KDeferred x# ~kd] (.chain x# ~d ~token)))
 
 (definline kd-revoke-to [kd d]
-  `(let [^KDeferred x# ~kd] (.revokeTo x# ~d)))
+  `(let [^KDeferred x# ~kd
+         d# ~d]
+     (when-not (identical? x# d#)
+       (.revokeTo x# d#))
+     x#))
 
 ;; ==
 
@@ -130,11 +134,13 @@
 
 (defn onto
   ([d ^Executor executor]
-   (let [dd (create)]
-     (on d
-         (fn on-val [x] (.execute executor #(success! dd x)))
-         (fn on-err [e] (.execute executor #(error! dd e))))
-     dd)))
+   (if (nil? executor)
+     d
+     (let [dd (create)]
+       (on d
+           (fn on-val [x] (.execute executor #(success! dd x)))
+           (fn on-err [e] (.execute executor #(error! dd e))))
+       dd))))
 
 
 (defn- map-subset? [a-map b-map]

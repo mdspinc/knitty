@@ -393,6 +393,10 @@ public final class KDeferred
         return free && (boolean) FREE.getAndSet(this, false);
     }
 
+    public final boolean owned() {
+        return !free;
+    }
+
     public synchronized IPersistentMap meta() {
         return meta;
     }

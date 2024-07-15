@@ -18,7 +18,7 @@
 
 
 (defn compile-yarn-graph*
-  [ns prefix ids deps-fn emit-body-fn]
+  [ns prefix ids deps-fn emit-body-fn fork?]
   (println "compiling yarn-graph" ns)
   (let [n (create-ns ns)]
     (binding [*ns* n]
@@ -31,7 +31,8 @@
                                  (symbol (str prefix i))
                                  {t true}))
                              (symbol (str prefix %)))
-                     node-xxxx (nsym i)
+                     node-xxxx (cond-> (nsym i)
+                                 (fork? i) (vary-meta assoc :fork true))
                      deps (map nsym (deps-fn i))]
                  `(defyarn ~node-xxxx
                     ~(zipmap deps (map (fn [s] (keyword (name ns) (name s))) deps))
@@ -39,11 +40,13 @@
 
 
 (defmacro build-yarns-graph
-  [& {:keys [prefix ids deps emit-body]
+  [& {:keys [prefix ids deps emit-body fork?]
       :or {prefix "node"
-           emit-body (fn [i & _] i)}}]
+           emit-body (fn [i & _] i)
+           fork? `(constantly false)
+           }}]
   (let [g (ns-name *ns*)]
-    `(compile-yarn-graph* '~g (name ~prefix) ~ids ~deps ~emit-body)))
+    `(compile-yarn-graph* '~g (name ~prefix) ~ids ~deps ~emit-body ~fork?)))
 
 
 (defmacro nodes-range

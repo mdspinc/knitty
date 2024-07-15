@@ -76,6 +76,13 @@
          (iterate #(min (dec %) (int (* % 0.71))) c)))))
 
 
+(defn sample-sync-deps [avg-deps]
+  (fn [c]
+    (let [x (/ avg-deps (inc c))]
+      (filter (fn [_] (> x (rand)))
+              (range 0 c)))))
+
+
 (defn- run-benchs [nodes]
   (let [ps (map #(nth nodes %) (range 0 (count nodes) 20))
         ls (last nodes)]
@@ -156,11 +163,16 @@
 
   (build-yarns-graph
    :ids (range 1000)
-   :deps linear-sync-deps
-   :emit-body (fn [i & xs] `(mfut (reduce unchecked-add ~i [~@xs]) 10)))
+   :deps (sample-sync-deps 2)
+   :fork? (constantly true)
+   :emit-body (fn [i & xs] `(mfut
+                             (do
+                               (-> (range (rand-int 1000)) (shuffle) (sort)) ;; busy
+                               (reduce unchecked-add ~i [~@xs]))
+                             10)))
 
   (dotimes [i 1000]
     (println ".. " i " / 1000")
-    (dotimes [_ 1000]
+    (dotimes [_ 10]
       (binding [knitty.core/*tracing* (rand-nth [false true])]
-        @(yank {} (random-sample 0.01 (nodes-range :node 0 500)))))))
+        @(yank {} (nodes-range :node 0 1000) #_(random-sample 0.01 (nodes-range :node 0 500)))))))

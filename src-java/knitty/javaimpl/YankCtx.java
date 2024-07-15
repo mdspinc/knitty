@@ -53,6 +53,7 @@ public final class YankCtx implements ILookup {
     private final AFn[] yarnsCache;
     private final YarnProvider yankerProvider;
 
+    public final ExecutionPool pool;
     public final Object tracer;
     public final Object token;
 
@@ -69,11 +70,12 @@ public final class YankCtx implements ILookup {
         }
     }
 
-    public YankCtx(Associative inputs, YarnProvider yp, Object tracer) {
+    public YankCtx(Associative inputs, YarnProvider yp, ExecutionPool pool, Object tracer) {
         this.a0 = new KDeferred[((KwMapper.maxi() + AMASK) >> ASHIFT)][];
         this.inputs = inputs;
         this.yarnsCache = yp.ycache();
         this.yankerProvider = yp;
+        this.pool = pool;
         this.tracer = tracer;
         this.token = new Object();
     }
@@ -115,9 +117,8 @@ public final class YankCtx implements ILookup {
         return new ExceptionInfo("failed to yank", exdata, error);
     }
 
-    public KDeferred yank(Iterable<?> yarns) {
 
-        KDeferred res = KDeferred.create();
+    private void yankImpl(Iterable<?> yarns, KDeferred res) {
 
         int di = 0;
         KDeferred[] ds = null;
@@ -129,7 +130,7 @@ public final class YankCtx implements ILookup {
                 int i0 = KwMapper.getr(k, true);
                 if (i0 == -1) {
                     res.error(wrapYankErr(new IllegalArgumentException("unknown yarn " + x), yarns), null);
-                    return res;
+                    return;
                 }
                 r = this.fetch(i0, k);
             } else {
@@ -138,7 +139,7 @@ public final class YankCtx implements ILookup {
                 int i0 = KwMapper.getr(k, true);
                 if (i0 == -1) {
                     res.error(wrapYankErr(new IllegalArgumentException("unknown yarn " + k), yarns), null);
-                    return res;
+                    return;
                 }
                 r = this.fetch(i0, k, y);
             }
@@ -174,18 +175,29 @@ public final class YankCtx implements ILookup {
         } else {
             res.listen0(canceller());
         }
+    }
 
+    public KDeferred yank(Iterable<?> yarns) {
+        KDeferred res = KDeferred.create();
+        this.pool.run(new AFn() {
+            public Object invoke() {
+                yankImpl(yarns, res);
+                return false;
+            }
+        });
         return res;
     }
 
-    public KDeferred yank1(Object x) {
+    public void yank1Impl(Object x, KDeferred res) {
 
         KDeferred d;
+
         if (x instanceof Keyword) {
             Keyword k = (Keyword) x;
             int i0 = KwMapper.getr((Keyword) x, true);
             if (i0 == -1) {
-                d = KDeferred.wrapErr(wrapYankErr(new IllegalArgumentException("unknown yarn " + x), PersistentVector.create(x)));
+                res.error(wrapYankErr(new IllegalArgumentException("unknown yarn " + x), PersistentVector.create(x)), null);
+                return;
             } else {
                 d = this.fetch(i0, k);
             }
@@ -194,13 +206,13 @@ public final class YankCtx implements ILookup {
             Keyword k = (Keyword) KEYFN.invoke(y.invoke());
             int i0 = KwMapper.getr(k, true);
             if (i0 == -1) {
-                d = KDeferred.wrapErr(wrapYankErr(new IllegalArgumentException("unknown yarn " + k), PersistentVector.create(x)));
+                res.error(wrapYankErr(new IllegalArgumentException("unknown yarn " + k), PersistentVector.create(x)), null);
+                return;
             } else {
                 d = this.fetch(i0, k, y);
             }
         }
 
-        KDeferred res = KDeferred.create();
         AListener ls = new AListener() {
             public void success(Object x) {
                 freezeVoid();
@@ -215,8 +227,17 @@ public final class YankCtx implements ILookup {
             res.listen0(canceller());
         } else {
             freezeVoid();
-            return d;
-        };
+        }
+    }
+
+    public KDeferred yank1(Object x) {
+        KDeferred res = new KDeferred();
+        this.pool.run(new AFn() {
+            public Object invoke() {
+                yank1Impl(x, res);
+                return false;
+            }
+        });
         return res;
     }
 
