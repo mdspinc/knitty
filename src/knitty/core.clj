@@ -4,7 +4,7 @@
             [knitty.deferred :as kd]
             [knitty.impl :as impl]
             [knitty.trace :as trace])
-  (:import [java.util.concurrent Executor]))
+  (:import [java.util.concurrent Executor ExecutorService]))
 
 
 (def ^:dynamic *registry*
@@ -14,11 +14,12 @@
   false)
 
 (def ^:dynamic ^Executor *executor*
-  (impl/create-fjp
-   {:parallelism (.availableProcessors (Runtime/getRuntime))
-    :factory-prefix "knitty-fjp"
-    :exception-handler (fn [t e] (log/errorf e "uncaught exception in %s" t))
-    :async-mode true}))
+  (delay
+    (impl/create-fjp
+     {:parallelism (.availableProcessors (Runtime/getRuntime))
+      :factory-prefix "knitty-fjp"
+      :exception-handler (fn [t e] (log/errorf e "uncaught exception in %s" t))
+      :async-mode true})))
 
 
 (defn enable-tracing!
@@ -27,6 +28,20 @@
    (enable-tracing! true))
   ([enable]
    (alter-var-root #'*tracing* (constantly (boolean enable)))))
+
+
+(defn set-executor!
+  "Globally set knitty executor."
+  ([executor]
+   (set-executor! executor true))
+  ([executor shutdown-current]
+   (alter-var-root #'*executor*
+                   (fn [e]
+                     (when (and shutdown-current
+                                (or (not (delay? e)) (realized? e))
+                                (instance? ExecutorService (force e)))
+                       (.shutdown ^ExecutorService (force e)))
+                     executor))))
 
 
 (defn register-yarn
@@ -246,7 +261,7 @@
                 clojure.lang.IFn [yarns]
                 (vec yarns))
         t (trace/if-tracing (when *tracing* (trace/create-tracer poy yarns)))
-        executor *executor*
+        executor (force *executor*)
         r (impl/yank' poy yarns *registry* t (knitty.javaimpl.ExecutionPool/adapt executor))]
     (->
      (trace/if-tracing
