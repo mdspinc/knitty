@@ -145,30 +145,28 @@
    (when-let [ts (trace/find-traces poy)]
      (let [att (- 0 (long (reduce min (map :base-at ts))))
            h (java.util.HashMap.)]
-       (doseq [t ts]
-         (doseq [log (:tracelog t)]
-           (let [y (:yarn log)]
-             (when (yarns y)
-               (let [e (:event log)]
-                 (when-let [i (case e
-                                ::trace/trace-start 0
-                                ::trace/trace-call 1
-                                ::trace/trace-finish 2
-                                nil)]
-                   (let [y (:yarn log)
-                         v (long (:value log))
-                         ^longs c (.get h y)]
-                     (if c
-                       (aset c i (+ v att))
-                       (let [c (long-array 3)]
-                         (.put h y c)
-                         (aset c i (+ v att)))))))))))
+       (doseq [t ts, log (:tracelog t)]
+         (let [y (:yarn log)]
+           (when (yarns y)
+             (let [e (:event log)]
+               (when-let [i (case e
+                              ::trace/trace-start 0
+                              ::trace/trace-call 1
+                              ::trace/trace-finish 2
+                              nil)]
+                 (let [y (:yarn log)
+                       v (long (:value log))
+                       ^longs c (.get h y)]
+                   (if c
+                     (aset c i (+ v att))
+                     (let [c (long-array 3)]
+                       (.put h y c)
+                       (aset c i (+ v att))))))))))
        (let [emit-yank (events :yank-at)
              emit-call (events :call-at)
              emit-done (events :done-at)
              emit-deps-time (events :deps-time)
-             emit-time (events :time)
-             ]
+             emit-time (events :time)]
          (eduction
           (mapcat (fn [kv]
                     (let [k (key kv)
@@ -187,6 +185,13 @@
           (.entrySet h)))))))
 
 
+(defn- fast-memoize1 [f]
+  (let [h (java.util.concurrent.ConcurrentHashMap.)
+        g (reify java.util.function.Function
+            (apply [_ x] (f x)))]
+    (fn [x] (.computeIfAbsent h x g))))
+
+
 (defn timings-collector
   [& {:keys [yarns
              events
@@ -195,20 +200,21 @@
              precision
              percentiles
              ]
-      :or {yarns (constantly true)  ;; all
+      :or {yarns  nil ;; all
            events #{:yank-at :call-at :done-at :deps-time :time}
            percentiles [50 90 95 99]
            precision 3
            window 60
            }}]
-  (let [
-        yarns (memoize yarns)
+  (let [yarns (if (some? yarns)
+                (fast-memoize1 yarns)
+                (constantly true))
         tracker (grouped-stats-tracker
                  (if (some? window)
                    (partial windowed-stats-tracker
                             {:precision precision
                              :window window
-                             :window-chunk (or window-chunk (long (* 0.05 window)))
+                             :window-chunk (or window-chunk (long (* 0.1 window)))
                              :percentiles percentiles})
                    (partial simple-stats-tracker
                             {:precision precision
