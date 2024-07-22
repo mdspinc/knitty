@@ -5,10 +5,8 @@
             [manifold.executor]
             [manifold.utils])
   (:import [clojure.lang AFn]
-           [java.util.concurrent
-            ForkJoinPool
-            ForkJoinPool$ForkJoinWorkerThreadFactory
-            TimeUnit]
+           [java.util Arrays]
+           [java.util.concurrent ForkJoinPool ForkJoinPool$ForkJoinWorkerThreadFactory TimeUnit]
            [knitty.javaimpl
             KDeferred
             KwMapper
@@ -26,7 +24,7 @@
 (defmacro decl-yarn
   ([ykey deps bodyf]
    (assert (qualified-keyword? ykey))
-   (KwMapper/reg ykey)
+   (KwMapper/registerKeyword ykey)
    `(decl-yarn ~(symbol (name ykey)) ~ykey ~deps ~bodyf))
   ([fnname ykey deps [_fn [ctx dst] & body]]
    `(fn
@@ -68,11 +66,17 @@
       (check-no-cycle root p (cons p path) yarns))))
 
 
+(defn- ensure-array-len ^objects [^objects arr ^long new-size]
+  (if (>= (alength arr) new-size)
+    arr
+    (Arrays/copyOf arr (-> new-size (quot 128) (inc) (* 128)))))
+
+
 (deftype Registry [ycache asmap all-deps]
 
   YarnProvider
   (yarn [_ kkw] (get asmap kkw))
-  (ycache [_] @ycache)
+  (ycache [_] ycache)
 
   clojure.lang.Seqable
   (seq [_] (seq asmap))
@@ -81,7 +85,7 @@
   (count [_] (count asmap))
   (cons [t x] (.assoc t (yarn-key x) x))
   (equiv [_ o] (and (instance? Registry o) (= asmap (.-asmap ^Registry o))))
-  (empty [_] (Registry. (delay (make-array AFn 0)) {} {}))
+  (empty [_] (Registry. (make-array AFn 32) {} {}))
 
   clojure.lang.ILookup
   (valAt [_ k] (asmap k))
@@ -100,7 +104,9 @@
       (when-not (contains? asmap p)
         (throw (ex-info "yarn has unknown dependency" {:knitty/yarn k, :knitty/dependency p}))))
 
-    (let [deps (yarn-deps v)
+    (let [i (KwMapper/registerKeyword k)
+          max-idx (.maxIndex (KwMapper/getInstance))
+          deps (yarn-deps v)
           all-deps' (assoc all-deps k (apply set/union deps (map all-deps deps)))]
 
       (when (contains? (all-deps' k) k)
@@ -108,14 +114,13 @@
         (doseq [d deps]
           (check-no-cycle k d [k] asmap)))
 
-      (Registry.
-       (delay (make-array AFn (inc (KwMapper/maxi))))
-       (assoc asmap k v)
-       all-deps'))))
+      (let [^objects ycache' (ensure-array-len ycache (inc max-idx))]
+        (aset ycache' i v)
+        (Registry. ycache' (assoc asmap k v) all-deps')))))
 
 
 (defn create-registry []
-  (Registry. (delay (make-array AFn 0)) {} {}))
+  (Registry. (make-array AFn 32) {} {}))
 
 
 (defn bind-param-type [ds]
@@ -139,7 +144,7 @@
 
 (defmacro yarn-get-impl
   ([yk ykey yctx]
-   `(yarn-get-impl ~yk ~ykey ~(KwMapper/reg ykey) ~yctx))
+   `(yarn-get-impl ~yk ~ykey ~(KwMapper/registerKeyword ykey) ~yctx))
   ([yk ykey ykeyi yctx]
    `(do
       (tracer-> ~yctx .traceDep ~yk ~ykey)
@@ -150,7 +155,7 @@
   [yk ykey yctx]
   `(do
      (tracer-> ~yctx .traceDep ~yk ~ykey)
-     (.pull ~yctx ~(KwMapper/reg ykey))))
+     (.pull ~yctx ~(KwMapper/registerKeyword ykey))))
 
 
 (deftype Lazy
@@ -174,7 +179,7 @@
     ~yctx
     ~yk
     ~ykey
-    ~(KwMapper/reg ykey)))
+    ~(KwMapper/registerKeyword ykey)))
 
 
 (defmacro yarn-get-case [yk keys-map yctx]
@@ -216,7 +221,7 @@
 
 
 (defmacro yarn-get-fork [yk ykey yctx]
-  `(let [d# (.pull ~yctx ~(KwMapper/reg ykey))]
+  `(let [d# (.pull ~yctx ~(KwMapper/registerKeyword ykey))]
      (when-not (.owned d#)
        (do-pool-fork ~yctx (yarn-get-impl ~yk ~ykey ~yctx)))
      d#))
@@ -331,12 +336,12 @@
 
 (defn gen-yarn
   [ykey bind expr opts]
-  (KwMapper/reg ykey)
+  (KwMapper/registerKeyword ykey)
   (let [deps (grab-yarn-bindmap-deps bind)
         {:keys [keep-deps-order]} opts
         bind (if keep-deps-order
                bind
-               (sort-by (comp #(when (keyword? %) (KwMapper/reg %)) second) bind))]
+               (sort-by (comp #(when (keyword? %) (KwMapper/registerKeyword %)) second) bind))]
     (emit-yarn-impl expr ykey bind opts deps)))
 
 
@@ -361,7 +366,7 @@
 
 
 (defn make-multiyarn-route-key-fn [ykey k]
-  (let [i (long (KwMapper/reg k))]
+  (let [i (long (KwMapper/registerKeyword k))]
     (fn yank-route-key [^YankCtx yctx ^KDeferred _]
       (tracer-> yctx .traceRouteBy ykey k)
       (.get (.fetch yctx i k)))))
@@ -377,7 +382,7 @@
 
 (defn gen-yarn-multi
   [ykey route-key mult-options]
-  (KwMapper/reg ykey)
+  (KwMapper/registerKeyword ykey)
   `(do
      (defmulti ~(yarn-multifn ykey)
        (make-multiyarn-route-key-fn ~ykey ~route-key)
