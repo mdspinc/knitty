@@ -30,7 +30,7 @@ public final class YankCtx implements ILookup {
     private static final KVCons NIL = new KVCons(null, null, null);
     private static final Keyword KEYFN = Keyword.intern("key");
 
-    private static final int ASHIFT = 5;
+    private static final int ASHIFT = 4;
     private static final int ASIZE = 1 << ASHIFT;
     private static final int AMASK = ASIZE - 1;
 
