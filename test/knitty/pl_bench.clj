@@ -1,10 +1,10 @@
 (ns knitty.pl-bench
-  (:require [clojure.test :as t :refer [deftest]]
-            [knitty.core :refer [defyarn yank yank1 yarn]]
-            [knitty.test-util :as tu :refer [bench do-defs]]
+  (:require [clj-async-profiler.core :as prof]
+            [clojure.test :as t :refer [deftest]]
+            [knitty.core :as kt :refer [defyarn yank yank1 yarn]]
+            [knitty.test-util :as tu :refer [bench]]
             [plumbing.core :as pc]
-            [plumbing.graph :as pg]
-            [clj-async-profiler.core :as prof]))
+            [plumbing.graph :as pg]))
 
 
 (set! *warn-on-reflection* true)
@@ -13,8 +13,7 @@
 
 (t/use-fixtures :once
   (t/join-fixtures
-   [(tu/tracing-enabled-fixture false)
-    (tu/report-benchmark-fixture)]))
+   [(tu/report-benchmark-fixture)]))
 
 
 ;; plain Fn
@@ -66,7 +65,7 @@
   (assoc-when-miss ctx ::m2 [stats-mm-n] (/ (pc/sum #(* % %) (::xs ctx)) (::n ctx))))
 
 (defn stats-mm-v [ctx]
-  (assoc-when-miss ctx ::m2 [stats-mm-m stats-mm-m2] (- (::m2 ctx) (let [m (::m ctx)] (* m m)))))
+  (assoc-when-miss ctx ::v [stats-mm-m stats-mm-m2] (- (::m2 ctx) (let [m (::m ctx)] (* m m)))))
 
 (defn stats-mm [x]
   (-> {::xs x}
@@ -101,6 +100,8 @@
 ;; bench
 
 (defn testem [x]
+  (kt/set-executor! nil)
+  (kt/enable-tracing! false)
   (bench :stats-fn    (stats-fn x))
   (bench :stats-pg    (stats-pg x))
   (bench :stats-kt    (stats-kt x))
@@ -122,20 +123,26 @@
 
   (require '[clj-async-profiler.core :as prof])
 
-  (prof/serve-files 8888)
+  (kt/set-executor! nil)
+  (kt/enable-tracing! false)
+  (prof/serve-ui 8888)
 
-  (dotimes [_ 100000000]
-    (let [x (vec (take (inc (rand-int 10))
-                       (repeatedly #(rand-int 100))))]
-      (stats-mm x)
-      (stats-kt1 x)))
+  (testem [1 2 3 4 5])
 
-  (prof/profile
-   (dotimes [_ 1000000000]
-     (stats-mm [3])))
+  (binding [kt/*executor* nil
+            kt/*tracing* false]
+    (dotimes [_ 1000000]
+      (let [x (vec (take (inc (rand-int 10))
+                         (repeatedly #(rand-int 100))))]
+        (stats-mm x)
+        (stats-kt1 x))))
 
-  (prof/profile
-   (dotimes [_ 1000000000]
-     (stats-kt1 [3])))
+  (do
+     (dotimes [_ 10000000]
+       (stats-kt1 [3]))
 
-  (+ 1 2))
+    (prof/profile
+     (dotimes [_ 10000000]
+       (stats-kt1 [3]))))
+
+  )
