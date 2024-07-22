@@ -19,7 +19,7 @@ public final class KAwaiter {
         }
     }
 
-    private static final byte mixStates(KDeferred x1, KDeferred x2) {
+    private static byte mixStates(KDeferred x1, KDeferred x2) {
         return (byte) (((x1.state & 1) << 1) | (x2.state & 1));
     }
 
@@ -27,7 +27,7 @@ public final class KAwaiter {
         switch (mixStates(x1, x2)) {
             case 0b00: x2.listen(new L1(ls, x1)); return false;
             case 0b01: x2 = x1;
-            case 0b10: x2.listen(new L0(ls)); return false;
+            case 0b10: return !x2.listen0(new L0(ls));
             case 0b11: return true;
         }
         return true;

@@ -3,9 +3,9 @@ package knitty.javaimpl;
 import java.io.IOException;
 import java.net.URL;
 
+import clojure.java.api.Clojure;
 import clojure.lang.DynamicClassLoader;
 import clojure.lang.IFn;
-import clojure.java.api.Clojure;
 
 public class KnittyLoader extends DynamicClassLoader {
 
@@ -13,6 +13,7 @@ public class KnittyLoader extends DynamicClassLoader {
         super(KnittyLoader.class.getClassLoader());
     }
 
+    @Override
     public Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
         if (name.startsWith("knitty.javaimpl.")) {
             URL r = this.getResource(name.replace(".", "/") + ".class");

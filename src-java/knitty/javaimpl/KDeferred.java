@@ -244,6 +244,7 @@ public final class KDeferred
             this.token = token;
         }
 
+        @Override
         public Object invoke(Object x) {
             if (x instanceof IDeferred) {
                 this.kd.chain(x, token);
@@ -264,6 +265,7 @@ public final class KDeferred
             this.token = token;
         }
 
+        @Override
         public Object invoke(Object x) {
             kd.error(x, token);
             return null;
@@ -339,6 +341,8 @@ public final class KDeferred
     }
 
     private static volatile IFn LOG_EXCEPTION = new AFn() {
+
+        @Override
         public Object invoke(Object err, Object msg) {
             System.err.printf("%s: %s", msg, err);
             if (err instanceof Throwable) {
@@ -346,6 +350,7 @@ public final class KDeferred
             }
             return null;
         };
+
     };
 
     public static void setExceptionLogFn(IFn f) {
@@ -717,9 +722,7 @@ public final class KDeferred
             byte s = this.state;
             switch (s) {
                 case STATE_LSTN:
-                    byte nst = (byte) STATE.compareAndExchange(this, s, STATE_LOCK);
-                    if (nst != s) {
-                        s = nst;
+                    if (!STATE.compareAndSet(this, s, STATE_LOCK)) {
                         continue;
                     }
                     if (this.token == null) {

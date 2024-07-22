@@ -38,6 +38,7 @@ abstract class AListener {
             this.ls.onError(e);
         }
 
+        @Override
         public String toString() {
             return super.toString() + "[ls=" + Objects.toString(ls) + "]";
         }
@@ -65,6 +66,7 @@ abstract class AListener {
             }
         }
 
+        @Override
         public String toString() {
             return super.toString() + "[onSucc=" + Objects.toString(onSucc) + ", onErr=" + Objects.toString(onErr) + "]";
         }
