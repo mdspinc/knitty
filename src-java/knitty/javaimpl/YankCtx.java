@@ -348,23 +348,29 @@ public final class YankCtx implements ILookup {
     }
 
     private boolean fetch0(KDeferred d, Keyword k) {
+
         Object x = inputs.valAt(k, NONE);
         if (x != NONE) {
             d.chain(x, token);
             return false;
         }
+
         KVCons a = added;
-        while (a != null && !ADDED.compareAndSet(this, a, new KVCons(a, k, d))) a = added;
-        if (a == null) {
-            d.error(RevokeException.YANK_FINISHED, token);
-            return false;
+        while (a != null) {
+            KVCons b = (KVCons) ADDED.compareAndExchange(this, a, new KVCons(a, k, d));
+            if (a == b) {
+                return true;
+            }
+            a = b;
         }
-        return true;
+
+        d.error(RevokeException.YANK_FINISHED, token);
+        return false;
     }
 
     public final KDeferred fetch(int i, Keyword k, AFn y) {
         KDeferred d = pull(i);
-        if (d.free && d.own() && fetch0(d, k)) {
+        if (d.own() && fetch0(d, k)) {
             y.invoke(this, d);
         }
         return d;
@@ -372,7 +378,7 @@ public final class YankCtx implements ILookup {
 
     public final KDeferred fetch(int i, Keyword k) {
         KDeferred d = pull(i);
-        if (d.free && d.own() && fetch0(d, k)) {
+        if (d.own() && fetch0(d, k)) {
             AFn y = this.yarn(i);
             y.invoke(this, d);
         }

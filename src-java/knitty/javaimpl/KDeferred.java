@@ -395,7 +395,7 @@ public final class KDeferred
     }
 
     public final boolean own() {
-        return free && (boolean) FREE.getAndSet(this, false);
+        return free && (boolean) FREE.compareAndExchange(this, free, false);
     }
 
     public final boolean owned() {
