@@ -28,7 +28,7 @@ public final class YankCtx implements ILookup {
     private static final Object NONE = new Object();
     private static final Keyword KEYFN = Keyword.intern("key");
 
-    static final int ASHIFT = 4;
+    static final int ASHIFT = 5;
     static final int ASIZE = 1 << ASHIFT;
     static final int AMASK = ASIZE - 1;
 
@@ -150,7 +150,7 @@ public final class YankCtx implements ILookup {
 
     private YankCtx(Associative inputs, YarnProvider yp, ExecutionPool pool, Object tracer) {
         this.kwMapper = KwMapper.getInstance();
-        this.a0 = new KDeferred[((kwMapper.maxIndex() + AMASK) >> ASHIFT)][];
+        this.a0 = new KDeferred[((kwMapper.maxIndex() + ASIZE) >> ASHIFT)][];
         this.inputs = inputs;
         this.yarnsCache = yp.ycache();
         this.yankerProvider = yp;
