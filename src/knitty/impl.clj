@@ -426,15 +426,6 @@
   `(fail-always-yarn ~ykey ~(str "input-only yarn " ykey)))
 
 
-(definline yank' [poy yarns registry tracer fj-pool]
-  `(let [yctx# (YankCtx. ~poy ~registry ~fj-pool ~tracer)]
-     (.yank yctx# ~yarns)))
-
-(definline yank1' [poy yarn registry tracer fj-pool]
-  `(let [yctx# (YankCtx. ~poy ~registry ~fj-pool ~tracer)]
-     (.yank1 yctx# ~yarn)))
-
-
 (defn enumerate-fjp-factory [name-prefix]
   (let [c (atom 0)
         f ForkJoinPool/defaultForkJoinWorkerThreadFactory]

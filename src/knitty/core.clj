@@ -252,6 +252,33 @@
     (prefer-method m dispatch-val-x dispatch-val-y)))
 
 
+(defn yank*
+  "Computes missing nodes. Always returns deferred resolved into YankResult.
+   YankResult implements ILookup, Seqable, IObj, IKVReduce and IReduceInit."
+  [poy yarns]
+  (let [t (trace/if-tracing (when *tracing* (trace/create-tracer poy yarns)))
+        ctx (knitty.javaimpl.YankCtx/create poy *registry* (force *executor*) t)
+        r (.yank ctx yarns)]
+    (trace/if-tracing
+     (if t
+       (let [td (delay (trace/capture-trace! t))
+             r' (kd/bind
+                 r
+                 (fn [x]
+                   (vary-meta x update :knitty/trace conj @td))
+                 (fn [e]
+                   (throw
+                    (ex-info
+                     (ex-message e)
+                     (assoc (ex-data e) :knitty/trace (conj (:knitty/trace poy) @td))
+                     (ex-cause e)))))]
+         (let [f (fn [_] (conj (:knitty/trace poy) @td))]
+           (reset-meta! r' {:knitty/trace (kd/bind r f f)}))
+         (kd/kd-revoke-to r' r))
+       r)
+     r)))
+
+
 (defn yank
   "Computes and adds missing nodes into 'poy' map. Always returns deferred."
   [poy yarns]
@@ -260,28 +287,10 @@
                 clojure.lang.Keyword [yarns]
                 clojure.lang.IFn [yarns]
                 (vec yarns))
-        t (trace/if-tracing (when *tracing* (trace/create-tracer poy yarns)))
-        executor (force *executor*)
-        r (impl/yank' poy yarns *registry* t (knitty.javaimpl.ExecutionPool/adapt executor))]
+        r (yank* poy yarns)]
     (->
-     (trace/if-tracing
-      (if t
-        (let [td (delay (trace/capture-trace! t))
-              r' (kd/bind
-                  r
-                  (fn [x]
-                    (vary-meta x update :knitty/trace conj @td))
-                  (fn [e]
-                    (throw
-                     (ex-info
-                      (ex-message e)
-                      (assoc (ex-data e) :knitty/trace (conj (:knitty/trace poy) @td))
-                      (ex-cause e)))))]
-          (let [f (fn [_] (conj (:knitty/trace poy) @td))]
-            (reset-meta! r' {:knitty/trace (kd/bind r f f)}))
-          r')
-        r)
-      r)
+     r
+     (kd/bind deref)
      (kd/kd-revoke-to r))))
 
 
@@ -293,28 +302,11 @@
    ```
    "
   [poy yarn]
-  (let [t (trace/if-tracing (when *tracing* (trace/create-tracer poy [yarn])))
-        executor *executor*
-        r (impl/yank1' poy yarn *registry* t (knitty.javaimpl.ExecutionPool/adapt executor))]
+  (let [k (if (keyword? yarn) yarn (impl/yarn-key yarn))
+        r (yank* poy [yarn])]
     (->
-     (trace/if-tracing
-      (if t
-        (let [td (delay (trace/capture-trace! t))
-              r' (kd/bind
-                  r
-                  (fn [x]
-                    x)
-                  (fn [e]
-                    (throw
-                     (ex-info
-                      (ex-message e)
-                      (assoc (ex-data e) :knitty/trace (conj (:knitty/trace poy) @td))
-                      (ex-cause e)))))]
-          (let [f (fn [_] (conj (:knitty/trace poy) @td))]
-            (reset-meta! r' {:knitty/trace (kd/bind r f f)}))
-          r')
-        r)
-      r)
+     r
+     (kd/bind k)
      (kd/kd-revoke-to r))))
 
 

@@ -5,18 +5,17 @@ import java.lang.invoke.VarHandle;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.Executor;
 
 import clojure.lang.AFn;
+import clojure.lang.AMapEntry;
 import clojure.lang.Associative;
 import clojure.lang.ExceptionInfo;
-import clojure.lang.IEditableCollection;
 import clojure.lang.IExceptionInfo;
 import clojure.lang.ILookup;
 import clojure.lang.IPersistentMap;
-import clojure.lang.ITransientAssociative;
 import clojure.lang.Keyword;
 import clojure.lang.PersistentArrayMap;
-import clojure.lang.PersistentVector;
 
 public final class YankCtx implements ILookup {
 
@@ -27,12 +26,11 @@ public final class YankCtx implements ILookup {
     private static final Keyword KNITTY_YANK_ERROR   = Keyword.intern("knitty", "yank-error?");
 
     private static final Object NONE = new Object();
-    private static final KVCons NIL = new KVCons(null, null, null);
     private static final Keyword KEYFN = Keyword.intern("key");
 
-    private static final int ASHIFT = 4;
-    private static final int ASIZE = 1 << ASHIFT;
-    private static final int AMASK = ASIZE - 1;
+    static final int ASHIFT = 4;
+    static final int ASIZE = 1 << ASHIFT;
+    static final int AMASK = ASIZE - 1;
 
     private static final VarHandle AR0 = MethodHandles.arrayElementVarHandle(KDeferred[][].class);
     private static final VarHandle AR1 = MethodHandles.arrayElementVarHandle(KDeferred[].class);
@@ -47,7 +45,7 @@ public final class YankCtx implements ILookup {
         }
     }
 
-    private volatile KVCons added = NIL;
+    private volatile KVCons added = KVCons.NIL;
     private final KDeferred[][] a0;
 
     private final Associative inputs;
@@ -93,7 +91,7 @@ public final class YankCtx implements ILookup {
         @Override
         public Object invoke() {
             if (!res.realized()) {
-                res.success(freezePoy(), null);
+                res.success(finish(), null);
             }
             return null;
         }
@@ -107,50 +105,9 @@ public final class YankCtx implements ILookup {
         }
     }
 
-    private final class DoYank1Fn extends AFn {
+    static final class KVCons extends AMapEntry {
 
-        private final Object x;
-        private final KDeferred res;
-
-        private DoYank1Fn(Object x, KDeferred res) {
-            this.x = x;
-            this.res = res;
-        }
-
-        @Override
-        public Object invoke() {
-            try {
-                doYank1(x, res);
-            } catch (Throwable t) {
-                res.error(wrapYankErr(t, PersistentVector.create(x)));
-            }
-            return null;
-        }
-    }
-
-    private final class Yank1DoneLs extends AListener {
-
-        private final Object yarn;
-        private final KDeferred res;
-
-        private Yank1DoneLs(Object yarn, KDeferred res) {
-            this.yarn = yarn;
-            this.res = res;
-        }
-
-        public void success(Object x) {
-            freezeVoid();
-            res.success(x, null);
-        }
-
-        public void error(Object e) {
-            if (!res.realized()) {
-                res.error(wrapYankErr(e, PersistentVector.create(yarn)), null);
-            }
-        }
-    }
-
-    private static class KVCons {
+        public static final KVCons NIL = new KVCons(null, null, null);
 
         public final KVCons next;
         public final Keyword k;
@@ -161,9 +118,37 @@ public final class YankCtx implements ILookup {
             this.k = k;
             this.d = d;
         }
+
+        public Object getKey() {
+            return k;
+        }
+
+        public Object getValue() {
+            return d.unwrap();
+        }
+
+        public Object key() {
+            return k;
+        }
+
+        public Object val() {
+            return d.unwrap();
+        }
     }
 
-    public YankCtx(Associative inputs, YarnProvider yp, ExecutionPool pool, Object tracer) {
+    public static YankCtx create(Object inputs, YarnProvider yp, Executor executor, Object tracer) {
+        if (inputs instanceof YankResult) {
+            inputs = ((YankResult)inputs).toMap();
+        }
+        ExecutionPool pool = ExecutionPool.adapt(executor);
+        if (inputs instanceof Associative) {
+            return new YankCtx((Associative) inputs, yp, pool, tracer);
+        } else {
+            throw new IllegalArgumentException("yank input must implement clojure.lang.Associative");
+        }
+    }
+
+    private YankCtx(Associative inputs, YarnProvider yp, ExecutionPool pool, Object tracer) {
         this.kwMapper = KwMapper.getInstance();
         this.a0 = new KDeferred[((kwMapper.maxIndex() + AMASK) >> ASHIFT)][];
         this.inputs = inputs;
@@ -203,7 +188,7 @@ public final class YankCtx implements ILookup {
         }
 
         exdata = exdata
-            .assoc(KNITTY_FAILED_POY, this.freezePoy())
+            .assoc(KNITTY_FAILED_POY, this.finish())
             .assoc(KNITTY_YANKED_POY, inputs)
             .assoc(KNITTY_YANKED_YARNS, yarns)
             .assoc(KNITTY_YANK_ERROR, Boolean.TRUE);
@@ -249,7 +234,7 @@ public final class YankCtx implements ILookup {
         AFn ls = new YankDoneLs(res, yarns);
 
         if (KAwaiter.awaitArr(ls, ds, di)) {
-            res.success(freezePoy(), null);
+            res.success(finish(), null);
         }
     }
 
@@ -257,42 +242,6 @@ public final class YankCtx implements ILookup {
         Objects.requireNonNull(yarns);
         KDeferred res = KDeferred.create();
         this.pool.run(new DoYankFn(yarns, res));
-        res.listen0(canceller());
-        return res;
-    }
-
-    void doYank1(Object x, KDeferred res) {
-
-        KDeferred d;
-        Objects.requireNonNull(x, "yarn must be non-null");
-
-        if (x instanceof Keyword) {
-            Keyword k = (Keyword) x;
-            int i0 = this.kwMapper.resolveByKeyword(k);
-            if (i0 == -1) {
-                throw new IllegalArgumentException("unknown yarn " + x);
-            } else {
-                d = this.fetch(i0, k);
-            }
-        } else {
-            AFn y = (AFn) x;
-            Keyword k = (Keyword) KEYFN.invoke(y.invoke());
-            int i0 = this.kwMapper.resolveByKeyword(k);
-            if (i0 == -1) {
-                throw new IllegalArgumentException("unknown yarn " + k);
-            } else {
-                d = this.fetch(i0, k, y);
-            }
-        }
-
-        AListener ls = new Yank1DoneLs(x, res);
-        d.listen(ls);
-    }
-
-    public KDeferred yank1(Object x) {
-        Objects.requireNonNull(x);
-        KDeferred res = new KDeferred();
-        this.pool.run(new DoYank1Fn(x, res));
         res.listen0(canceller());
         return res;
     }
@@ -403,44 +352,18 @@ public final class YankCtx implements ILookup {
         return a;
     }
 
-    public boolean isFrozen() {
+    boolean isFrozen() {
         return added == null;
     }
 
-    public void freezeVoid() {
-        for (KVCons a = this.freeze(); a.d != null; a = a.next) {
-            if (a.d.free && a.d.own()) {
+    YankResult finish() {
+        KVCons added0 = this.freeze();
+        for (KVCons a = added0; a.d != null; a = a.next) {
+            if (a.d.own()) {
                 a.d.error(RevokeException.DEFERRED_REVOKED, this.token);
             }
         }
-    }
-
-    public Associative freezePoy() {
-        KVCons added0 = this.freeze();
-        if (added0.next == null) {
-            return inputs;
-        }
-        if (added0.next.d != null && inputs instanceof IEditableCollection) {
-            ITransientAssociative t = (ITransientAssociative) ((IEditableCollection) inputs).asTransient();
-            for (KVCons a = added0; a.d != null; a = a.next) {
-                if (a.d.free && a.d.own()) {
-                    a.d.error(RevokeException.DEFERRED_REVOKED, this.token);
-                } else {
-                    t = t.assoc(a.k, a.d.unwrap());
-                }
-            }
-            return (Associative) t.persistent();
-        } else {
-            Associative t = inputs;
-            for (KVCons a = added0; a.d != null; a = a.next) {
-                if (a.d.free && a.d.own()) {
-                    a.d.error(RevokeException.DEFERRED_REVOKED, this.token);
-                } else {
-                    t = t.assoc(a.k, a.d.unwrap());
-                }
-            }
-            return t;
-        }
+        return new YankResult(inputs, a0, added0, kwMapper);
     }
 
     AListener canceller() {
