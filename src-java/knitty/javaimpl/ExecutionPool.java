@@ -11,6 +11,8 @@ public abstract class ExecutionPool {
     public abstract void fork(AFn fn);
     public abstract void run(AFn fn);
 
+    private ExecutionPool() {}
+
     public static ExecutionPool adapt(Executor executor) {
         if (executor instanceof ForkJoinPool) {
             return new ForkJoinPoolPool((ForkJoinPool) executor);
