@@ -368,7 +368,7 @@ public final class KDeferred
 
     private void fireError(Object err) {
         if (!(err instanceof CancellationException)) {
-            ErrorLeakDetector x = new ErrorLeakDetector(new Exception((Throwable) err));
+            ErrorLeakDetector x = new ErrorLeakDetector(err);
             this.eld = x;
             ELD_CLEANER.register(this, x);
         }
@@ -442,7 +442,7 @@ public final class KDeferred
                 this.state = STATE_LSTN;
             }
         }
-        return success0(x, token);
+        return success0(x, null);
     }
 
     public Object success(Object x, Object token) {
@@ -472,7 +472,11 @@ public final class KDeferred
                     }
                     if (token != this.token) {
                         this.state = s;
-                        throw new IllegalStateException("invalid claim-token");
+                        if (this.token == null) {
+                            throw new IllegalStateException("invalid claim-token");
+                        } else {
+                            return Boolean.FALSE;
+                        }
                     }
 
                     this.value = x;
@@ -520,7 +524,7 @@ public final class KDeferred
                 this.state = STATE_LSTN;
             }
         }
-        return error0(x, token);
+        return error0(x, null);
     }
 
     public Object error(Object x, Object token) {
@@ -550,7 +554,11 @@ public final class KDeferred
                     }
                     if (token != this.token) {
                         this.state = s;
-                        throw new IllegalStateException("invalid claim-token");
+                        if (this.token == null) {
+                            throw new IllegalStateException("invalid claim-token");
+                        } else {
+                            return Boolean.FALSE;
+                        }
                     }
 
                     this.value = x;
