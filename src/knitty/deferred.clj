@@ -64,8 +64,8 @@
 
 ;; ==
 
-(defn kd-claim!
-  ([^KDeferred d] (.claim d))
+(defn claim!
+  ([^IMutableDeferred d] (.claim d))
   ([^KDeferred d token] (.claim d token)))
 
 (definline kd-get [kd]
@@ -123,6 +123,21 @@
   ([d val-fn] (bind-inline d val-fn))
   ([d val-fn err-fn] (bind-inline d val-fn err-fn))
   ([d val-fn err-fn token] (bind-inline d val-fn err-fn token)))
+
+(defn coerce ^KDeferred [x]
+  (let [y (manifold.deferred/->deferred x x)]
+    (cond
+      (identical? y x)
+      (wrap-val y)
+
+      (realized? y)
+      (let [v (md/success-value y y)]
+        (if (identical? v y)
+          (wrap-err @y)
+          (wrap-val v)))
+
+      :else
+      (bind y coerce coerce))))
 
 (defn bind-ex
   ([d ^Executor executor val-fn]
