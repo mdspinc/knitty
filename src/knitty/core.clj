@@ -3,8 +3,7 @@
             [clojure.tools.logging :as log]
             [knitty.deferred :as kd]
             [knitty.impl :as impl]
-            [knitty.trace :as trace])
-  (:import [java.util.concurrent Executor ExecutorService]))
+            [knitty.trace :as trace]))
 
 
 (def ^:dynamic *registry*
@@ -13,7 +12,7 @@
 (def ^:dynamic *tracing*
   false)
 
-(def ^:dynamic ^Executor *executor*
+(def ^:dynamic *executor*
   (delay
     (impl/create-fjp
      {:parallelism (.availableProcessors (Runtime/getRuntime))
@@ -39,8 +38,8 @@
                    (fn [e]
                      (when (and shutdown-current
                                 (or (not (delay? e)) (realized? e))
-                                (instance? ExecutorService (force e)))
-                       (.shutdown ^ExecutorService (force e)))
+                                (instance? java.util.concurrent.ExecutorService (force e)))
+                       (.shutdown ^java.util.concurrent.ExecutorService (force e)))
                      executor))))
 
 
@@ -141,7 +140,7 @@
       (into {} (map (comp (juxt identity identity)
                           (partial resolve-sym-or-kw env))) vv-val))))
 
-(defn ^:private emit-yarn
+(defn- emit-yarn
   [env k cf mt]
   (let [{{:keys [bind body]} :bind-and-body} cf
         mt (merge mt (meta bind))
@@ -252,50 +251,59 @@
     (prefer-method m dispatch-val-x dispatch-val-y)))
 
 
+(defn- as-seq-of-yarns [x]
+  (condp instance? x
+    java.lang.Iterable   x
+    clojure.lang.Keyword [x]
+    clojure.lang.IFn [x]
+    (seq x)))
+
+
 (defn yank*
   "Computes missing nodes. Always returns deferred resolved into YankResult.
    YankResult implements ILookup, Seqable, IObj, IKVReduce and IReduceInit."
-  [poy yarns]
-  (let [t (trace/if-tracing (when *tracing* (trace/create-tracer poy yarns)))
-        ctx (knitty.javaimpl.YankCtx/create poy *registry* (force *executor*) t)
-        r (.yank ctx yarns)]
-    (trace/if-tracing
-     (if t
-       (let [td (delay (trace/capture-trace! t))
-             r' (kd/bind
-                 r
-                 (fn [x]
-                   (vary-meta x update :knitty/trace conj @td))
-                 (fn [e]
-                   (throw
-                    (ex-info
-                     (ex-message e)
-                     (assoc (ex-data e) :knitty/trace (conj (:knitty/trace poy) @td))
-                     (ex-cause e)))))]
-         (let [f (fn [_] (conj (:knitty/trace poy) @td))]
-           (reset-meta! r' {:knitty/trace (kd/bind r f f)}))
-         (kd/kd-revoke-to r' r))
-       r)
-     r)))
+  ([poy yarns]
+   (yank* poy yarns (force *executor*) *registry* *tracing*))
+  ([poy yarns executor]
+   (yank* poy yarns executor *registry* *tracing*))
+  ([poy yarns executor registry]
+   (yank* poy yarns registry executor *tracing*))
+  ([poy yarns executor registry tracing]
+   (let [ys (as-seq-of-yarns yarns)
+         tracer (trace/if-tracing (when tracing (trace/create-tracer poy yarns)))
+         ctx (knitty.javaimpl.YankCtx/create poy registry executor tracer)
+         r (.yank ctx ys)]
+     (trace/if-tracing
+      (if tracer
+        (let [td (delay (trace/capture-trace! tracer))
+              r' (kd/bind
+                  r
+                  (fn [x]
+                    (vary-meta x update :knitty/trace conj @td))
+                  (fn [e]
+                    (throw
+                     (ex-info
+                      (ex-message e)
+                      (assoc (ex-data e) :knitty/trace (conj (:knitty/trace poy) @td))
+                      (ex-cause e)))))]
+          (let [f (fn [_] (conj (:knitty/trace poy) @td))]
+            (reset-meta! r' {:knitty/trace (kd/bind r f f)}))
+          (kd/kd-revoke-to r' r))
+        r)
+      r))))
 
 
 (defn yank
   "Computes and adds missing nodes into 'poy' map. Always returns deferred."
   [poy yarns]
-  (let [yarns (condp instance? yarns
-                java.lang.Iterable   yarns
-                clojure.lang.Keyword [yarns]
-                clojure.lang.IFn [yarns]
-                (vec yarns))
-        r (yank* poy yarns)]
-    (->
-     r
-     (kd/bind deref)
-     (kd/kd-revoke-to r))))
+  (let [r (yank* poy yarns)]
+    (-> r
+        (kd/bind deref)
+        (kd/kd-revoke-to r))))
 
 
 (defn yank1
-  "Computes and returns a single node. Logically similar to
+  "Computes and returns a single node. Logically similar to (but a bit faster)
 
    ```clojure
    (chain (yank poy [::yarn-key]) ::yarn-key)
@@ -304,10 +312,9 @@
   [poy yarn]
   (let [k (if (keyword? yarn) yarn (impl/yarn-key yarn))
         r (yank* poy [yarn])]
-    (->
-     r
-     (kd/bind k)
-     (kd/kd-revoke-to r))))
+    (-> r
+        (kd/bind k)
+        (kd/kd-revoke-to r))))
 
 
 (defn yank-error?
