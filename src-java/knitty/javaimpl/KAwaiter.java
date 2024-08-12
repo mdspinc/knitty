@@ -327,6 +327,7 @@ public final class KAwaiter {
             try {
                 for (int i = this.ii; i >= 0; --i) {
                     KDeferred d = ds[i];
+                    ds[i] = null;
                     if (d.state != 1) {
                         if (d.listen0(new Arr(i - 1, ls, ds))) {
                             return;
