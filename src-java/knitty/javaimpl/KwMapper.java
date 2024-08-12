@@ -46,10 +46,10 @@ public final class KwMapper {
         this.id2KeywordCache = (
             (id2KeywordCache != null && id2KeywordCache.length < maxId)
             ? id2KeywordCache
-            : new Keyword[roundUpBits(maxId, 8)]
+            : new Keyword[roundUpBits(maxId, 10)]
         );
 
-        this.maxCollisions = 4;
+        this.maxCollisions = 8;
     }
 
     KwMapper(int maxId, Associative keyword2Id, Associative id2Keyword) {
@@ -79,11 +79,10 @@ public final class KwMapper {
 
     public Keyword resolveByIndex(int i) {
         Keyword r = this.id2KeywordCache[i];
-        if (r != null) {
-            return r;
+        if (r == null) {
+            r = (Keyword) id2Keyword.valAt(i);
+            this.id2KeywordCache[i] = r;
         }
-        r = (Keyword) id2Keyword.valAt(i);
-        this.id2KeywordCache[i] = r;
         return r;
     }
 
@@ -105,7 +104,7 @@ public final class KwMapper {
         return resolveByKeyword0(h, k, cache);
     }
 
-    public int resolveByKeyword0(int h, Keyword k, boolean cache) {
+    private int resolveByKeyword0(int h, Keyword k, boolean cache) {
         for (int i = 0; i < maxCollisions; i++) {
             h = (h + i) & hashMask;
             int t = keywordHash2IdCache[h];
