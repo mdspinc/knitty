@@ -300,27 +300,6 @@ public final class KDeferred
         }
     }
 
-    private final static class KdRevoke extends AListener {
-
-        private final KDeferred d;
-
-        public KdRevoke(KDeferred d) {
-            this.d = d;
-        }
-
-        public void success(Object x) {
-            if (!d.realized()) {
-                d.error(RevokeException.DEFERRED_REVOKED, d.token);
-            }
-        }
-
-        public void error(Object x) {
-            if (!d.realized()) {
-                d.error(new RevokeException((Throwable) x), d.token);
-            }
-        }
-    }
-
     static final byte STATE_LSTN = 0;
     static final byte STATE_SUCC = 1;
     static final byte STATE_ERRR = 2;
@@ -359,7 +338,6 @@ public final class KDeferred
 
     volatile byte state;
     boolean free = true;
-    boolean revokable;
     private Object value;
     private Object token;
     private AListener lss;
@@ -863,12 +841,6 @@ public final class KDeferred
         throw new IllegalStateException();
     }
 
-    public void revokeTo(KDeferred d) {
-        if (d.revokable && !d.realized()) {
-            this.listen(new KdRevoke(d));
-        }
-    }
-
     public void chain(Object x, Object token) {
         if (x instanceof IDeferred) {
             Object xx = ((IDeferred) x).successValue(x);
@@ -886,9 +858,6 @@ public final class KDeferred
         if (x instanceof KDeferred) {
             KDeferred xx = (KDeferred) x;
             xx.listen(new Chain(this, token));
-            if (xx.revokable && !this.realized()) {
-                this.listen(new KdRevoke(xx));
-            }
         } else {
             x.onRealized(new ChainSuccess(this, token), new ChainError(this, token));
         }
@@ -979,7 +948,6 @@ public final class KDeferred
             return wrapDeferred(d);
         } else {
             KDeferred kd = new KDeferred();
-            kd.revokable = true;
             kd.listen0(new Revoke(d, canceller, errCallback));
             kd.chain(d, null);
             return kd;

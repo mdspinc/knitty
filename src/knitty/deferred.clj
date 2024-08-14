@@ -74,13 +74,6 @@
 (definline kd-chain-from [kd d token]
   `(let [^KDeferred x# ~kd] (.chain x# ~d ~token)))
 
-(definline kd-revoke-to [kd d]
-  `(let [^KDeferred x# ~kd
-         d# ~d]
-     (when-not (identical? x# d#)
-       (.revokeTo x# d#))
-     x#))
-
 ;; ==
 
 (defmacro success!
@@ -193,6 +186,15 @@
 (defn revoke
   ([d cancel-fn] (revoke d cancel-fn nil))
   ([d cancel-fn err-handler] (KDeferred/revoke d cancel-fn err-handler)))
+
+(defn revoke-to
+  ([d revokable-d]
+   (revoke-to d revokable-d nil))
+  ([^IDeferred d ^IDeferred revokable-d token]
+   (doto (wrap d)
+     (when-not (.realized d)
+       (on d (fn rvk [] (when-not (.realized revokable-d)
+                          (error! revokable-d knitty.javaimpl.RevokeException/DEFERRED_REVOKED token))))))))
 
 (defn connect
   ([d-from d-dest]
