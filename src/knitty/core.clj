@@ -263,13 +263,12 @@
   "Computes missing nodes. Always returns deferred resolved into YankResult.
    YankResult implements ILookup, Seqable, IObj, IKVReduce and IReduceInit."
   ([poy yarns]
-   (yank* poy yarns (force *executor*) *registry* *tracing*))
-  ([poy yarns executor]
-   (yank* poy yarns executor *registry* *tracing*))
-  ([poy yarns executor registry]
-   (yank* poy yarns registry executor *tracing*))
-  ([poy yarns executor registry tracing]
-   (let [ys (as-seq-of-yarns yarns)
+   (yank* poy yarns nil))
+  ([poy yarns & {:keys [executor registry tracing]}]
+   (let [registry (if (some? registry) registry *registry*)
+         executor (if (some? executor) executor (force *executor*))
+         tracing (if (some? tracing) tracing *tracing*)
+         ys (as-seq-of-yarns yarns)
          tracer (trace/if-tracing (when tracing (trace/create-tracer poy yarns)))
          ctx (knitty.javaimpl.YankCtx/create poy registry executor tracer)
          r (.yank ctx ys)]
@@ -288,7 +287,7 @@
                       (ex-cause e)))))]
           (let [f (fn [_] (conj (:knitty/trace poy) @td))]
             (reset-meta! r' {:knitty/trace (kd/bind r f f)}))
-          (kd/kd-revoke-to r' r))
+          (kd/revoke-to r' r))
         r)
       r))))
 
@@ -296,10 +295,10 @@
 (defn yank
   "Computes and adds missing nodes into 'poy' map. Always returns deferred."
   [poy yarns]
-  (let [r (yank* poy yarns)]
+  (let [r (yank* poy yarns nil)]
     (-> r
         (kd/bind deref)
-        (kd/kd-revoke-to r))))
+        (kd/revoke-to r))))
 
 
 (defn yank1
@@ -311,10 +310,10 @@
    "
   [poy yarn]
   (let [k (if (keyword? yarn) yarn (impl/yarn-key yarn))
-        r (yank* poy [yarn])]
+        r (yank* poy [yarn] nil)]
     (-> r
         (kd/bind k)
-        (kd/kd-revoke-to r))))
+        (kd/revoke-to r))))
 
 
 (defn yank-error?
