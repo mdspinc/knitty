@@ -113,8 +113,8 @@
      ;; [ ~@bmap ]
     (api/vector-node
      (map-evens
-      ; [key (.Object)] - force type to be :any
-      (fn [_] (api/list-node '(.java.lang.Object)))
+      ; [~s (do ~v (Object.))] - force type to be :any
+      #(api/list-node [(api/token-node `do) % (api/list-node '(java.lang.Object.))])
       (:children bmap)))
      ;; ~expr
     body
