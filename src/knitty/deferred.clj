@@ -19,6 +19,7 @@
 ;; ==
 
 (defn create
+  "Create a new unrealized deferred."
   {:inline
    (fn
      ([] `(KDeferred/create))
@@ -29,24 +30,31 @@
   (^KDeferred [token]
    (KDeferred/create token)))
 
-(definline wrap-err [e]
+(definline wrap-err
+  "A realized deferred with error."
+  [e]
   `(KDeferred/wrapErr ~e))
 
-(definline wrap-val [v]
+(definline wrap-val
+  "A realized deferred with value."
+  [v]
   `(KDeferred/wrapVal ~v))
 
-(definline wrap [x]
+(definline wrap
+  "Coerce type `x` from IDeferred to Knitty deferred or returns realized deferred with value `x`."
+  [x]
   `(KDeferred/wrap ~x))
 
-(definline wrap* [x]
-  `(let* [x# ~x] (wrap (manifold.deferred/->deferred x# x#))))
-
-(defmacro do-wrap [& body]
+(defmacro do-wrap
+  "Run `body` and returns value as deferred, catch and wrap any exceptions."
+  [& body]
   `(try
      (wrap (do ~@body))
      (catch Throwable e# (wrap-err e#))))
 
-(defn future-call [f]
+(defn future-call
+  "Equivalent to `clojure.core/future-call`, but returns a Knitty deferred."
+  [f]
   (let [frame (clojure.lang.Var/cloneThreadBindingFrame)
         d (create)]
     (.execute
@@ -59,35 +67,46 @@
          (catch Throwable e (.error d e nil)))))
     d))
 
-(defmacro future [& body]
+(defmacro future
+  "Equivalent to `clojure.core/future`, but returns a Knitty deferred."
+  [& body]
   `(future-call (^{:once true} fn* [] ~@body)))
 
 ;; ==
 
 (defn claim!
+  "Attempts to claim the deferred for future updates."
   ([^IMutableDeferred d] (.claim d))
   ([^KDeferred d token] (.claim d token)))
 
-(definline kd-get [kd]
+(definline kd-get
+  "Unwrap realized Knitty deferred by returning value or throwing wrapped exception."
+  [kd]
   `(let [^KDeferred x# ~kd] (.get x#)))
 
-(definline kd-chain-from [kd d token]
+(definline kd-chain-from
+  "Conveys value (or error) from deferred `d` to Knitty deferred `kd`."
+  [kd d token]
   `(let [^KDeferred x# ~kd] (.chain x# ~d ~token)))
 
-;; ==
-
 (defmacro success!
+  "Puts a deferred into a realized state with provided value `x`."
   ([d x] `(let* [^IMutableDeferred d# ~d] (.success d# ~x)))
   ([d x token] `(let* [^IMutableDeferred d# ~d] (.success d# ~x ~token))))
 
 (defmacro error!
+  "Puts a deferred into a realized state with provided error `x`."
   ([d x] `(let* [^IMutableDeferred d# ~d] (.error d# ~x)))
   ([d x token] `(let* [^IMutableDeferred d# ~d] (.error d# ~x ~token))))
 
-(definline deferred? [x]
+(definline deferred?
+  "Returns true if the object is an instance of a deferred."
+  [x]
   `(instance? IDeferred ~x))
 
-(definline unwrap1 [x]
+(definline unwrap1
+  "Unwraps deferred (once). Returns realized value or the deferred itself."
+  [x]
   `(let [x# ~x]
      (if (instance? IDeferred x#)
        (.successValue ^IDeferred x# x#)
@@ -96,6 +115,9 @@
 ;; ==
 
 (defn on
+  "Registers callback fns to run when deferred is realized.
+   When only one callback is provided it shold be 0-arg fn.
+   When both callbacks provided - they must accept 1 argument (value or error)."
   ([x on-any]
    (.onRealized (wrap x)
                 (fn val [x] (if (deferred? x) (on x on-any) (on-any)))
@@ -111,13 +133,19 @@
   ([d val-fn err-fn token] `(.bind (wrap ~d) ~val-fn ~err-fn ~token)))
 
 (defn bind
+  "Bind 1-arg callbacks fn to deferred. Returns new deferred with amended value.
+   Fn `val-fn` takes single arugment with unwrapped value and may return a new value,
+   another deferred or throw an exception. Optional `err-fn` accepts single argument with error.
+   "
   {:inline (fn [d & args] (apply #'bind-inline nil nil d args))
    :inline-arities #{2 3 4}}
   ([d val-fn] (bind-inline d val-fn))
   ([d val-fn err-fn] (bind-inline d val-fn err-fn))
   ([d val-fn err-fn token] (bind-inline d val-fn err-fn token)))
 
-(defn coerce ^KDeferred [x]
+(defn coerce
+  "Corece `x` into an instance of Knitty deferred."
+  ^KDeferred [x]
   (let [y (manifold.deferred/->deferred x x)]
     (cond
       (identical? y x)
@@ -133,6 +161,7 @@
       (bind y coerce coerce))))
 
 (defn bind-ex
+  "Similar to `bind`, but run all callbacks on specified `executor`."
   ([d ^Executor executor val-fn]
    (.bind (wrap d) val-fn nil nil executor))
   ([d ^Executor executor val-fn err-fn]
@@ -141,6 +170,7 @@
    (.bind (wrap d) val-fn err-fn token executor)))
 
 (defn onto
+  "Returns a deferred whose callbacks will be run on `executor`."
   ([d ^Executor executor]
    (if (nil? executor)
      d
@@ -163,19 +193,38 @@
     ))
 
 (defn bind-err
+  "Bind 1-arg callback fn to deferred. Callback called when deferred is realized with an error.
+   Use `throw` to re-throw error or return a new value.
+   Optinal argument `exc` may specify which kind of errors we want to handle.
+   It may be 1-arg predicate fn, subclass of java.lang.Throwable or map.
+   In the last case only instances of `IExceptionInfo` are handled where their `ex-data` is a subset of the `exc` map.
+
+       (-> d
+         (bind-err java.lang.IOException       #(handle-instances-of-ioexception %))
+         (bind-err #(re-find #\"text\" (str %))  #(hande-exceptions-with-matched-text %))
+         (bind-err {:type :my-error}           #(hande-exinfo-with-matched-type %))
+         (bind-err                             #(handle-any-error %)))
+   "
   ([mv f] (bind mv identity f))
   ([mv exc f]
    (let [ep (build-err-predicate exc)]
      (bind-err mv (fn on-err [e] (if (ep e) (f e) (wrap-err e)))))))
 
 (defn bind-fin
+  "Bind 0-arg function to be executed when deferred is realized (either with value or error).
+   Callback result is ignored, any thrown execiptions are re-wrapped.
+   "
   ([d f0]
    (bind
     d
     (fn on-val [x] (bind (f0) (fn ret-val [_] x)))
     (fn on-err [e] (bind (f0) (fn ret-err [_] (wrap-err e)))))))
 
-(defmacro bind-> [expr & forms]
+(defmacro bind->
+  "Combination of `bind` and threading macro `->`.
+   Similar to `manifold.deferred/chain`, but does not allow dynamic applying with seq of arguments.
+   Use `reduce` if number of binded callbacks is known only at runtime."
+  [expr & forms]
   (list*
    `->
    `(do-wrap ~expr)
@@ -183,20 +232,58 @@
               #(if (seq? %) `(fn [x#] (-> x# ~%)) %))
         forms)))
 
+
 (defn revoke
+  "Returns new deferred connected to the provided.
+   When resulted deferred is realized but original is not - calls cancellation callback.
+
+       (let [f (java.core/future (Thread/sleep 1000) 1))
+             x (-> (coerce f)
+                   (bind inc)
+                   (revoke #(do
+                              (println :operation-is-cancelled)
+                              (clojure.core/future-cancel))))]
+         (success! x 1)
+         (assert (clojure.core/future-cancelled? f)))
+
+   Note that call to `revoke` should be last in a chain, because revokation is not propagated by binding fns.
+
+       (let [f (java.core/future (Thread/sleep 1000) 1))
+             x (-> (coerce f)
+                   (revoke #(do
+                              (println :operation-is-cancelled)
+                              (clojure.core/future-cancel)))
+                   (bind inc))]
+         (success! x 1)
+         ;; revokation was not pass through `(bind inc)` binding.
+         (assert (not (clojure.core/future-cancelled? f))))
+
+  "
   ([d cancel-fn] (revoke d cancel-fn nil))
   ([d cancel-fn err-handler] (KDeferred/revoke d cancel-fn err-handler)))
 
+(def ^:private revoke-to-error (knitty.javaimpl.RevokeException. "deferred is revoked by revoke-to"))
+
 (defn revoke-to
-  ([d revokable-d]
-   (revoke-to d revokable-d nil))
-  ([^IDeferred d ^IDeferred revokable-d token]
-   (doto (wrap d)
-     (when-not (.realized d)
-       (on d (fn rvk [] (when-not (.realized revokable-d)
-                          (error! revokable-d knitty.javaimpl.RevokeException/DEFERRED_REVOKED token))))))))
+  "Like `revoke`, but resolves `rd` with an exception instead of calling generic callback.
+   Use it to bypass revokation to original deferred:
+
+       (let [x (call-some-function)]
+         (-> x
+            (bind #(process-x1 %))
+            (bind #(procces-x2 %))
+            (bind-err #(handle-error %))
+            (revoke-to x)  ;; bypass cancelation to `x`
+            ))
+  "
+  ([^IDeferred d ^IDeferred rd]
+   (revoke d #(error! rd revoke-to-error)))
+  ([^IDeferred d ^IDeferred rd & rds]
+   (revoke d #(do (error! rd revoke-to-error)
+                  (doseq [x rds] (error! x revoke-to-error))))))
 
 (defn connect
+  "Conveys the realized value of `d-from` into `d-dest`."
   ([d-from d-dest]
    (connect d-from d-dest nil))
   ([d-from d-dest token]
@@ -215,7 +302,12 @@
           (join0 e d t)
           (error! d e t)))))
 
-(defn join [d]
+(defn join
+  "Coerce 'deferred with deferred value' to deferred with plain value.
+
+       @(join (future (future (future 1))))  ;; => 1
+   "
+  [d]
   (cond
     (not (deferred? d)) (wrap d)
     (and (realized? d) (not (deferred? (unwrap1 d)))) d
@@ -225,16 +317,20 @@
 
 ;; ==
 
-(def anil (wrap-val nil))
+(def ^{:doc "deferred realized with `nil`"}
+  anil
+  (wrap-val nil))
 
 #_{:clj-kondo/ignore [:unresolved-symbol]}
 (m/defmonad deferred-m
+  "Deferred monad. Defines `m-zero` as nil."
   [m-zero anil
    m-bind bind
    m-result wrap])
 
 
 (defmacro with-monad-deferred
+  "Run code under deferred-monad using `clojure.algo.monads`."
   [& exprs]
   `(let [~'m-bind   bind
          ~'m-result wrap
@@ -242,7 +338,19 @@
      (with-symbol-macros ~@exprs)))
 
 
-(defmacro letm [binds & body]
+(defmacro letm
+  "Monadic let. Unwraps deferreds during binding, returning result as deferred.
+   Unlike `manifold.deferred/let-flow` all steps are resolved in sequential order,
+   so use `zip` if parallel execution is required.
+   Steps list can contain :let and :when special forms. See `clojure.algo.monads/domonad` for details.
+
+    (letm [[x y] (zip (future (rand) (future (rand)))
+           :when (< x y)  ;; whole letm returns nil when condition is not met
+           :let [d x]     ;; bind without unwrapping
+           z (future (* x y))]
+      (vector x y z @d))
+   "
+  [binds & body]
   `(with-monad-deferred
      (m/domonad ~binds (do ~@body))))
 
@@ -252,10 +360,12 @@
   (let [^java.lang.Iterable c (if (instance? java.lang.Iterable xs) xs (seq xs))]
     (.iterator c)))
 
-(definline kd-await!* [ls ds]
-  `(KAwaiter/awaitIter ~ls (iterator ~ds)))
-
 (defmacro kd-await!
+  "Internal macros used by yarns - prefer not to use it.
+   Schedlue 0-arg function `ls` to execute after all deferreds are realized with
+   values or at least one deferred is realized with an error.
+   All deferreds *must* be instances of Knitty deferred (use `wrap` or `coerce` for coercion).
+   "
   ([ls]
    `(let [ls# ~ls] (when (KAwaiter/await ls#) (ls#))))
   ([ls x1]
@@ -303,19 +413,26 @@
                  ~df))
           (ls#))))))
 
+(definline kd-await!*
+  "Like `kd-await!` but accept iterable collection of deferreds."
+  [ls ds]
+  `(KAwaiter/awaitIter ~ls (iterator ~ds)))
+
+
 ;; ==
 
 (defn- call-after-all'
   [ds f]
   (let [d (create)]
-    (KAwaiter/awaitIter
-     (fn
-       ([] (success! d (f) nil))
-       ([e] (error! d e nil)))
-     (iterator ds))
+    (kd-await!*
+     (fn on-await-iter
+       ([] (success! d (f)))
+       ([e] (error! d e)))
+     ds)
     d))
 
 (defn zip*
+  "Similar to `(apply zip vs)`, returns a seq instead of vector."
   ([vs] (call-after-all'
          vs
          (fn []
@@ -334,14 +451,16 @@
   `(let [~@(mapcat identity (for [x xs] [x `(wrap ~x)]))]
      (let [res# (create)]
        (kd-await!
-        (fn ~(symbol (str "on-await" (count xs)))
-          ([] (success! res# ~(vec (for [x xs] `(kd-get ~x))) nil))
-          ([e#] (error! res# e# nil)))
+        (fn ~(symbol (str "on-await-" (count xs)))
+          ([] (success! res# ~(vec (for [x xs] `(kd-get ~x)))))
+          ([e#] (error! res# e#)))
         ~@xs)
        res#)))
+
 (defn zip
+  "Takes several values and returns a deferred that will yield vector of realized values."
   ([] (wrap-val []))
-  ([a] (bind a (fn on-await1 [x] [x])))
+  ([a] (bind a (fn on-await-1 [x] [x])))
   ([a b] (zip-inline a b))
   ([a b c] (zip-inline a b c))
   ([a b c d] (zip-inline a b c d))
@@ -363,7 +482,8 @@
     (fn on-await* [xg] (call-after-all' z #(into xg (map unwrap1) z))))))
 
 
-(def ^:private ^java.util.Random alt-rnd (java.util.Random.))
+(def ^:private ^java.util.Random alt-rnd
+  (java.util.Random.))
 
 (defn- alt-in
   ([^KDeferred res a b]
@@ -383,6 +503,8 @@
      3 (do (.chain res d nil) (when-not (.realized res) (alt-in res a b c))))))
 
 (defn alt
+  "Takes several values, some of which may be a deferred, and returns a
+  deferred that will yield the value which was realized first."
   ([a]
    (wrap a))
   ([a b]
@@ -407,6 +529,11 @@
 ;; ==
 
 (defn iterate-while
+  "Iteratively run 1-arg function `f` with initial value `x`.
+   After each call check result of calling `p` and stop loop when result if falsy.
+   Function `f` may return deferreds, initial value `x` also may be deferred.
+   Predicate `p` should always return synchonous values howerver.
+   This is low-level routine, prefer `reduce` `while` or `loop`."
   [f p x]
   (let [d (create)
         ef (fn on-err [e] (error! d e))]
@@ -436,10 +563,22 @@
 
 (deftype DRecur [args])
 
-(defmacro recur [& args]
+(defmacro recur
+  "A special recur that can be used with `knitty.deferred/loop`."
+  [& args]
   `(bind (zip ~@args) #(DRecur. %)))
 
 (defmacro loop
+  "A version of Clojure's loop which allows for asynchronous loops, via `manifold.deferred/recur`.
+  `loop` will always return a deferred value, even if the body is synchronous.  Note that `loop`
+   does **not** coerce values to deferreds, actual Manifold deferreds must be used.
+
+   (loop [i 1e6]
+     (chain (future i)
+       #(if (p/zero? %)
+          %
+          (recur (p/dec %)))))"
+
   [bindings & body]
   (let [bs (partition 2 bindings)
         syms (map first bs)
@@ -447,10 +586,12 @@
     `(iterate-while
       (fn ~'loop-step [r#] (let [[~@syms] (.-args ^DRecur r#)] ~@body))
       (fn ~'loop-done? [r#] (instance? DRecur r#))
-      (knitty.deferred/recur ~@init)
-      )))
+      (knitty.deferred/recur ~@init))))
 
 (defmacro while
+  "Deferred-aware version of `clojure.core/while`.
+   Both test and body experssion may result into deferred.
+   Returns deferred realized to `nil`."
   ([body]
    `(iterate-while
      (fn ~'while-step [x#] (when x# ~body))
@@ -462,11 +603,23 @@
        (when x#
          (bind ~pred
                (fn ~'while-body [c#] (when c# (bind (do ~@body)
-                                                  (constantly true)))))))
+                                                    (constantly true)))))))
      identity
      true)))
 
-(defn reduce [f initd xs]
+(defn chain*
+  "Composes functions over the value `x`, returning a deferred containing the result."
+  [x fs]
+  (let [it (iterator fs)]
+    (iterate-while
+     (fn step [a] (bind a (.next it)))
+     (fn done? [_] (.hasNext it))
+     x)))
+
+(defn reduce
+  "Deferred-aware version of `clojure.core/reduce`.
+   Step function `f` may return deferred values, `xs` may be sequence of deferreds."
+  [f initd xs]
   (bind
    (let [it (iterator xs)]
      (iterate-while
@@ -475,7 +628,10 @@
       initd))
    unreduced))
 
-(defn run! [f xs]
+(defn run!
+  "Sequentially apply `f` to sequence of deferreds `xs` for side effects.
+   Fn `f` may return deferreds."
+  [f xs]
   (let [it (iterator xs)]
     (iterate-while
      (fn step [_] (bind (.next it) f))
@@ -484,7 +640,9 @@
 
 ;; ==
 
-(defn semaphore [n]
+(defn semaphore
+  "*experimental*"
+  [n]
   (let [s (atom [n []])]
     (letfn [(conj-fds
               [[^long n' fds'] f d]
