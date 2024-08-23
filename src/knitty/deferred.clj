@@ -540,23 +540,24 @@
     (on
      x
      (fn iter-step [x]
-       (cond
+       (when-not (.realized d)
+         (cond
 
-         (deferred? x)
-         (let [y (KDeferred/wrapDeferred x)]
-           (when-not (.listen0 y iter-step ef)
-             (recur (try (.get y) (catch Throwable t (ef t))))))
+           (deferred? x)
+           (let [y (KDeferred/wrapDeferred x)]
+             (when-not (.listen0 y iter-step ef)
+               (recur (try (.get y) (catch Throwable t (ef t))))))
 
-         (p x)
-         (let [y (unwrap1 (try (f x) (catch Throwable t (wrap-err t))))]
-           (if (deferred? y)
-             (let [y (KDeferred/wrapDeferred y)]
-               (when-not (.listen0 y iter-step ef)
-                 (recur (try (.get y) (catch Throwable t (ef t))))))
-             (recur y)))
+           (p x)
+           (let [y (unwrap1 (try (f x) (catch Throwable t (wrap-err t))))]
+             (if (deferred? y)
+               (let [y (KDeferred/wrapDeferred y)]
+                 (when-not (.listen0 y iter-step ef)
+                   (recur (try (.get y) (catch Throwable t (ef t))))))
+               (recur y)))
 
-         :else
-         (success! d x)))
+           :else
+           (success! d x))))
      ef)
     d))
 
