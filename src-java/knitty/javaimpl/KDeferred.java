@@ -307,13 +307,13 @@ public final class KDeferred
     static final byte STATE_DONE_MASK = STATE_SUCC | STATE_ERRR;
 
     private static final VarHandle STATE;
-    private static final VarHandle FREE;
+    private static final VarHandle OWNED;
 
     static {
         try {
             MethodHandles.Lookup l = MethodHandles.lookup();
             STATE = l.findVarHandle(KDeferred.class, "state", Byte.TYPE);
-            FREE = l.findVarHandle(KDeferred.class, "free", Boolean.TYPE);
+            OWNED = l.findVarHandle(KDeferred.class, "owned", Byte.TYPE);
         } catch (ReflectiveOperationException var1) {
             throw new ExceptionInInitializerError(var1);
         }
@@ -329,7 +329,6 @@ public final class KDeferred
             }
             return null;
         };
-
     };
 
     public static void setExceptionLogFn(IFn f) {
@@ -337,7 +336,7 @@ public final class KDeferred
     }
 
     volatile byte state;
-    boolean free = true;
+    private byte owned;
     private Object value;
     private Object token;
     private AListener lss;
@@ -373,11 +372,11 @@ public final class KDeferred
     }
 
     public final boolean own() {
-        return free && (boolean) FREE.compareAndExchange(this, free, false);
+        return owned == 0 && OWNED.compareAndSet(this, (byte) 0, (byte) 1);
     }
 
     public final boolean owned() {
-        return !free;
+        return (byte) OWNED.getVolatile(this) == 1;
     }
 
     public synchronized IPersistentMap meta() {
