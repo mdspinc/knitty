@@ -254,7 +254,7 @@ public final class YankCtx implements ILookup {
         if ((key instanceof Keyword)) {
             Keyword k = (Keyword) key;
             if (k.getNamespace() != null) {
-                int i = this.kwMapper.resolveByKeyword(k, false);
+                int i = this.kwMapper.resolveByKeyword(k);
                 if (i != -1) {
                     int i0 = i >> ASHIFT;
                     int i1 = i & AMASK;

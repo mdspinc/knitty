@@ -94,7 +94,7 @@ public final class YankResult extends AFn implements Iterable<Object>, ILookup, 
 
     private KDeferred pull(Object key) {
         if (key instanceof Keyword) {
-            int i = kwmapper.resolveByKeyword((Keyword) key, false);
+            int i = kwmapper.resolveByKeyword((Keyword) key);
             if (i == 0) {
                 return null;
             }

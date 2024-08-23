@@ -92,25 +92,16 @@ public final class KwMapper {
         if (t != 0 && k == this.id2KeywordCache[t]) {
             return t;
         }
-        return resolveByKeyword0(h, k, true);
+        return resolveByKeyword0(h, k);
     }
 
-    public int resolveByKeyword(Keyword k, boolean cache) {
-        int h = k.hasheq() & hashMask;
-        int t = keywordHash2IdCache[h];
-        if (t != 0 && k == this.id2KeywordCache[t]) {
-            return t;
-        }
-        return resolveByKeyword0(h, k, cache);
-    }
-
-    private int resolveByKeyword0(int h, Keyword k, boolean cache) {
+    private int resolveByKeyword0(int h, Keyword k) {
         for (int i = 0; i < maxCollisions; i++) {
             h = (h + i) & hashMask;
             int t = keywordHash2IdCache[h];
             if (t == 0) {
                 int r = (int) keyword2Id.valAt(k, -1);
-                if (cache && r != -1) keywordHash2IdCache[h] = r;
+                if (r != -1) keywordHash2IdCache[h] = r;
                 return r;
             } else if (resolveByIndex(t) == k) {
                 return t;
