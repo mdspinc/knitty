@@ -86,6 +86,8 @@
                @(with-defer (md/chain' (create-d) incx)))
         (bench :chain-x2
                @(with-defer (md/chain' (create-d) incx incx)))
+        (bench :chain-x3
+               @(with-defer (md/chain' (create-d) incx incx incx)))
         (bench :chain-x5
                @(with-defer (md/chain' (create-d) incx incx incx incx incx)))
         (bench :chain-x10
@@ -93,14 +95,29 @@
 
       (testing :knitty
 
-        (bench :chain-x1
+        (bench :bind-x1
                @(with-defer (kd/bind-> (create-d) incx)))
-        (bench :chain-x2
+        (bench :bind-x2
                @(with-defer (kd/bind-> (create-d) incx incx)))
-        (bench :chain-x5
+        (bench :bind-x3
+               @(with-defer (kd/bind-> (create-d) incx incx incx)))
+        (bench :bind-x5
                @(with-defer (kd/bind-> (create-d) incx incx incx incx incx)))
-        (bench :chain-x10
+        (bench :bind-x10
                @(with-defer (kd/bind-> (create-d) incx incx incx incx incx incx incx incx incx incx))))
+
+      (testing :knitty
+
+        (bench :chain-x1
+               @(with-defer (kd/chain* (create-d) [incx])))
+        (bench :chain-x2
+               @(with-defer (kd/chain* (create-d) [incx incx])))
+        (bench :chain-x3
+               @(with-defer (kd/chain* (create-d) [incx incx incx])))
+        (bench :chain-x5
+               @(with-defer (kd/chain* (create-d) [incx incx incx incx incx])))
+        (bench :chain-x10
+               @(with-defer (kd/chain* (create-d) [incx incx incx incx incx incx incx incx incx incx]))))
 
       (testing :promesa
 
@@ -108,6 +125,8 @@
                @(with-defer (pc/-> (create-d) incx)))
         (bench :chain-x2
                @(with-defer (pc/-> (create-d) incx incx)))
+        (bench :chain-x3
+               @(with-defer (pc/-> (create-d) incx incx incx)))
         (bench :chain-x5
                @(with-defer (pc/-> (create-d) incx incx incx incx incx)))
         (bench :chain-x10
