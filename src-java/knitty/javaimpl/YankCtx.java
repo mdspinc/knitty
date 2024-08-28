@@ -12,7 +12,6 @@ import clojure.lang.AMapEntry;
 import clojure.lang.Associative;
 import clojure.lang.ExceptionInfo;
 import clojure.lang.IExceptionInfo;
-import clojure.lang.ILookup;
 import clojure.lang.IPersistentMap;
 import clojure.lang.Keyword;
 import clojure.lang.PersistentArrayMap;
@@ -39,19 +38,20 @@ public final class YankCtx {
     static {
         try {
             MethodHandles.Lookup l = MethodHandles.lookup();
-            ADDED = l.findVarHandle(YankCtx.class, "added", KVCons.class);
+            ADDED = l.findVarHandle(YankCtx.class, "_added", KVCons.class);
         } catch (ReflectiveOperationException var1) {
             throw new ExceptionInInitializerError(var1);
         }
     }
 
-    private volatile KVCons added = KVCons.NIL;
+    private volatile KVCons _added = KVCons.NIL;
     private final KDeferred[][] a0;
 
     private final YankInputs inputs;
     private final AFn[] yarnsCache;
     private final YarnProvider yankerProvider;
     private final KwMapper kwMapper;
+    private final boolean preloadInputs;
 
     public final ExecutionPool pool;
     public final Object tracer;
@@ -264,50 +264,38 @@ public final class YankCtx {
         return res;
     }
 
-    public Object valAt(Object key) {
-        return this.valAt(key, null);
-    }
-
-    public Object valAt(Object key, Object fallback) {
-        if ((key instanceof Keyword)) {
-            Keyword k = (Keyword) key;
-            if (k.getNamespace() != null) {
-                int i = this.kwMapper.resolveByKeyword(k);
-                if (i != -1) {
-                    int i0 = i >> ASHIFT;
-                    int i1 = i & AMASK;
-                    KDeferred[] a1 = (KDeferred[]) AR0.getVolatile(a0, i0);
-                    if (a1 != null) {
-                        KDeferred v = (KDeferred) AR1.getVolatile(a1, i1);
-                        if (v != null) {
-                            return v.unwrap();
-                        }
-                    }
-                }
+    private KDeferred[] pullChunk(int i0) {
+        KDeferred[] a11 = new KDeferred[ASIZE];
+        KDeferred[] res;
+        do {
+            if (AR0.weakCompareAndSetRelease(a0, i0, null, a11)) {
+                return a11;
             }
-        }
-        return inputs.valAt(key, fallback);
+        } while ((res = (KDeferred[]) AR0.getAcquire(a0, i0)) == null);
+        return res;
     }
 
     public final KDeferred pull(int i) {
         int i0 = i >> ASHIFT;
-        KDeferred[] a1 = (KDeferred[]) AR0.getVolatile(a0, i0);
+        KDeferred[] a1 = (KDeferred[]) AR0.getOpaque(a0, i0);
         if (a1 == null) {
-            a1 = this.createChunk(i0);
+            a1 = this.pullChunk(i0);
         }
 
         int i1 = i & AMASK;
-        KDeferred v = (KDeferred) AR1.getVolatile(a1, i1);
+        KDeferred v = (KDeferred) AR1.getOpaque(a1, i1);
         if (v != null) {
             return v;
         }
 
         KDeferred d = new KDeferred(token);
-        if (AR1.compareAndSet(a1, i1, null, d)) {
-            return d;
-        } else {
-            return (KDeferred) AR1.getVolatile(a1, i1);
-        }
+        KDeferred r;
+        do {
+            if (AR1.weakCompareAndSetPlain(a1, i1, null, d)) {
+                return d;
+            }
+        } while ((r = (KDeferred) AR1.getOpaque(a1, i1)) == null);
+        return r;
     }
 
     public Object token() {
@@ -317,20 +305,18 @@ public final class YankCtx {
     private boolean fetch0(KDeferred d, int i, Keyword k) {
 
         if (!preloadInputs) {
-        Object x = inputs.get(i, k, NONE);
-        if (x != NONE) {
-            d.chain(x, token);
-            return false;
-        }
+            Object x = inputs.get(i, k, NONE);
+            if (x != NONE) {
+                d.chain(x, token);
+                return false;
+            }
         }
 
-        KVCons a = added;
-        while (a != null) {
-            KVCons b = (KVCons) ADDED.compareAndExchange(this, a, new KVCons(a, k, d));
-            if (a == b) {
+        KVCons a;
+        while ((a = (KVCons) ADDED.getAcquire(this)) != null) {
+            if (ADDED.weakCompareAndSetRelease(this, a, new KVCons(a, k, d))) {
                 return true;
             }
-            a = b;
         }
 
         d.error(RevokeException.YANK_FINISHED, token);
@@ -355,12 +341,12 @@ public final class YankCtx {
     }
 
     private AFn yarn(int i) {
-        AFn y = (AFn) YSC.getVolatile(yarnsCache, i);
+        AFn y = (AFn) YSC.getAcquire(yarnsCache, i);
         if (y != null) {
             return y;
         }
         y = yankerProvider.yarn(this.kwMapper.resolveByIndex(i));
-        YSC.setVolatile(yarnsCache, i, y);
+        YSC.setRelease(yarnsCache, i, y);
         return y;
     }
 
@@ -373,7 +359,7 @@ public final class YankCtx {
     }
 
     boolean isFrozen() {
-        return added == null;
+        return ((KVCons) ADDED.getOpaque(this)) == null;
     }
 
     YankResult finish() {
@@ -390,7 +376,7 @@ public final class YankCtx {
         return new AListener() {
 
             public void success(Object _v) {
-                if (added != null) {
+                if (!isFrozen()) {
                     cancel(null);
                 }
             }
