@@ -1,5 +1,7 @@
 package knitty.javaimpl;
 
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.util.Iterator;
 
 import clojure.lang.AFn;
@@ -25,8 +27,11 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
     private static final int ASHIFT = YankCtx.ASHIFT;
     private static final int AMASK = YankCtx.AMASK;
 
+    private static final VarHandle AR0 = MethodHandles.arrayElementVarHandle(KDeferred[][].class);
+    private static final VarHandle AR1 = MethodHandles.arrayElementVarHandle(KDeferred[].class);
+
     final YankInputs inputs;
-    final KDeferred[][] yrns;
+    final KDeferred[][] _yrns;
     final YankCtx.KVCons added;
     final KwMapper kwmapper;
     final IPersistentMap meta;
@@ -40,7 +45,7 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
 
     protected YankResult(YankInputs inputs, KDeferred[][] yrns, YankCtx.KVCons added, KwMapper kwmapper) {
         this.inputs = inputs;
-        this.yrns = yrns;
+        this._yrns = yrns;
         this.added = added;
         this.kwmapper = kwmapper;
         this.meta = (inputs instanceof IMeta) ? ((IMeta) inputs).meta() : null;
@@ -48,7 +53,7 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
 
     private YankResult(YankInputs inputs, KDeferred[][] yrns, YankCtx.KVCons added, KwMapper kwmapper, IPersistentMap meta) {
         this.inputs = inputs;
-        this.yrns = yrns;
+        this._yrns = yrns;
         this.added = added;
         this.kwmapper = kwmapper;
         this.meta = meta;
@@ -123,7 +128,7 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
 
     @Override
     public IObj withMeta(IPersistentMap meta) {
-        return new YankResult(inputs, yrns, added, kwmapper, meta);
+        return new YankResult(inputs, _yrns, added, kwmapper, meta);
     }
 
     @Override
@@ -169,29 +174,29 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
     public Object get(int i, Keyword k, Object fallback) {
         int i0 = i >> ASHIFT;
         int i1 = i & AMASK;
-        KDeferred[] yrns1 = yrns[i0];
+        KDeferred[] yrns1 = (KDeferred[]) AR0.getOpaque(_yrns, i0);
         if (yrns1 == null) {
             return inputs.get(i, k, fallback);
         }
-        KDeferred r = yrns1[i1];
+        KDeferred r = (KDeferred) AR1.getOpaque(yrns1, i1);
         return r != null ? r.unwrap() : inputs.get(i, k, fallback);
     }
-
 
     @Override
     public Object valAt(Object key, Object notFound) {
         if (key instanceof Keyword) {
             int i = kwmapper.resolveByKeyword((Keyword) key);
-            if (i == 0) {
-                return null;
+            if (i == -1) {
+                return notFound;
             }
             int i0 = i >> ASHIFT;
             int i1 = i & AMASK;
-            KDeferred[] yrns1 = yrns[i0];
+            KDeferred[] yrns1 = (KDeferred[]) AR0.getOpaque(_yrns, i0);
             if (yrns1 == null) {
-                return null;
+                return notFound;
             }
-            return yrns1[i1].unwrap();
+            KDeferred r = (KDeferred) AR1.getOpaque(yrns1, i1);
+            return r == null ? notFound : r.unwrap();
         }
         return inputs.valAt(key, notFound);
     }

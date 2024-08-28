@@ -82,7 +82,7 @@
 
   (let [flag (atom false)]
     @(let [z (clojure.core/future 1)]
-       (kd/letm [z (kd/coerce z)
+       (kd/letm [z (kd/wrap* z)
                  x (kd/future z)
                  _ (kd/future (Thread/sleep 1000) (reset! flag true))
                  y (kd/future (+ z x))]
@@ -91,8 +91,8 @@
 
   (is (= 5
          @(let [z (clojure.core/future 1)]
-            (kd/letm [z (kd/coerce z)
-                      x (kd/future (kd/coerce (clojure.core/future z)))
+            (kd/letm [z (kd/wrap* z)
+                      x (kd/future (kd/wrap* (clojure.core/future z)))
                       y (kd/future (+ z x))]
                      (kd/future (+ x x y z))))))
 

@@ -238,7 +238,7 @@
    When resulted deferred is realized but original is not - calls cancellation callback.
 
        (let [f (java.core/future (Thread/sleep 1000) 1))
-             x (-> (coerce f)
+             x (-> (wrap* f)
                    (bind inc)
                    (revoke #(do
                               (println :operation-is-cancelled)
@@ -249,7 +249,7 @@
    Note that call to `revoke` should be last in a chain, because revokation is not propagated by binding fns.
 
        (let [f (java.core/future (Thread/sleep 1000) 1))
-             x (-> (coerce f)
+             x (-> (wrap* f)
                    (revoke #(do
                               (println :operation-is-cancelled)
                               (clojure.core/future-cancel)))
@@ -364,7 +364,7 @@
   "Internal macros used by yarns - prefer not to use it.
    Schedlue 0-arg function `ls` to execute after all deferreds are realized with
    values or at least one deferred is realized with an error.
-   All deferreds *must* be instances of Knitty deferred (use `wrap` or `coerce` for coercion).
+   All deferreds *must* be instances of Knitty deferred (use `wrap` or `wrap*` for coercion).
    "
   ([ls]
    `(let [ls# ~ls] (when (KAwaiter/await ls#) (ls#))))
