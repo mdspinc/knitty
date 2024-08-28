@@ -17,7 +17,7 @@
   :aot-include [#"knitty\.javaimpl\..*"]
   :java-source-paths ["src-java"]
   :javac-options ["--release" "17"]
-  :jvm-opts ["-Djdk.attach.allowAttachSelf" "-server"]
+  :jvm-opts ["-server"]
   :source-paths ["src"]
 
   :profiles {:dev {:dependencies [[criterium/criterium "0.4.6"]
@@ -25,6 +25,7 @@
                                   [prismatic/plumbing "0.6.0"]
                                   [funcool/promesa "11.0.678"]
                                   ]
+                   :jvm-opts ["-Djdk.attach.allowAttachSelf" "-XX:+UnlockDiagnosticVMOptions" "-XX:+DebugNonSafepoints"]
                    :global-vars {*warn-on-reflection* true}}}
 
   :prep-tasks [["javac"]
