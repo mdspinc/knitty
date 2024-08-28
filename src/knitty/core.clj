@@ -251,27 +251,19 @@
     (prefer-method m dispatch-val-x dispatch-val-y)))
 
 
-(defn- as-seq-of-yarns [x]
-  (condp instance? x
-    java.lang.Iterable   x
-    clojure.lang.Keyword [x]
-    clojure.lang.IFn [x]
-    (seq x)))
-
-
 (defn yank*
   "Computes missing nodes. Always returns deferred resolved into YankResult.
    YankResult implements ILookup, Seqable, IObj, IKVReduce and IReduceInit."
   ([poy yarns]
    (yank* poy yarns nil))
-  ([poy yarns & {:keys [executor registry tracing]}]
+  ([poy yarns & {:keys [executor registry tracing preload]}]
    (let [registry (if (some? registry) registry *registry*)
          executor (if (some? executor) executor (force *executor*))
          tracing (if (some? tracing) tracing *tracing*)
-         ys (as-seq-of-yarns yarns)
+         preload (boolean preload)
          tracer (trace/if-tracing (when tracing (trace/create-tracer poy yarns)))
-         ctx (knitty.javaimpl.YankCtx/create poy registry executor tracer)
-         r (.yank ctx ys)]
+         ctx (knitty.javaimpl.YankCtx/create poy registry executor tracer preload)
+         r (.yank ctx yarns)]
      (trace/if-tracing
       (if tracer
         (let [td (delay (trace/capture-trace! tracer))
@@ -292,28 +284,34 @@
       r))))
 
 
+
 (defn yank
   "Computes and adds missing nodes into 'poy' map. Always returns deferred."
-  [poy yarns]
-  (let [r (yank* poy yarns nil)]
-    (-> r
-        (kd/bind deref)
-        (kd/revoke-to r))))
+  ([poy yarns]
+   (yank poy yarns nil))
+  ([poy yarns & {:as opts}]
+   (let [r (yank* poy yarns opts)]
+     (-> r
+         (kd/bind deref)
+         (kd/revoke-to r)))))
 
 
 (defn yank1
-  "Computes and returns a single node. Logically similar to (but a bit faster)
+  "Computes and returns a single node.
+   Intended to be used in REPL sessions where there needed to pick single yarn value.
 
-   ```clojure
-   (chain (yank poy [::yarn-key]) ::yarn-key)
-   ```
+   Logically similar to:
+
+       (chain (yank poy [::yarn-key]) ::yarn-key)
    "
-  [poy yarn]
-  (let [k (if (keyword? yarn) yarn (impl/yarn-key yarn))
-        r (yank* poy [yarn] nil)]
-    (-> r
-        (kd/bind k)
-        (kd/revoke-to r))))
+  ([poy yarns]
+   (yank1 poy yarns nil))
+  ([poy yarn & {:as opts}]
+   (let [k (if (keyword? yarn) yarn (impl/yarn-key yarn))
+         r (yank* poy [yarn] opts)]
+     (-> r
+         (kd/bind k)
+         (kd/revoke-to r)))))
 
 
 (defn yank-error?

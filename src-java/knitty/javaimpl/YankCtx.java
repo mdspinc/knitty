@@ -147,11 +147,34 @@ public final class YankCtx {
         } else {
             throw new IllegalArgumentException("yank input must implement clojure.lang.Associative");
         }
-        return new YankCtx(yinputs, yp, pool, tracer);
 
+        YankCtx ctx = new YankCtx(yinputs, yp, pool, tracer, preloadInputs);
+        if (preloadInputs) {
+            preloadInputs(yinputs, ctx);
+            return ctx;
+        }
+
+        return ctx;
     }
 
-    private YankCtx(Associative inputs, YarnProvider yp, ExecutionPool pool, Object tracer) {
+    private static void preloadInputs(YankInputs yinputs, YankCtx ctx) {
+        KwMapper kwMapper = KwMapper.getInstance();
+        yinputs.kvreduce(new AFn() {
+            @Override
+            public Object invoke(Object _a, Object k, Object v) {
+                int i = kwMapper.resolveByKeyword((Keyword) k);
+                if (i != -1) {
+                    KDeferred d = ctx.pull(i);
+                    if (d.own()) {
+                        d.chain(v, ctx.token);
+                    }
+                }
+                return null;
+            }
+        }, null);
+    }
+
+    private YankCtx(YankInputs inputs, YarnProvider yp, ExecutionPool pool, Object tracer, boolean preloadInputs) {
         this.kwMapper = KwMapper.getInstance();
         this.a0 = new KDeferred[((kwMapper.maxIndex() + ASIZE) >> ASHIFT)][];
         this.inputs = inputs;
@@ -160,15 +183,7 @@ public final class YankCtx {
         this.pool = pool;
         this.tracer = tracer;
         this.token = new Object();
-    }
-
-    private KDeferred[] createChunk(int i0) {
-        KDeferred[] a11 = new KDeferred[ASIZE];
-        if (AR0.compareAndSet(a0, i0, null, a11)) {
-            return a11;
-        } else {
-            return (KDeferred[]) AR0.getVolatile(a0, i0);
-        }
+        this.preloadInputs = preloadInputs;
     }
 
     private Exception wrapYankErr(Object error0, Object yarns) {
@@ -299,12 +314,14 @@ public final class YankCtx {
         return token;
     }
 
-    private boolean fetch0(KDeferred d, Keyword k) {
+    private boolean fetch0(KDeferred d, int i, Keyword k) {
 
+        if (!preloadInputs) {
         Object x = inputs.get(i, k, NONE);
         if (x != NONE) {
             d.chain(x, token);
             return false;
+        }
         }
 
         KVCons a = added;
