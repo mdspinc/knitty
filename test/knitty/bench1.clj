@@ -2,7 +2,6 @@
   (:require [clojure.test :as t :refer [deftest testing]]
             [knitty.core :refer [yank yank1]]
             [knitty.test-util :refer :all]
-            [manifold.debug :as debug]
             [manifold.deferred :as md]))
 
 
@@ -13,49 +12,6 @@
   (t/join-fixtures
    [(tracing-enabled-fixture false)
     (report-benchmark-fixture)]))
-
-#_
-(deftest ^:benchmark bench-deferred
-
-  (binding [debug/*dropped-error-logging-enabled?* false]
-    (doseq [[t create-d] [[:manifold #(md/deferred nil)]
-                          [:knitty #(ji/kd-create)]]]
-      (testing t
-        (bench :create
-               (create-d))
-        (bench :listener
-               (let [d (create-d)]
-                 (md/add-listener! d (md/listener (fn [_]) nil))
-                 (md/success! d 1)))
-        (bench :add-listener-3
-               (let [d (create-d)]
-                 (md/add-listener! d (md/listener (fn [_]) nil))
-                 (md/add-listener! d (md/listener (fn [_]) nil))
-                 (md/add-listener! d (md/listener (fn [_]) nil))
-                 (md/success! d 1)))
-        (bench :add-listener-10
-               (let [d (create-d)]
-                 (dotimes [_ 10]
-                   (md/add-listener! d (md/listener (fn [_]) nil)))
-                 (md/success! d 1)))
-        (bench :add-listener-33
-               (let [d (create-d)]
-                 (dotimes [_ 33]
-                   (md/add-listener! d (md/listener (fn [_]) nil)))
-                 (md/success! d 1)))
-        (bench :suc-add-listener
-               (let [d (create-d)]
-                 (md/success! d 1)
-                 (md/add-listener! d (md/listener (fn [_]) nil))))
-        (bench :success-get
-               (let [d (create-d)]
-                 (md/success! d 1)
-                 (md/success-value d 2)))
-        (bench :success-deref
-               (let [d (create-d)]
-                 (md/success! d 1)
-                 @d)))))
-  )
 
 
 (defn pyank [ids]
@@ -167,12 +123,11 @@
    :fork? (constantly true)
    :emit-body (fn [i & xs] `(mfut
                              (do
-                               (-> (range (rand-int 1000)) (shuffle) (sort)) ;; busy
                                (reduce unchecked-add ~i [~@xs]))
                              10)))
 
   (dotimes [i 1000]
     (println ".. " i " / 1000")
-    (dotimes [_ 10]
+    (dotimes [_ 1000]
       (binding [knitty.core/*tracing* (rand-nth [false true])]
         @(yank {} (nodes-range :node 0 1000) #_(random-sample 0.01 (nodes-range :node 0 500)))))))
