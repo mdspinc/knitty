@@ -221,7 +221,7 @@ public final class YankCtx implements ILookup {
                 }
                 r = this.fetch(i0, k, y);
             }
-            if (r.state != KDeferred.STATE_SUCC) {
+            if (r.state() != KDeferred.STATE_SUCC) {
                 if (ds == null) {
                     ds = new KDeferred[8];
                 } else if (di == ds.length) {

@@ -47,7 +47,7 @@ public final class KDeferred
                     return;
                 }
                 try {
-                    logWarn(e, "unconsumed deferred in error state");
+                    logWarn(e, "unconsumed deferred in error state()");
                 } catch (Exception e1) {
                     e1.printStackTrace();
                 }
@@ -313,8 +313,8 @@ public final class KDeferred
     static {
         try {
             MethodHandles.Lookup l = MethodHandles.lookup();
-            STATE = l.findVarHandle(KDeferred.class, "state", Byte.TYPE);
-            OWNED = l.findVarHandle(KDeferred.class, "owned", Byte.TYPE);
+            STATE = l.findVarHandle(KDeferred.class, "_state", Byte.TYPE);
+            OWNED = l.findVarHandle(KDeferred.class, "_owned", Byte.TYPE);
         } catch (ReflectiveOperationException var1) {
             throw new ExceptionInInitializerError(var1);
         }
@@ -336,8 +336,8 @@ public final class KDeferred
         LOG_EXCEPTION = f;
     }
 
-    volatile byte state;
-    private byte owned;
+    private byte _state;
+    private byte _owned;
     private Object value;
     private Object token;
     private AListener lss;
@@ -369,7 +369,7 @@ public final class KDeferred
 
     KDeferred(byte state, Object value) {
         this.value = value;
-        this.state = state;
+        STATE.setRelease(this, state);
     }
 
     public final boolean own() {
@@ -414,35 +414,41 @@ public final class KDeferred
         return success(x, null);
     }
 
+    byte state() {
+        return (byte) STATE.getAcquire(this);
+    }
+
+    private Boolean invalidToken() {
+        STATE.setRelease(this, STATE_LSTN);
+        if (this.token == null) {
+            throw new IllegalStateException("invalid claim-token");
+        } else {
+            return Boolean.FALSE;
+        }
+    }
+
     public Object success(Object x, Object token) {
-        if (this.state == STATE_LSTN) {
-            if (STATE.weakCompareAndSetAcquire(this, STATE_LSTN, STATE_LOCK)) {
-                if (this.lss == null && this.token == token) {
-                    this.value = x;
-                    STATE.setRelease(this, STATE_SUCC);
-                    return Boolean.TRUE;
-                } else {
-                    return success0(x, token);
-                }
+        if (STATE.weakCompareAndSetAcquire(this, STATE_LSTN, STATE_LOCK)) {
+            if (this.lss == null && this.token == token) {
+                this.value = x;
+                STATE.setRelease(this, STATE_SUCC);
+                return Boolean.TRUE;
+            } else {
+                return success0(x, token);
             }
         }
-        return successX(this.state, x, token);
+        return successX(x, token);
     }
 
     private Boolean success0(Object x, Object token) {
         if (token != this.token) {
-            STATE.setRelease(this, STATE_LSTN);
-            if (this.token == null) {
-                throw new IllegalStateException("invalid claim-token");
-            } else {
-                return Boolean.FALSE;
-            }
+            return invalidToken();
         }
 
         this.value = x;
         AListener node = this.lss;
         this.lss = null;
-        STATE.setVolatile(this, STATE_SUCC);
+        STATE.setRelease(this, STATE_SUCC);
 
         if (node != null) {
             Object frame = Var.getThreadBindingFrame();
@@ -452,7 +458,7 @@ public final class KDeferred
                         node.resetFrame();
                         node.success(x);
                     } catch (Throwable e) {
-                    logError(e, String.format("error in deferred success-handler: %s", node));
+                        logError(e, String.format("error in deferred success-handler: %s", node));
                     }
                 }
             } finally {
@@ -463,27 +469,24 @@ public final class KDeferred
         return Boolean.TRUE;
     }
 
-    private Boolean successX(byte s, Object x, Object token) {
-        while (true) {
-            switch (s) {
+    private Boolean successX(Object x, Object token) {
+        do {
+            switch (this.state()) {
                 case STATE_LSTN:
-                    byte s0 = (byte) STATE.compareAndExchangeAcquire(this, STATE_LSTN, STATE_LOCK);
-                    if (s0 == STATE_LSTN) {
+                    if (STATE.weakCompareAndSetAcquire(this, STATE_LSTN, STATE_LOCK)) {
                         return success0(x, token);
                     }
-                    s = s0;
                     continue;
 
                 case STATE_LOCK:
                     Thread.onSpinWait();
-                    s = (byte) STATE.getAcquire(this);
                     continue;
 
                 case STATE_SUCC:
                 case STATE_ERRR:
                     return Boolean.FALSE;
             }
-        }
+        } while (true);
     }
 
     public Object error(Object x) {
@@ -491,28 +494,21 @@ public final class KDeferred
     }
 
     public Object error(Object x, Object token) {
-        if (this.state == STATE_LSTN) {
-            if (STATE.weakCompareAndSetAcquire(this, STATE_LSTN, STATE_LOCK)) {
-                if (this.lss == null && this.token == token) {
-                    this.value = x;
-                    STATE.setRelease(this, STATE_ERRR);
-                    return Boolean.TRUE;
-                } else {
-                    return error0(x, token);
-                }
+        if (STATE.weakCompareAndSetAcquire(this, STATE_LSTN, STATE_LOCK)) {
+            if (this.lss == null && this.token == token) {
+                this.value = x;
+                STATE.setRelease(this, STATE_ERRR);
+                return Boolean.TRUE;
+            } else {
+                return error0(x, token);
             }
         }
-        return errorX(this.state, x, token);
+        return errorX(x, token);
     }
 
     private Boolean error0(Object x, Object token) {
         if (token != this.token) {
-            STATE.setRelease(this, STATE_LSTN);
-            if (this.token == null) {
-                throw new IllegalStateException("invalid claim-token");
-            } else {
-                return Boolean.FALSE;
-            }
+            return invalidToken();
         }
 
         this.value = x;
@@ -522,7 +518,7 @@ public final class KDeferred
             this.fireError(x);
         }
 
-        STATE.setVolatile(this, STATE_ERRR);
+        STATE.setRelease(this, STATE_ERRR);
 
         if (node != null) {
             this.consumeError();
@@ -533,7 +529,7 @@ public final class KDeferred
                         node.resetFrame();
                         node.error(x);
                     } catch (Throwable e) {
-                    logError(e, String.format("error in deferred error-handler: %s", node));
+                        logError(e, String.format("error in deferred error-handler: %s", node));
                     }
                 }
             } finally {
@@ -544,41 +540,38 @@ public final class KDeferred
         return Boolean.TRUE;
     }
 
-    public Boolean errorX(byte s, Object x, Object token) {
-        while (true) {
-            switch (s) {
+    public Boolean errorX(Object x, Object token) {
+        do {
+            switch (this.state()) {
                 case STATE_LSTN:
-                    byte s0 = (byte) STATE.compareAndExchangeAcquire(this, s, STATE_LOCK);
-                    if (s0 == STATE_LSTN) {
+                    if (STATE.weakCompareAndSetAcquire(this, STATE_LSTN, STATE_LOCK)) {
                         return error0(x, token);
                     }
-                    s = s0;
                     continue;
 
                 case STATE_LOCK:
                     Thread.onSpinWait();
-                    s = (byte) STATE.getAcquire(this);
                     continue;
 
                 case STATE_SUCC:
                 case STATE_ERRR:
                     return Boolean.FALSE;
             }
-        }
+        } while (true);
     }
 
     public boolean listen0(IFn onSuc, IFn onErr) {
-        byte s = this.state;
+        byte s = this.state();
         return (s & STATE_DONE_MASK) == 0 && listen0(s, new AListener.Fn(onSuc, onErr));
     }
 
     public boolean listen0(IDeferredListener ls) {
-        byte s = this.state;
+        byte s = this.state();
         return (s & STATE_DONE_MASK) == 0 && listen0(s, new AListener.Dl(ls));
     }
 
     boolean listen0(AListener ls) {
-        return listen0(this.state, ls);
+        return listen0(this.state(), ls);
     }
 
     private boolean listen0(byte s, AListener ls) {
@@ -600,7 +593,7 @@ public final class KDeferred
                 case STATE_ERRR:
                     return false;
                 case STATE_LOCK:
-                    s = this.state;
+                    s = this.state();
                     Thread.onSpinWait();
             }
         }
@@ -610,7 +603,7 @@ public final class KDeferred
         if (this.listen0(onSuc, onErr)) {
             return;
         }
-        if (this.state == STATE_SUCC) {
+        if (this.state() == STATE_SUCC) {
             onSuc.invoke(this.value);
         } else {
             this.consumeError();
@@ -622,7 +615,7 @@ public final class KDeferred
         if (this.listen0(ls)) {
             return;
         }
-        if (this.state == STATE_SUCC) {
+        if (this.state() == STATE_SUCC) {
             ls.onSuccess(this.value);
         } else {
             this.consumeError();
@@ -637,7 +630,7 @@ public final class KDeferred
         Object frame = Var.getThreadBindingFrame();
         try {
             ls.resetFrame();
-            if (this.state == STATE_SUCC) {
+            if (this.state() == STATE_SUCC) {
                 ls.success(value);
             } else {
                 this.consumeError();
@@ -654,7 +647,7 @@ public final class KDeferred
             return Boolean.TRUE;
         }
 
-        if (this.state == STATE_SUCC) {
+        if (this.state() == STATE_SUCC) {
             ls.onSuccess(value);
         } else {
             this.consumeError();
@@ -671,7 +664,7 @@ public final class KDeferred
             return Boolean.TRUE;
         }
 
-        if (this.state == STATE_SUCC) {
+        if (this.state() == STATE_SUCC) {
             onSuc.invoke(value);
         } else {
             this.consumeError();
@@ -694,7 +687,7 @@ public final class KDeferred
 
     public boolean claim(Object token) {
         while (true) {
-            byte s = this.state;
+            byte s = this.state();
             switch (s) {
                 case STATE_LSTN:
                     if (!STATE.weakCompareAndSetAcquire(this, s, STATE_LOCK)) {
@@ -722,15 +715,15 @@ public final class KDeferred
     }
 
     public boolean realized() {
-        return (this.state & STATE_DONE_MASK) != 0;
+        return (this.state() & STATE_DONE_MASK) != 0;
     }
 
     public boolean isRealized() {
-        return (this.state & STATE_DONE_MASK) != 0;
+        return (this.state() & STATE_DONE_MASK) != 0;
     }
 
     public Object successValue(Object fallback) {
-        return this.state == STATE_SUCC ? value : fallback;
+        return this.state() == STATE_SUCC ? value : fallback;
     }
 
     @SuppressWarnings("unchecked")
@@ -748,7 +741,7 @@ public final class KDeferred
     }
 
     public Object errorValue(Object fallback) {
-        if (this.state == STATE_ERRR) {
+        if (this.state() == STATE_ERRR) {
             this.consumeError();
             return value;
         }
@@ -756,18 +749,18 @@ public final class KDeferred
     }
 
     public Object unwrap() {
-        return this.state == STATE_SUCC ? value : this;
+        return this.state() == STATE_SUCC ? value : this;
     }
 
     private Object getErr() {
-        if (this.state == STATE_ERRR) {
+        if (this.state() == STATE_ERRR) {
             throwErr();
         }
         throw new IllegalStateException("kdeferred is not realized");
     }
 
     public final Object get() {
-        return (this.state == STATE_SUCC) ? value : getErr();
+        return (this.state() == STATE_SUCC) ? value : getErr();
     }
 
     private CountDownLatch acquireCountdDownLatch() {
@@ -778,7 +771,7 @@ public final class KDeferred
 
     public Object deref(long ms, Object timeoutValue) {
 
-        switch (this.state) {
+        switch (this.state()) {
             case STATE_SUCC:
                 return value;
             case STATE_ERRR:
@@ -795,7 +788,7 @@ public final class KDeferred
             throw Util.sneakyThrow(e);
         }
 
-        switch (this.state) {
+        switch (this.state()) {
             case STATE_SUCC:
                 return value;
             case STATE_ERRR:
@@ -807,7 +800,7 @@ public final class KDeferred
 
     public Object deref() {
 
-        switch (this.state) {
+        switch (this.state()) {
             case STATE_SUCC:
                 return value;
             case STATE_ERRR:
@@ -820,7 +813,7 @@ public final class KDeferred
             throw Util.sneakyThrow(e);
         }
 
-        switch (this.state) {
+        switch (this.state()) {
             case STATE_SUCC:
                 return value;
             case STATE_ERRR:
@@ -862,7 +855,7 @@ public final class KDeferred
         byte s;
         loop:
         while (true) {
-            switch ((s = this.state)) {
+            switch ((s = this.state())) {
                 case STATE_LSTN:
                     KDeferred dest = new KDeferred(token);
                     if (this.listen0(s, new Bind(dest, valFn, errFn, token))) {
