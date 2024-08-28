@@ -88,10 +88,10 @@
 (defyarn-method four "3+1" {x one, y three} (+ x y))
 (defyarn-method four :default {s four-stategy} (throw (ex-info "unknown strategy" {::s s})))
 
-@(yank {four-stategy "2*2"} four)
+@(yank {four-stategy "2*2"} [four])
 ;; #:user{:four-stategy "2*2", :one-slow 1, :zero 0, :one 1, :two 2, :four 4}
 
-@(yank {four-stategy "const"} four)
+@(yank {four-stategy "const"} [four])
 ;; #:user{:four-stategy "const", :four 4}
 
 
