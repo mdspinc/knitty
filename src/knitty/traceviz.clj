@@ -6,7 +6,8 @@
             [clojure.java.shell :as shell]
             [clojure.pprint :as pp]
             [clojure.string :as str]
-            [tangle.core :as tgl]))
+            [tangle.core :as tgl]
+            [clojure.math :as math]))
 
 
 (def ^:dynamic *options*
@@ -83,7 +84,8 @@
 
 
 (defn- render-tracegraph-dot [g]
-  (let [show-unused (:show-unused *options* false)]
+  (let [show-unused (:show-unused *options* false)
+        gtime (:time g)]
   (tgl/graph->dot
 
    ;; nodes
@@ -91,7 +93,7 @@
          :when (or show-unused (not= (:type v) :lazy-unused))]
      (assoc v :id k))
 
-   ;;regular links
+   ;; edges
    (sort-by
     (fn [[_ c]] (some-> c :time -))
     (for [[[a b] c] (:links g)
@@ -113,7 +115,9 @@
             :rankdir :TB
             :ranksep (:vspace *options*)
             :nodesep (:hspace *options*)
-            :concentrate (:concentrate *options*)}
+            :concentrate (:concentrate *options*)
+            :mclimit 4
+            :newrank true}
 
     :node->cluster
     (when (:clusters *options*)
@@ -243,7 +247,11 @@
                     (= :lazy type)           "diamond"
                     (= :changed-input type)  "none"
                     :else                    "none")
-       :constraint  (not= type :changed-input)
+       :constraint (not (#{:maybe :changed-input} type))
+       :weight (if (and gtime timex)
+                 (int (- 1 (math/log (/ timex gtime))))
+                 1)
+
        :style (cond
                 (not used)              "dotted"
                 (= type :maybe)         "dashed"
