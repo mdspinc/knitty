@@ -1,8 +1,6 @@
 package knitty.javaimpl;
 
 import java.util.Iterator;
-import java.util.Map;
-import java.util.Map.Entry;
 
 import clojure.lang.AFn;
 import clojure.lang.Associative;
@@ -10,26 +8,24 @@ import clojure.lang.Delay;
 import clojure.lang.IDeref;
 import clojure.lang.IEditableCollection;
 import clojure.lang.IFn;
-import clojure.lang.IKVReduce;
-import clojure.lang.ILookup;
 import clojure.lang.IMapEntry;
 import clojure.lang.IMeta;
 import clojure.lang.IObj;
 import clojure.lang.IPersistentMap;
-import clojure.lang.IReduceInit;
 import clojure.lang.ISeq;
 import clojure.lang.ITransientAssociative;
 import clojure.lang.Keyword;
 import clojure.lang.RT;
+import clojure.lang.Reduced;
 import clojure.lang.Seqable;
 import knitty.javaimpl.YankCtx.KVCons;
 
-public final class YankResult extends AFn implements Iterable<Object>, ILookup, Seqable, IObj, IKVReduce, IReduceInit, IDeref {
+public final class YankResult extends YankInputs implements Iterable<Object>, Seqable, IObj, IDeref {
 
     private static final int ASHIFT = YankCtx.ASHIFT;
     private static final int AMASK = YankCtx.AMASK;
 
-    final Associative inputs;
+    final YankInputs inputs;
     final KDeferred[][] yrns;
     final YankCtx.KVCons added;
     final KwMapper kwmapper;
@@ -42,7 +38,7 @@ public final class YankResult extends AFn implements Iterable<Object>, ILookup, 
         }
     });
 
-    protected YankResult(Associative inputs, KDeferred[][] yrns, YankCtx.KVCons added, KwMapper kwmapper) {
+    protected YankResult(YankInputs inputs, KDeferred[][] yrns, YankCtx.KVCons added, KwMapper kwmapper) {
         this.inputs = inputs;
         this.yrns = yrns;
         this.added = added;
@@ -50,7 +46,7 @@ public final class YankResult extends AFn implements Iterable<Object>, ILookup, 
         this.meta = (inputs instanceof IMeta) ? ((IMeta) inputs).meta() : null;
     }
 
-    private YankResult(Associative inputs, KDeferred[][] yrns, YankCtx.KVCons added, KwMapper kwmapper, IPersistentMap meta) {
+    private YankResult(YankInputs inputs, KDeferred[][] yrns, YankCtx.KVCons added, KwMapper kwmapper, IPersistentMap meta) {
         this.inputs = inputs;
         this.yrns = yrns;
         this.added = added;
@@ -61,17 +57,18 @@ public final class YankResult extends AFn implements Iterable<Object>, ILookup, 
     Object toMap0() {
         KVCons added0 = added;
         if (added0.next == null) {
-            return inputs;
+            return inputs.toAssociative();
         }
         Object result;
-        if (added0.next.d != null && inputs instanceof IEditableCollection) {
-            ITransientAssociative t = (ITransientAssociative) ((IEditableCollection) inputs).asTransient();
+        Associative ins = this.inputs.toAssociative();
+        if (added0.next.d != null && ins instanceof IEditableCollection) {
+            ITransientAssociative t = (ITransientAssociative) ((IEditableCollection) ins).asTransient();
             for (KVCons a = added0; a.d != null; a = a.next) {
                 t = t.assoc(a.k, a.d.unwrap());
             }
             result = t.persistent();
         } else {
-            Associative t = inputs;
+            Associative t = ins;
             for (KVCons a = added0; a.d != null; a = a.next) {
                 t = t.assoc(a.k, a.d.unwrap());
             }
@@ -83,30 +80,13 @@ public final class YankResult extends AFn implements Iterable<Object>, ILookup, 
         return result;
     }
 
-    public IPersistentMap toMap() {
-        return (IPersistentMap) mapDelay.deref();
+    public Associative toAssociative() {
+        return (Associative) mapDelay.deref();
     }
 
     @Override
     public Object deref() {
         return mapDelay.deref();
-    }
-
-    private KDeferred pull(Object key) {
-        if (key instanceof Keyword) {
-            int i = kwmapper.resolveByKeyword((Keyword) key);
-            if (i == 0) {
-                return null;
-            }
-            int i0 = i >> ASHIFT;
-            int i1 = i & AMASK;
-            KDeferred[] yrns1 = yrns[i0];
-            if (yrns1 == null) {
-                return null;
-            }
-            return yrns1[i1];
-        }
-        return null;
     }
 
     @Override
@@ -137,18 +117,6 @@ public final class YankResult extends AFn implements Iterable<Object>, ILookup, 
     }
 
     @Override
-    public Object valAt(Object key) {
-        KDeferred d = pull(key);
-        return d != null ? d.unwrap() : inputs.valAt(key);
-    }
-
-    @Override
-    public Object valAt(Object key, Object notFound) {
-        KDeferred d = pull(key);
-        return d != null ? d.unwrap() : inputs.valAt(key, notFound);
-    }
-
-    @Override
     public IPersistentMap meta() {
         return meta;
     }
@@ -160,38 +128,35 @@ public final class YankResult extends AFn implements Iterable<Object>, ILookup, 
 
     @Override
     public Object kvreduce(IFn f, Object a) {
-        if (inputs instanceof IKVReduce) {
-            IKVReduce r = (IKVReduce) inputs;
-            a = r.kvreduce(f, a);
-        } else {
-            @SuppressWarnings("unchecked")
-            Iterator<Map.Entry<Object, Object>> it = (Iterator<Entry<Object, Object>>) RT.iter(inputs);
-            while (it.hasNext()) {
-                Map.Entry<?,?> e = it.next();
-                a = f.invoke(a, e.getKey(), e.getValue());
-            }
-        }
         for (KVCons x = added; x.d != null; x = x.next) {
             a = f.invoke(a, x.k, x.d.unwrap());
+            if (a instanceof Reduced) {
+                return ((IDeref) a).deref();
+            }
         }
+
+        a = inputs.kvreduce(f, a);
+        if (a instanceof Reduced) {
+            return ((IDeref) a).deref();
+        }
+
         return a;
     }
 
     @Override
     public Object reduce(IFn f, Object a) {
-        if (inputs instanceof IReduceInit) {
-            IReduceInit r = (IReduceInit) inputs;
-            a = r.reduce(f, a);
-        } else {
-            @SuppressWarnings("unchecked")
-            Iterator<Map.Entry<Object, Object>> it = (Iterator<Entry<Object, Object>>) RT.iter(inputs);
-            while (it.hasNext()) {
-                a = f.invoke(a, it.next());
-            }
-        }
         for (KVCons x = added; x.d != null; x = x.next) {
             a = f.invoke(a, x);
+            if (a instanceof Reduced) {
+                return ((IDeref) a).deref();
+            }
         }
+
+        a = inputs.reduce(f, a);
+        if (a instanceof Reduced) {
+            return ((IDeref) a).deref();
+        }
+
         return a;
     }
 
@@ -201,12 +166,38 @@ public final class YankResult extends AFn implements Iterable<Object>, ILookup, 
     }
 
     @Override
-    public Object invoke(Object arg1) {
-	    return valAt(arg1);
+    public Object get(int i, Keyword k, Object fallback) {
+        int i0 = i >> ASHIFT;
+        int i1 = i & AMASK;
+        KDeferred[] yrns1 = yrns[i0];
+        if (yrns1 == null) {
+            return inputs.get(i, k, fallback);
+        }
+        KDeferred r = yrns1[i1];
+        return r != null ? r.unwrap() : inputs.get(i, k, fallback);
+    }
+
+
+    @Override
+    public Object valAt(Object key, Object notFound) {
+        if (key instanceof Keyword) {
+            int i = kwmapper.resolveByKeyword((Keyword) key);
+            if (i == 0) {
+                return null;
+            }
+            int i0 = i >> ASHIFT;
+            int i1 = i & AMASK;
+            KDeferred[] yrns1 = yrns[i0];
+            if (yrns1 == null) {
+                return null;
+            }
+            return yrns1[i1].unwrap();
+        }
+        return inputs.valAt(key, notFound);
     }
 
     @Override
-    public Object invoke(Object arg1, Object arg2) {
-	    return valAt(arg1, arg2);
+    public Object valAt(Object key) {
+        return valAt(key, null);
     }
 }

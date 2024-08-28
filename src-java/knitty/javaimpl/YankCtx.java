@@ -17,7 +17,7 @@ import clojure.lang.IPersistentMap;
 import clojure.lang.Keyword;
 import clojure.lang.PersistentArrayMap;
 
-public final class YankCtx implements ILookup {
+public final class YankCtx {
 
     private static final Keyword KNITTY_ERROR        = Keyword.intern("knitty", "error");
     private static final Keyword KNITTY_YANKED_YARNS = Keyword.intern("knitty", "yanked-yarns");
@@ -48,7 +48,7 @@ public final class YankCtx implements ILookup {
     private volatile KVCons added = KVCons.NIL;
     private final KDeferred[][] a0;
 
-    private final Associative inputs;
+    private final YankInputs inputs;
     private final AFn[] yarnsCache;
     private final YarnProvider yankerProvider;
     private final KwMapper kwMapper;
@@ -136,16 +136,19 @@ public final class YankCtx implements ILookup {
         }
     }
 
-    public static YankCtx create(Object inputs, YarnProvider yp, Executor executor, Object tracer) {
-        if (inputs instanceof YankResult) {
-            inputs = ((YankResult)inputs).toMap();
-        }
+    public static YankCtx create(Object inputs, YarnProvider yp, Executor executor, Object tracer, boolean preloadInputs) {
         ExecutionPool pool = ExecutionPool.adapt(executor);
-        if (inputs instanceof Associative) {
-            return new YankCtx((Associative) inputs, yp, pool, tracer);
+        YankInputs yinputs;
+
+        if (inputs instanceof YankInputs) {
+            yinputs = (YankInputs) inputs;
+        } else if (inputs instanceof Associative) {
+            yinputs = new YankInputsAssoc((Associative) inputs);
         } else {
             throw new IllegalArgumentException("yank input must implement clojure.lang.Associative");
         }
+        return new YankCtx(yinputs, yp, pool, tracer);
+
     }
 
     private YankCtx(Associative inputs, YarnProvider yp, ExecutionPool pool, Object tracer) {
@@ -298,7 +301,7 @@ public final class YankCtx implements ILookup {
 
     private boolean fetch0(KDeferred d, Keyword k) {
 
-        Object x = inputs.valAt(k, NONE);
+        Object x = inputs.get(i, k, NONE);
         if (x != NONE) {
             d.chain(x, token);
             return false;
@@ -319,7 +322,7 @@ public final class YankCtx implements ILookup {
 
     public final KDeferred fetch(int i, Keyword k, AFn y) {
         KDeferred d = pull(i);
-        if (d.own() && fetch0(d, k)) {
+        if (d.own() && fetch0(d, i, k)) {
             y.invoke(this, d);
         }
         return d;
@@ -327,7 +330,7 @@ public final class YankCtx implements ILookup {
 
     public final KDeferred fetch(int i, Keyword k) {
         KDeferred d = pull(i);
-        if (d.own() && fetch0(d, k)) {
+        if (d.own() && fetch0(d, i, k)) {
             AFn y = this.yarn(i);
             y.invoke(this, d);
         }
