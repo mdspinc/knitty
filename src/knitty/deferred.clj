@@ -45,6 +45,23 @@
   [x]
   `(KDeferred/wrap ~x))
 
+(defn wrap*
+  "Corece `x` into an instance of Knitty deferred.  Converts non-deferred futures with `manifold.deferred/->deferred`."
+  ^KDeferred [x]
+  (let [y (manifold.deferred/->deferred x nil)]
+    (cond
+      (nil? y)
+      (wrap-val x)
+
+      (realized? y)
+      (let [v (md/success-value y y)]
+        (if (identical? v y)
+          (wrap-err (md/error-value y y))
+          (wrap-val v)))
+
+      :else
+      (.bind (KDeferred/wrap y) wrap* wrap* nil))))
+
 (defmacro do-wrap
   "Run `body` and returns value as deferred, catch and wrap any exceptions."
   [& body]
@@ -142,23 +159,6 @@
   ([d val-fn] (bind-inline d val-fn))
   ([d val-fn err-fn] (bind-inline d val-fn err-fn))
   ([d val-fn err-fn token] (bind-inline d val-fn err-fn token)))
-
-(defn coerce
-  "Corece `x` into an instance of Knitty deferred."
-  ^KDeferred [x]
-  (let [y (manifold.deferred/->deferred x x)]
-    (cond
-      (identical? y x)
-      (wrap-val y)
-
-      (realized? y)
-      (let [v (md/success-value y y)]
-        (if (identical? v y)
-          (wrap-err @y)
-          (wrap-val v)))
-
-      :else
-      (bind y coerce coerce))))
 
 (defn bind-ex
   "Similar to `bind`, but run all callbacks on specified `executor`."

@@ -114,6 +114,10 @@ public final class KDeferred
         }
 
         public void error(Object e) {
+            if (e instanceof IDeferred) {
+                KDeferred.wrapDeferred((IDeferred) e).listen(new Bind(dest, valFn, errFn, token));
+                return;
+            }
             if (errFn == null) {
                 dest.error(e, token);
             } else {
@@ -173,6 +177,10 @@ public final class KDeferred
         }
 
         public void error(Object e) {
+            if (e instanceof IDeferred) {
+                KDeferred.wrapDeferred((IDeferred) e).listen(new BindEx(dest, valFn, errFn, token, executor));
+                return;
+            }
             this.executor.execute(() -> {
                 this.resetFrame();
                 if (errFn == null) {
