@@ -1,6 +1,6 @@
 (ns knitty.tstats
   (:require [knitty.trace :as trace]
-            [manifold.deferred :as md])
+            [knitty.deferred :as kd])
   (:import [org.HdrHistogram
             ConcurrentHistogram
             Histogram
@@ -228,11 +228,9 @@
                               (into {:event e, :yarn y} s))
                             row)))))
        ([poy]
-        (md/chain'
-         poy
-         (fn [poy]
-           (let [s (trace/find-traces poy)]
-             (when s
-               (tracker (yarn-timings s yarns events))))))
+        (let [f (fn [x]
+                  (when-some [s (trace/find-traces x)]
+                    (tracker (yarn-timings s yarns events))))]
+          (kd/on poy f f))
         poy))))
 
