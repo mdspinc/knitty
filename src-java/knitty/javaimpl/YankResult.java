@@ -5,6 +5,7 @@ import java.lang.invoke.VarHandle;
 import java.util.Iterator;
 
 import clojure.lang.AFn;
+import clojure.lang.ASeq;
 import clojure.lang.Associative;
 import clojure.lang.Delay;
 import clojure.lang.IDeref;
@@ -17,6 +18,7 @@ import clojure.lang.IPersistentMap;
 import clojure.lang.ISeq;
 import clojure.lang.ITransientAssociative;
 import clojure.lang.Keyword;
+import clojure.lang.Obj;
 import clojure.lang.RT;
 import clojure.lang.Reduced;
 import clojure.lang.Seqable;
@@ -102,11 +104,11 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
             volatile YankCtx.KVCons kvcons = added;
 
             public boolean hasNext() {
-                return kvcons.next != null || insIter.hasNext();
+                return kvcons.next != KVCons.NIL || insIter.hasNext();
             }
 
             public Object next() {
-                if (kvcons.next != null) {
+                if (kvcons.next != KVCons.NIL) {
                     IMapEntry e = kvcons;
                     kvcons = kvcons.next;
                     return e;
@@ -116,9 +118,36 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
         };
     }
 
+    static final class YankResultSeq extends ASeq {
+
+        private final KVCons kvcons;
+        private final Seqable tail;
+
+        YankResultSeq(KVCons kvcons, IPersistentMap meta, Seqable tail) {
+            super(meta);
+            this.kvcons = kvcons;
+            this.tail = tail;
+        }
+
+        @Override
+        public Object first() {
+            return kvcons;
+        }
+
+        @Override
+        public ISeq next() {
+            return kvcons.next == KVCons.NIL ? tail.seq() : new YankResultSeq(kvcons.next, null, tail);
+        }
+
+        @Override
+        public Obj withMeta(IPersistentMap meta) {
+            return new YankResultSeq(kvcons, meta, tail);
+        }
+    }
+
     @Override
     public ISeq seq() {
-        return RT.chunkIteratorSeq(iterator());
+        return new YankResultSeq(added, null, inputs.seq());
     }
 
     @Override

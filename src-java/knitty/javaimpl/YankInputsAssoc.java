@@ -8,6 +8,7 @@ import clojure.lang.Associative;
 import clojure.lang.IFn;
 import clojure.lang.IKVReduce;
 import clojure.lang.IReduceInit;
+import clojure.lang.ISeq;
 import clojure.lang.Keyword;
 import clojure.lang.RT;
 
@@ -68,5 +69,16 @@ final class YankInputsAssoc extends YankInputs {
     @Override
     public Object valAt(Object key) {
         return valAt(key, null);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public Iterator<Object> iterator() {
+        return RT.iter(wrapped);
+    }
+
+    @Override
+    public ISeq seq() {
+        return wrapped.seq();
     }
 }
