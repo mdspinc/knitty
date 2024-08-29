@@ -295,7 +295,10 @@
      (-> poy ex-data :knitty/trace)
      (when (instance? Trace poy) [poy])
      (when (map? poy) (-> poy :knitty/trace))
-     (when (and (seqable? poy) (every? #(instance? Trace %) poy)) poy))))
+     (when (and (sequential? poy)
+                (seqable? poy)
+                (every? #(instance? Trace %) poy)) poy)
+     )))
 
 
 (defn find-traces [poy]
