@@ -257,15 +257,15 @@
 (defn yank*
   "Computes missing nodes. Always returns deferred resolved into YankResult.
    YankResult implements ILookup, Seqable, IObj, IKVReduce and IReduceInit."
-  ([poy yarns]
-   (yank* poy yarns nil))
-  ([poy yarns opts]
+  ([inputs yarns]
+   (yank* inputs yarns nil))
+  ([inputs yarns opts]
    (let [registry (pick-opt opts :registry *registry*)
          executor (pick-opt opts :executor (force *executor*))
          preload  (pick-opt opts :preload false)
          tracing  (trace/if-tracing (pick-opt opts :tracing *tracing*))
-         tracer (trace/if-tracing (when tracing (trace/create-tracer poy yarns)))
-         ctx (knitty.javaimpl.YankCtx/create poy registry executor tracer (boolean preload))
+         tracer (trace/if-tracing (when tracing (trace/create-tracer inputs yarns)))
+         ctx (knitty.javaimpl.YankCtx/create inputs registry executor tracer (boolean preload))
          r (.yank ctx yarns)]
      (trace/if-tracing
       (if tracer
@@ -277,7 +277,7 @@
                     (throw
                      (ex-info
                       (ex-message e)
-                      (assoc (ex-data e) :knitty/trace (conj (:knitty/trace (meta poy))
+                      (assoc (ex-data e) :knitty/trace (conj (:knitty/trace (meta inputs))
                                                              (trace/capture-trace! tracer)))
                       (ex-cause e)))))]
           (kd/revoke-to r' r))
@@ -285,14 +285,23 @@
       r))))
 
 
+(defn yr->map
+  "Transforms result of `yank*` into persistent map."
+  [yr]
+  (cond
+    (instance? knitty.javaimpl.YankResult yr) (.toAssociative ^knitty.javaimpl.YankResult yr)
+    (map? yr) yr
+
+    :else (throw (ex-info "invalid yank-result" {:knitty/invalid-result yr}))))
+
 (defn yank
-  "Computes and adds missing nodes into 'poy' map. Always returns deferred."
-  ([poy yarns]
-   (yank poy yarns nil))
-  ([poy yarns & {:as opts}]
-   (let [r (yank* poy yarns opts)]
+  "Computes and adds missing nodes into 'inputs' map. Always returns deferred."
+  ([inputs yarns]
+   (yank inputs yarns nil))
+  ([inputs yarns & {:as opts}]
+   (let [r (yank* inputs yarns opts)]
      (-> r
-         (kd/bind deref)
+         (kd/bind yr->map)
          (kd/revoke-to r)
          ))))
 
@@ -304,13 +313,13 @@
 
    Logically similar to:
 
-       (chain (yank poy [::yarn-key]) ::yarn-key)
+       (chain (yank inputs [::yarn-key]) ::yarn-key)
    "
-  ([poy yarns]
-   (yank1 poy yarns nil))
-  ([poy yarn & {:as opts}]
+  ([inputs yarns]
+   (yank1 inputs yarns nil))
+  ([inputs yarn & {:as opts}]
    (let [k (if (keyword? yarn) yarn (impl/yarn-key yarn))
-         r (yank* poy [yarn] (assoc opts :tracing false))]
+         r (yank* inputs [yarn] (assoc opts :tracing false))]
      (-> r
          (kd/bind k)
          (kd/revoke-to r)
