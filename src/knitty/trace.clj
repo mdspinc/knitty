@@ -1,7 +1,7 @@
 (ns knitty.trace
   (:require [clojure.set :as set]
             [knitty.deferred :as kd])
-  (:import [java.util.concurrent.atomic AtomicReference]))
+  (:import [java.util.concurrent.atomic AtomicReference AtomicLong]))
 
 
 (set! *warn-on-reflection* true)
@@ -99,13 +99,13 @@
             :tracelog (tracelog->seq (.getAndSet store nil))))))
 
 
-(def ^:private yank-cnt (atom 0))
+(def ^:private ^AtomicLong yank-cnt (AtomicLong.))
 
 (defn create-tracer [poy yarns]
-  (when-not elide-tracing
+  (if-tracing
     (let [store (AtomicReference.)
           extra {:at (java.util.Date.)
-                 :yankid (swap! yank-cnt inc)
+                 :yankid (.getAndIncrement yank-cnt)
                  :base-at (now)
                  :poy poy
                  :yarns yarns}]
@@ -113,7 +113,10 @@
 
 
 (defn capture-trace! [t]
-  (.captureTrace ^Tracer t))
+  (if-tracing
+   (when t
+     (.captureTrace ^Tracer t))))
+
 
 (defn- safe-minus [a b]
   (when (and a b (not (zero? a)) (not (zero? b)))
@@ -285,27 +288,14 @@
 
 
 (defn find-traces* [poy]
-  (cond
-    (instance? Trace poy)
-    [poy]
-
-    (and (seqable? poy)
-         (every? #(instance? Trace %) poy))
-    poy
-
-    (map? poy)
-    (or (-> poy meta :knitty/trace)
-        (-> poy :knitty/trace))
-
-    (instance? clojure.lang.IExceptionInfo poy)
-    (:knitty/trace (ex-data poy))
-
-    (and (kd/deferred? poy)
-         (:knitty/trace (meta poy)))
-    (:knitty/trace (meta poy))
-
-    (kd/deferred? poy)
-    (kd/bind poy find-traces* find-traces*)))
+  (if (kd/deferred? poy)
+    (kd/bind poy find-traces* find-traces*)
+    (or
+     (-> poy meta :trace/knitty)
+     (-> poy ex-data :knitty/trace)
+     (when (instance? Trace poy) [poy])
+     (when (map? poy) (-> poy :knitty/trace))
+     (when (and (seqable? poy) (every? #(instance? Trace %) poy)) poy))))
 
 
 (defn find-traces [poy]

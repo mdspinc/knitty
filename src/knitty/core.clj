@@ -266,19 +266,17 @@
          r (.yank ctx yarns)]
      (trace/if-tracing
       (if tracer
-        (let [td (delay (trace/capture-trace! tracer))
-              r' (kd/bind
+        (let [r' (kd/bind
                   r
                   (fn [x]
-                    (vary-meta x update :knitty/trace conj @td))
+                    (vary-meta x update :knitty/trace conj (trace/capture-trace! tracer)))
                   (fn [e]
                     (throw
                      (ex-info
                       (ex-message e)
-                      (assoc (ex-data e) :knitty/trace (conj (:knitty/trace poy) @td))
+                      (assoc (ex-data e) :knitty/trace (conj (:knitty/trace (meta poy))
+                                                             (trace/capture-trace! tracer)))
                       (ex-cause e)))))]
-          (let [f (fn [_] (conj (:knitty/trace poy) @td))]
-            (reset-meta! r' {:knitty/trace (kd/bind r f f)}))
           (kd/revoke-to r' r))
         r)
       r))))
