@@ -31,7 +31,7 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
     private static final VarHandle AR1 = MethodHandles.arrayElementVarHandle(KDeferred[].class);
 
     final YankInputs inputs;
-    final KDeferred[][] _yrns;
+    final KDeferred[][] yrns;
     final YankCtx.KVCons added;
     final KwMapper kwmapper;
     final IPersistentMap meta;
@@ -45,7 +45,7 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
 
     protected YankResult(YankInputs inputs, KDeferred[][] yrns, YankCtx.KVCons added, KwMapper kwmapper) {
         this.inputs = inputs;
-        this._yrns = yrns;
+        this.yrns = yrns;
         this.added = added;
         this.kwmapper = kwmapper;
         this.meta = (inputs instanceof IMeta) ? ((IMeta) inputs).meta() : null;
@@ -53,7 +53,7 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
 
     private YankResult(YankInputs inputs, KDeferred[][] yrns, YankCtx.KVCons added, KwMapper kwmapper, IPersistentMap meta) {
         this.inputs = inputs;
-        this._yrns = yrns;
+        this.yrns = yrns;
         this.added = added;
         this.kwmapper = kwmapper;
         this.meta = meta;
@@ -128,7 +128,7 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
 
     @Override
     public IObj withMeta(IPersistentMap meta) {
-        return new YankResult(inputs, _yrns, added, kwmapper, meta);
+        return new YankResult(inputs, yrns, added, kwmapper, meta);
     }
 
     @Override
@@ -174,12 +174,14 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
     public Object get(int i, Keyword k, Object fallback) {
         int i0 = i >> ASHIFT;
         int i1 = i & AMASK;
-        KDeferred[] yrns1 = (KDeferred[]) AR0.getOpaque(_yrns, i0);
-        if (yrns1 == null) {
-            return inputs.get(i, k, fallback);
+        KDeferred[] yrns1 = (KDeferred[]) AR0.getOpaque(yrns, i0);
+        if (yrns1 != null) {
+            KDeferred r = (KDeferred) AR1.getOpaque(yrns1, i1);
+            if (r != null) {
+                return r.unwrap();
+            }
         }
-        KDeferred r = (KDeferred) AR1.getOpaque(yrns1, i1);
-        return r != null ? r.unwrap() : inputs.get(i, k, fallback);
+        return inputs.get(i, k, fallback);
     }
 
     @Override
@@ -191,7 +193,7 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
             }
             int i0 = i >> ASHIFT;
             int i1 = i & AMASK;
-            KDeferred[] yrns1 = (KDeferred[]) AR0.getOpaque(_yrns, i0);
+            KDeferred[] yrns1 = (KDeferred[]) AR0.getOpaque(yrns, i0);
             if (yrns1 == null) {
                 return notFound;
             }
