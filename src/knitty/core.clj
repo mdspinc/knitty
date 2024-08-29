@@ -251,18 +251,21 @@
     (prefer-method m dispatch-val-x dispatch-val-y)))
 
 
+(defmacro ^:private pick-opt [opts key default]
+  `(if-let [x# (~key ~opts)] x# ~default))
+
 (defn yank*
   "Computes missing nodes. Always returns deferred resolved into YankResult.
    YankResult implements ILookup, Seqable, IObj, IKVReduce and IReduceInit."
   ([poy yarns]
    (yank* poy yarns nil))
-  ([poy yarns & {:keys [executor registry tracing preload]}]
-   (let [registry (if (some? registry) registry *registry*)
-         executor (if (some? executor) executor (force *executor*))
-         tracing (if (some? tracing) tracing *tracing*)
-         preload (boolean preload)
+  ([poy yarns opts]
+   (let [registry (pick-opt opts :registry *registry*)
+         executor (pick-opt opts :executor (force *executor*))
+         preload  (pick-opt opts :preload false)
+         tracing  (trace/if-tracing (pick-opt opts :tracing *tracing*))
          tracer (trace/if-tracing (when tracing (trace/create-tracer poy yarns)))
-         ctx (knitty.javaimpl.YankCtx/create poy registry executor tracer preload)
+         ctx (knitty.javaimpl.YankCtx/create poy registry executor tracer (boolean preload))
          r (.yank ctx yarns)]
      (trace/if-tracing
       (if tracer
@@ -282,7 +285,6 @@
       r))))
 
 
-
 (defn yank
   "Computes and adds missing nodes into 'poy' map. Always returns deferred."
   ([poy yarns]
@@ -291,12 +293,14 @@
    (let [r (yank* poy yarns opts)]
      (-> r
          (kd/bind deref)
-         (kd/revoke-to r)))))
+         (kd/revoke-to r)
+         ))))
 
 
 (defn yank1
   "Computes and returns a single node.
-   Intended to be used in REPL sessions where there needed to pick single yarn value.
+   Intended to be used in REPL sessions where there is needed to pick just a single yarn value.
+   Tracing is disabled, use wrapped `yank*` if you need it.
 
    Logically similar to:
 
@@ -306,10 +310,11 @@
    (yank1 poy yarns nil))
   ([poy yarn & {:as opts}]
    (let [k (if (keyword? yarn) yarn (impl/yarn-key yarn))
-         r (yank* poy [yarn] opts)]
+         r (yank* poy [yarn] (assoc opts :tracing false))]
      (-> r
          (kd/bind k)
-         (kd/revoke-to r)))))
+         (kd/revoke-to r)
+         ))))
 
 
 (defn yank-error?
