@@ -291,7 +291,7 @@
   (if (kd/deferred? poy)
     (kd/bind poy find-traces* find-traces*)
     (or
-     (-> poy meta :trace/knitty)
+     (-> poy meta :knitty/trace)
      (-> poy ex-data :knitty/trace)
      (when (instance? Trace poy) [poy])
      (when (map? poy) (-> poy :knitty/trace))
