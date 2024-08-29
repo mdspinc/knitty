@@ -18,10 +18,10 @@ import clojure.lang.PersistentArrayMap;
 
 public final class YankCtx {
 
-    private static final Keyword KNITTY_ERROR        = Keyword.intern("knitty", "error");
-    private static final Keyword KNITTY_YANKED_YARNS = Keyword.intern("knitty", "yanked-yarns");
-    private static final Keyword KNITTY_FAILED_POY   = Keyword.intern("knitty", "failed-poy");
-    private static final Keyword KNITTY_YANKED_POY   = Keyword.intern("knitty", "yanked-poy");
+    private static final Keyword KNITTY_ERROR        = Keyword.intern("knitty", "error-object");
+    private static final Keyword KNITTY_YANKED_YARNS = Keyword.intern("knitty", "yarns");
+    private static final Keyword KNITTY_FAILED_POY   = Keyword.intern("knitty", "result");
+    private static final Keyword KNITTY_YANKED_POY   = Keyword.intern("knitty", "inputs");
     private static final Keyword KNITTY_YANK_ERROR   = Keyword.intern("knitty", "yank-error?");
 
     private static final Object NONE = new Object();
