@@ -268,10 +268,10 @@ public final class YankCtx {
         KDeferred[] a11 = new KDeferred[ASIZE];
         KDeferred[] res;
         do {
-            if (AR0.weakCompareAndSetRelease(a0, i0, null, a11)) {
+            if (AR0.weakCompareAndSetPlain(a0, i0, null, a11)) {
                 return a11;
             }
-        } while ((res = (KDeferred[]) AR0.getAcquire(a0, i0)) == null);
+        } while ((res = (KDeferred[]) AR0.getOpaque(a0, i0)) == null);
         return res;
     }
 
