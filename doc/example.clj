@@ -98,7 +98,7 @@
 
 (declare-yarn five)  ;; define "abstract" yarn without implementation
 
-(yank {} five)
+(yank {} [five])
 ;; => #knitty/D[:err clojure.lang.ExceptionInfo "failed to yank"]
 
 (defyarn ten
@@ -113,7 +113,7 @@
 
 (bind-yarn five five-impl)
 
-@(yank {} five)
+@(yank {} [five])
 ;; => #:user{:one-slow 1, :two 2, ...}
 
 
@@ -146,7 +146,7 @@
 (knitty.traceviz/view-trace
  (yank {zero 0.001
         four-stategy "2*2"}
-       ten))
+       [ten]))
 
 ;; view all traces at once
 (knitty.traceviz/view-trace
