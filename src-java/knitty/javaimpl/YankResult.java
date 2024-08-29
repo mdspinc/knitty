@@ -18,6 +18,7 @@ import clojure.lang.IPersistentMap;
 import clojure.lang.ISeq;
 import clojure.lang.ITransientAssociative;
 import clojure.lang.Keyword;
+import clojure.lang.MapEntry;
 import clojure.lang.Obj;
 import clojure.lang.RT;
 import clojure.lang.Reduced;
@@ -109,7 +110,7 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
 
             public Object next() {
                 if (kvcons.next != KVCons.NIL) {
-                    IMapEntry e = kvcons;
+                    IMapEntry e = MapEntry.create(kvcons.k, kvcons.d.unwrap());
                     kvcons = kvcons.next;
                     return e;
                 }
@@ -120,23 +121,39 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
 
     static final class YankResultSeq extends ASeq {
 
+        private static final VarHandle NEXT;
+        static {
+            try {
+                MethodHandles.Lookup l = MethodHandles.lookup();
+                NEXT = l.findVarHandle(YankResultSeq.class, "_next", YankResultSeq.class);
+            } catch (ReflectiveOperationException var1) {
+                throw new ExceptionInInitializerError(var1);
+            }
+        }
+
         private final KVCons kvcons;
+        private final MapEntry value;
         private final Seqable tail;
+        private ISeq _next;
 
         YankResultSeq(KVCons kvcons, IPersistentMap meta, Seqable tail) {
             super(meta);
             this.kvcons = kvcons;
             this.tail = tail;
+            this.value = MapEntry.create(kvcons.k, kvcons.d.unwrap());
         }
 
         @Override
         public Object first() {
-            return kvcons;
+            return value;
         }
 
         @Override
         public ISeq next() {
-            return kvcons.next == KVCons.NIL ? tail.seq() : new YankResultSeq(kvcons.next, null, tail);
+            if (((ISeq) NEXT.get(this)) == null) {
+                NEXT.compareAndSet(this, null, kvcons.next == KVCons.NIL ? tail.seq() : new YankResultSeq(kvcons.next, null, tail));
+            }
+            return (ISeq) NEXT.get(this);
         }
 
         @Override
@@ -180,7 +197,7 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
     @Override
     public Object reduce(IFn f, Object a) {
         for (KVCons x = added; x.d != null; x = x.next) {
-            a = f.invoke(a, x);
+            a = f.invoke(a, MapEntry.create(x.k, x.d.unwrap()));
             if (a instanceof Reduced) {
                 return ((IDeref) a).deref();
             }

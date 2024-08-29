@@ -8,7 +8,6 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.Executor;
 
 import clojure.lang.AFn;
-import clojure.lang.AMapEntry;
 import clojure.lang.Associative;
 import clojure.lang.ExceptionInfo;
 import clojure.lang.IExceptionInfo;
@@ -105,7 +104,7 @@ public final class YankCtx {
         }
     }
 
-    static final class KVCons extends AMapEntry {
+    static final class KVCons {
 
         public static final KVCons NIL = new KVCons(null, null, null);
 
@@ -117,22 +116,6 @@ public final class YankCtx {
             this.next = next;
             this.k = k;
             this.d = d;
-        }
-
-        public Object getKey() {
-            return k;
-        }
-
-        public Object getValue() {
-            return d.unwrap();
-        }
-
-        public Object key() {
-            return k;
-        }
-
-        public Object val() {
-            return d.unwrap();
         }
     }
 
