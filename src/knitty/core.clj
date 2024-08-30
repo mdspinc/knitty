@@ -36,9 +36,8 @@
    (alter-var-root #'*executor*
                    (fn [e]
                      (when (and shutdown-current
-                                (or (not (delay? e)) (realized? e))
-                                (instance? java.util.concurrent.ExecutorService (force e)))
-                       (.shutdown ^java.util.concurrent.ExecutorService (force e)))
+                                (instance? java.util.concurrent.ExecutorService e))
+                       (.shutdown ^java.util.concurrent.ExecutorService e))
                      executor))))
 
 
