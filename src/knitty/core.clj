@@ -12,13 +12,12 @@
 (def ^:dynamic *tracing*
   false)
 
-(def ^:dynamic *executor*
-  (delay
+(def ^:dynamic ^java.util.concurrent.Executor *executor*
     (impl/create-fjp
      {:parallelism (.availableProcessors (Runtime/getRuntime))
       :factory-prefix "knitty-fjp"
       :exception-handler (fn [t e] (log/errorf e "uncaught exception in %s" t))
-      :async-mode true})))
+      :async-mode true}))
 
 
 (defn enable-tracing!
@@ -261,7 +260,7 @@
    (yank* inputs yarns nil))
   ([inputs yarns opts]
    (let [registry (pick-opt opts :registry *registry*)
-         executor (pick-opt opts :executor (force *executor*))
+         executor (pick-opt opts :executor *executor*)
          preload  (pick-opt opts :preload false)
          tracing  (trace/if-tracing (pick-opt opts :tracing *tracing*))
          tracer (trace/if-tracing (when tracing (trace/create-tracer inputs yarns)))
