@@ -50,7 +50,7 @@ public final class YankCtx {
     private final AFn[] yarnsCache;
     private final YarnProvider yankerProvider;
     private final KwMapper kwMapper;
-    private final boolean preloadInputs;
+    private final boolean loadInputs;
 
     public final ExecutionPool pool;
     public final Object tracer;
@@ -134,7 +134,6 @@ public final class YankCtx {
         YankCtx ctx = new YankCtx(yinputs, yp, pool, tracer, preloadInputs);
         if (preloadInputs) {
             preloadInputs(yinputs, ctx);
-            return ctx;
         }
 
         return ctx;
@@ -145,11 +144,13 @@ public final class YankCtx {
         yinputs.kvreduce(new AFn() {
             @Override
             public Object invoke(Object _a, Object k, Object v) {
-                int i = kwMapper.resolveByKeyword((Keyword) k);
-                if (i != -1) {
-                    KDeferred d = ctx.pull(i);
-                    if (d.own()) {
-                        d.chain(v, ctx.token);
+                if (k instanceof Keyword) {
+                    int i = kwMapper.resolveByKeyword((Keyword) k);
+                    if (i != -1) {
+                        KDeferred d = ctx.pull(i);
+                        if (d.own()) {
+                            d.chain(v, ctx.token);
+                        }
                     }
                 }
                 return null;
@@ -166,7 +167,7 @@ public final class YankCtx {
         this.pool = pool;
         this.tracer = tracer;
         this.token = new Object();
-        this.preloadInputs = preloadInputs;
+        this.loadInputs = !preloadInputs;
     }
 
     private Exception wrapYankErr(Object error0, Object yarns) {
@@ -287,7 +288,7 @@ public final class YankCtx {
 
     private boolean fetch0(KDeferred d, int i, Keyword k) {
 
-        if (!preloadInputs) {
+        if (loadInputs) {
             Object x = inputs.get(i, k, NONE);
             if (x != NONE) {
                 d.chain(x, token);
