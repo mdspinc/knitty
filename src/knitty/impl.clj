@@ -214,7 +214,7 @@
 (defmacro force-lazy-result [v]
   `(let [v# ~v]
      (if (instance? Lazy v#)
-       @v#
+       (.deref ^Lazy v#)
        v#)))
 
 
@@ -299,7 +299,7 @@
                          (for [[_ k] dk] [k :case])
                          [[dk pt]])))
 
-        do-maybe-fork (if fork `do-pool-fork `do)
+        do-maybe-fork (if fork [`do-pool-fork yctx] [`do])
         ;;
         ]
 
@@ -308,8 +308,7 @@
       ~(set deps)
       (fn [~yctx ^KDeferred d#]
         (tracer-> ~yctx .traceStart ~ykey :yarn ~all-deps-tr)
-        (~do-maybe-fork
-         ~yctx
+        (~@do-maybe-fork
          (try
            (let [~@yank-deps]
              (kd/kd-await!
@@ -456,7 +455,7 @@
            ]}]
   {:pre [(or (not factory) (factory-prefix))]}
   (let [parallelism (or parallelism (.availableProcessors (Runtime/getRuntime)))
-        factory (or factory (enumerate-fjp-factory factory-prefix))
+        factory (or factory (enumerate-fjp-factory (or factory-prefix "knitty-fjp")))
         saturate
         (when saturate
           (reify java.util.function.Predicate
