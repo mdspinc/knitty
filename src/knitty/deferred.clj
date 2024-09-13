@@ -362,12 +362,12 @@
 
 (defmacro kd-await!
   "Internal macros used by yarns - prefer not to use it.
-   Schedlue 0-arg function `ls` to execute after all deferreds are realized with
-   values or at least one deferred is realized with an error.
+   Schedlue 0/1-arg function `ls` to execute after all deferreds are realized
+   with values or at least one deferred is realized with an error.
    All deferreds *must* be instances of Knitty deferred (use `wrap` or `wrap*` for coercion).
    "
   ([ls]
-   `(let [ls# ~ls] (when (KAwaiter/await ls#) (ls#))))
+   `(~ls))
   ([ls x1]
    `(let [ls# ~ls] (when (KAwaiter/await ls# ~x1) (ls#))))
   ([ls x1 x2]
