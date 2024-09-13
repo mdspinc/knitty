@@ -56,20 +56,24 @@
 (definline yarn-yank [y ctx d]
   `(~y ~ctx ~d))
 
-(defn- check-no-cycle
+(defn- detect-and-throw-yarn-cycle!
   [root n path yarns]
   (if (= root n)
     (throw (ex-info "detected yarns cycle"
                     {:knitty/yarns-cycle (vec (reverse path))
                      :knitty/yarn root}))
     (doseq [p (yarn-deps (yarns n))]
-      (check-no-cycle root p (cons p path) yarns))))
+      (detect-and-throw-yarn-cycle! root p (cons p path) yarns))))
 
 
 (defn- ensure-array-len ^objects [^objects arr ^long new-size]
   (if (>= (alength arr) new-size)
     arr
     (Arrays/copyOf arr (-> new-size (quot 128) (inc) (* 128)))))
+
+
+(defn- array-copy ^objects [^objects arr]
+    (Arrays/copyOf arr (alength arr)))
 
 
 (deftype Registry [ycache asmap all-deps]
@@ -109,13 +113,15 @@
           deps (yarn-deps v)
           all-deps' (assoc all-deps k (apply set/union deps (map all-deps deps)))]
 
-      (when (contains? (all-deps' k) k)
-        ;; node depends on itself
+      (when (contains? (all-deps' k) k)  ;; node depends on itself => deps cycle
         (doseq [d deps]
-          (check-no-cycle k d [k] asmap)))
+          (detect-and-throw-yarn-cycle! k d [k] asmap)))
 
-      (let [^objects ycache' (ensure-array-len ycache (inc max-idx))]
-        (aset ycache' i v)
+      (let [^objects ycache' (if (contains? asmap k)
+                               (array-copy ycache)                      ;; redefined yarn
+                               (ensure-array-len ycache (inc max-idx))  ;; new yarn - reuse cache
+                               )]
+        (YankCtx/putYarnIntoCache ycache' i v)
         (Registry. ycache' (assoc asmap k v) all-deps')))))
 
 

@@ -334,6 +334,10 @@ public final class YankCtx {
         return y;
     }
 
+    public static void putYarnIntoCache(AFn[] yarnsCache, int idx, AFn yarn) {
+        YSC.setRelease(yarnsCache, idx, yarn);
+    }
+
     private KVCons freeze() {
         KVCons a = (KVCons) ADDED.getAndSet(this, null);
         if (a == null) {
