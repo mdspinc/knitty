@@ -256,9 +256,10 @@
       `(def ~name ~k)))))
 
 
-(defmacro defyarn-method [multiyarn-name dispatch-value bindings-vec & body]
+(defmacro defyarn-method
   "Creates and installs a new method of multiyarn associated with dispatch-value."
   {:arglists '([multiyarn-name dispatch-value bindings-vec & body])}
+  [multiyarn-name dispatch-value bindings-vec & body]
   (let [cf (conform-and-check ::defyarn-method (list* multiyarn-name dispatch-value bindings-vec body))
         {:keys [name dispatch-value], {:keys [bind body]} ::bind-and-body} cf
         k (parse-yarn-ref &env name)
