@@ -61,10 +61,14 @@
     (<= n 1)))
 
 
+(s/def ::yarn-ref
+  (s/or :ident symbol?
+        :keyword qualified-keyword?))
+
 (s/def ::yarn-binding-case-map
   (s/or
-   :map (s/map-of any? (some-fn qualified-keyword? symbol?))
-   :seq (s/coll-of (some-fn qualified-keyword? symbol?))
+   :map (s/map-of any? ::yarn-ref)
+   :seq (s/coll-of ::yarn-ref)
   ))
 
 (s/def ::yarn-bindind-var
@@ -73,7 +77,7 @@
 (s/def ::yarn-binding
   (s/map-of
    ::yarn-bindind-var
-   (s/or :ident ident?
+   (s/or :yarn-ref ::yarn-ref
          :case-map ::yarn-binding-case-map)))
 
 (s/def ::bind-and-body
@@ -88,6 +92,19 @@
   (s/cat
    :name symbol?
    :doc (s/? string?)
+   :bind-and-body ::bind-and-body))
+
+(s/def ::defyarn-multi
+  (s/cat
+   :name symbol?
+   :doc (s/? string?)
+   :dispatch-yarn ::yarn-ref
+   :multi-options (s/? (s/and list? #(even? (count %))))))
+
+(s/def ::defyarn-method
+  (s/cat
+   :name ::yarn-ref
+   :dispatch-value any?
    :bind-and-body ::bind-and-body))
 
 
@@ -114,18 +131,20 @@
   (register-yarn (eval (impl/gen-yarn-ref yarn yarn-target))))
 
 
-(defn- resolve-sym-or-kw
+(defn- resolve-yarn-sym
   [env k]
-  (if (keyword? k)
-    k
-    (let [v (resolve env k)]
-      (when-not v
-        (throw (ex-info "unable to resovlve yarn binding variable" {::binding-var v})))
-      (let [k @v]
-        (when-not (qualified-keyword? k)
-          (throw (ex-info "yarn binding must be a qualified keyword" {::binding k})))
-        k))))
+  (let [v (resolve env k)]
+    (when-not v
+      (throw (ex-info "unable to resolve yarn binding variable" {::binding-var v})))
+    (let [k @v]
+      (when-not (qualified-keyword? k)
+        (throw (ex-info "yarn binding must be a qualified keyword" {::binding k})))
+      k)))
 
+(defn- parse-yarn-ref [env x]
+  (case (first x)
+    :ident (resolve-yarn-sym env x)
+    :keyword x))
 
 (defn- parse-case-params-map
   [env vv]
@@ -133,10 +152,10 @@
     (case vv-t
       :map
       (into {} (for [[x y] vv-val]
-                 [x (resolve-sym-or-kw env y)]))
+                 [x (parse-yarn-ref env y)]))
       :seq
       (into {} (map (comp (juxt identity identity)
-                          (partial resolve-sym-or-kw env))) vv-val))))
+                          (partial parse-yarn-ref env))) vv-val))))
 
 (defn- emit-yarn
   [env k cf mt]
@@ -146,21 +165,27 @@
                    (for [[k [vt vv]] bind]
                      [k
                       (case vt
-                        :ident (resolve-sym-or-kw env vv)
-                        :case-map (parse-case-params-map env vv))]))]
+                        :yarn-ref (parse-yarn-ref env vv)
+                        :case-map (parse-case-params-map env vv))
+                      ]))]
     (impl/gen-yarn k bind `(do ~@body) mt)))
 
 
+(defn- conform-and-check [spec value]
+  (let [x (s/conform spec value)]
+    (when (s/invalid? x)
+      (throw (Exception. (str (s/explain-str spec value))))
+      x)))
+
+
 (defmacro yarn
-  "Returns yarn object (without registering into a registry).
+  "Returns yarn object (without registering into the global registry).
    May capture variables from outer scope."
   [k & exprs]
   (if (empty? exprs)
     (impl/gen-yarn-input k)
     (let [bd (cons k exprs)
-          cf (s/conform ::yarn bd)]
-      (when (s/invalid? cf)
-        (throw (Exception. (str (s/explain-str ::yarn bd)))))
+          cf (conform-and-check ::yarn bd)]
       (emit-yarn &env k cf nil))))
 
 
@@ -191,39 +216,38 @@
   (defyarn yarn-4 {x yarn-3} (str \"Random is\" x))
   ```
   "
-  {:arglists '([name doc-string?]
-               [name doc-string? [dependencies*] & body])}
+  {:arglists '([name docstring?]
+               [name docstring? [dependencies*] & body])}
   [name & doc-binds-body]
   (let [bd (cons name doc-binds-body)
-        cf (s/conform ::defyarn bd)
-        k (keyword (-> *ns* ns-name clojure.core/name)
-                   (clojure.core/name name))]
-
-    (when (s/invalid? cf)
-      (throw (Exception. (str (s/explain-str ::defyarn bd)))))
-
-    (let [{doc :doc, {:keys [bind body]} :bind-and-body} cf
-          [nm m] (pick-yarn-meta name (meta bind) doc)
-          spec (:spec m)
-          y (if (empty? body)
-              (impl/gen-yarn-input k)
-              (emit-yarn &env k cf m))]
-
-      (list
-       `do
-       (when spec `(s/def ~k ~spec))
-       `(register-yarn ~y)
-       `(def ~nm ~k)))))
+        cf (conform-and-check ::defyarn bd)
+        k (keyword (-> *ns* ns-name clojure.core/name) (clojure.core/name name))
+        {doc :doc, {:keys [bind body]} :bind-and-body} cf
+        [nm m] (pick-yarn-meta name (meta bind) doc)
+        spec (:spec m)
+        y (if (empty? body)
+            (impl/gen-yarn-input k)
+            (emit-yarn &env k cf m))]
+    (list
+     `do
+     (when spec `(s/def ~k ~spec))
+     `(register-yarn ~y)
+     `(def ~nm ~k))))
 
 
 (defmacro defyarn-multi
-  ([name route-by]
-   `(defyarn-multi ~name nil ~route-by))
-  ([name docstring route-by]
-   (let [k (keyword (-> *ns* ns-name clojure.core/name)
+  "Defines a new multiyarn.  Dispatching is routed by the value of `dispatch-yarn'
+   using same mechanics as `defmulti` macro.  Optional parameters are `:hierarchy` and `:default`."
+  {:arglists '([name docstring? dispatch-yarn & multi-options])}
+  ([name & doc-dispatch-options]
+   (let [bd (cons name doc-dispatch-options)
+         cf (conform-and-check ::defyarn-multi bd)
+         {:keys [dispatch-yarn name doc multi-options]} cf
+         k (keyword (-> *ns* ns-name clojure.core/name)
                     (clojure.core/name name))
-         my (impl/gen-yarn-multi k (resolve-sym-or-kw &env route-by) {})
-         [name m] (pick-yarn-meta name {} docstring)
+         dy (parse-yarn-ref &env dispatch-yarn)
+         my (impl/gen-yarn-multi k dy (apply hash-map multi-options))
+         [name m] (pick-yarn-meta name {} doc)
          spec (:spec m)]
      (list
       `do
@@ -232,21 +256,25 @@
       `(def ~name ~k)))))
 
 
-(defmacro defyarn-method [name route-value bvec & body]
-  (let [k (resolve-sym-or-kw &env name)
+(defmacro defyarn-method [multiyarn-name dispatch-value bindings-vec & body]
+  "Creates and installs a new method of multiyarn associated with dispatch-value."
+  {:arglists '([multiyarn-name dispatch-value bindings-vec & body])}
+  (let [cf (conform-and-check ::defyarn-method (list* multiyarn-name dispatch-value bindings-vec body))
+        {:keys [name dispatch-value], {:keys [bind body]} ::bind-and-body} cf
+        k (parse-yarn-ref &env name)
         y (gensym)]
-    `(let [~y (yarn ~k ~bvec ~@body)]
-       ~(impl/gen-reg-yarn-method k y route-value)
+    `(let [~y (yarn ~k ~bind ~@body)]
+       ~(impl/gen-reg-yarn-method k y dispatch-value)
        (register-yarn (get *registry* ~k) false)  ;; reregister to trigger cycle-check
        )))
 
 
-(defn yarn-prefer-method
+(defmacro yarn-prefer-method
   "Causes the multiyarn to prefer matches of dispatch-val-x over dispatch-val-y"
-  [yarn dispatch-val-x dispatch-val-y]
-  (let [y (if (keyword? yarn) (get *registry* yarn) yarn)
-        m (impl/yarn-multifn y)]
-    (prefer-method m dispatch-val-x dispatch-val-y)))
+  [yarn-ref dispatch-val-x dispatch-val-y]
+  (let [cf (conform-and-check ::yarn-ref yarn-ref)
+        y (parse-yarn-ref &env cf)]
+    `(prefer-method ~(impl/yarn-multifn y) ~dispatch-val-x ~dispatch-val-y)))
 
 
 (defmacro ^:private pick-opt [opts key default]
@@ -292,6 +320,7 @@
 
     :else (throw (ex-info "invalid yank-result" {:knitty/invalid-result yr}))))
 
+
 (defn yank
   "Computes and adds missing nodes into 'inputs' map. Always returns deferred."
   ([inputs yarns]
@@ -311,7 +340,7 @@
 
    Logically similar to:
 
-       (chain (yank inputs [::yarn-key]) ::yarn-key)
+       (md/chain (yank inputs [::yarn-key]) ::yarn-key)
    "
   ([inputs yarns]
    (yank1 inputs yarns nil))
@@ -325,6 +354,6 @@
 
 
 (defn yank-error?
-  "Returns true when exception is rethrown by 'yank'."
+  "Returns true when exception is rethrown by `yank`."
   [ex]
   (:knitty/yank-error? (ex-data ex) false))

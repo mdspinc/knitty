@@ -73,7 +73,7 @@
 
 
 (defn- array-copy ^objects [^objects arr]
-    (Arrays/copyOf arr (alength arr)))
+  (Arrays/copyOf arr (alength arr)))
 
 
 (deftype Registry [ycache asmap all-deps]
@@ -364,10 +364,8 @@
 
 
 (defn yarn-multifn [yarn-name]
-  (cond
-    (symbol? yarn-name) `(yarn-multifn ~(eval yarn-name))
-    (keyword? yarn-name) (symbol (namespace yarn-name) (str (name yarn-name) "--multifn"))
-    :else (throw (ex-info "invalid yarn-name" {:yarn-name yarn-name}))))
+  {:pre [(qualified-keyword? yarn-name)]}
+  (symbol (namespace yarn-name) (str (name yarn-name) "--multifn")))
 
 
 (defn make-multiyarn-route-key-fn [ykey k]
@@ -451,8 +449,7 @@
            saturate
            keep-alive-seconds
            min-runnable
-           async-mode
-           ]}]
+           async-mode]}]
   {:pre [(or (not factory) (factory-prefix))]}
   (let [parallelism (or parallelism (.availableProcessors (Runtime/getRuntime)))
         factory (or factory (enumerate-fjp-factory (or factory-prefix "knitty-fjp")))
@@ -475,5 +472,4 @@
      (int (or min-runnable 1))
      saturate
      (or keep-alive-seconds 60)
-     TimeUnit/SECONDS)
-    ))
+     TimeUnit/SECONDS)))
