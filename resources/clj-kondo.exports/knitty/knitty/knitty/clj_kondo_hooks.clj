@@ -169,6 +169,8 @@
                  :type :knitty/invalid-defyarn)))
 
        ;; (yarn ::~name ~bmap ~body)
+       (api/reg-keyword! (with-meta (api/keyword-node name-kv) (meta name))
+                         'knitty.core/defyarn)
        (yarn* (list* name-kv bmap body))
 
        ;; )
@@ -215,7 +217,7 @@
        {:node
         (api/list-node
          (list*
-          (api/token-node 'defyarn)
+          (api/token-node 'knitty.core/defyarn)
           name
           (api/map-node [(api/token-node '_) route-key])
           (api/token-node nil)))})))
@@ -226,7 +228,7 @@
         [name route-val bvec & body] node-child
         name' (if (and (api/token-node? name)
                        (-> name :value symbol?))
-                (api/token-node ::SYMBOL)
+                (api/token-node ::KEYWORD)
                 name)]
     {:node
      (api/list-node
