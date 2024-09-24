@@ -1,6 +1,7 @@
 (ns knitty.test-util
   (:require [knitty.core :refer [*registry* defyarn]]
             [knitty.impl :as impl]
+            [knitty.deferred :as kd]
             [clojure.java.io :as io]
             [clojure.pprint :as pp]
             [clojure.string :as str]
@@ -166,3 +167,19 @@
    (for [b body]
      `(binding [*ns* ~*ns*]
         (eval '~b)))))34
+
+
+(defmacro slow-future [delay & body]
+  `(kd/future
+     (Thread/sleep (long ~delay))
+     ~@body))
+
+
+(defn reset-registry-fixture
+  []
+  (fn [t]
+    (let [r knitty.core/*registry*]
+      (try
+        (t)
+        (finally
+          (alter-var-root #'knitty.core/*registry* (constantly r)))))))

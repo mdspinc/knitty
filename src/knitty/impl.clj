@@ -19,14 +19,16 @@
 
 
 (defrecord YarnInfo
-           [type key deps body-sexp])
+           [type key deps body-sexp multifn])
 
 (defmacro decl-yarn
   ([ykey deps bodyf]
    (assert (qualified-keyword? ykey))
    (KwMapper/registerKeyword ykey)
-   `(decl-yarn ~(symbol (name ykey)) ~ykey ~deps ~bodyf))
-  ([fnname ykey deps [_fn [ctx dst] & body]]
+   `(decl-yarn ~(symbol (name ykey)) ~ykey ~deps ~bodyf nil))
+  ([fnname ykey deps bodyf]
+   `(decl-yarn ~fnname ~ykey ~deps ~bodyf nil))
+  ([fnname ykey deps [_fn [ctx dst] & body] multifn]
    `(fn
       ~fnname
       ([] ~(if (and (keyword? ykey)
@@ -35,13 +37,15 @@
               :knitty/yarn-info
               ykey
               deps
-              body)
+              body
+              multifn)
              (list
               `->YarnInfo
               :knitty/yarn-info
               ykey
               deps
-              (list `quote body))))
+              (list `quote body)
+              multifn)))
       ([~(vary-meta ctx assoc :tag "knitty.javaimpl.YankCtx")
         ~(vary-meta dst assoc :tag "knitty.javaimpl.KDeferred")]
        ~@body))))
@@ -52,6 +56,9 @@
 
 (definline yarn-key [y]
   `(:key (~y)))
+
+(definline yarn-multifn [y]
+  `(:multifn (~y)))
 
 (definline yarn-yank [y ctx d]
   `(~y ~ctx ~d))
@@ -363,11 +370,6 @@
           (connect-error yctx# ~ykey e# d#))))))
 
 
-(defn yarn-multifn [yarn-name]
-  {:pre [(qualified-keyword? yarn-name)]}
-  (symbol (namespace yarn-name) (str (name yarn-name) "--multifn")))
-
-
 (defn make-multiyarn-route-key-fn [ykey k]
   (let [i (long (KwMapper/registerKeyword k))]
     (fn yank-route-key [^YankCtx yctx ^KDeferred _]
@@ -384,14 +386,16 @@
 
 
 (defn gen-yarn-multi
-  [ykey route-key mult-options]
+  [ykey route-key multi-options]
   (KwMapper/registerKeyword ykey)
   `(do
-     (defmulti ~(yarn-multifn ykey)
-       (make-multiyarn-route-key-fn ~ykey ~route-key)
-       ~@mult-options)
-     (let [multifn# ~(yarn-multifn ykey)]
+     (let [mopts# ~multi-options
+           hierarchy# (get mopts# :hierarchy #'clojure.core/global-hierarchy)
+           default# (get mopts# :default :default)
+           dispatch-fn# (make-multiyarn-route-key-fn ~ykey ~route-key)
+           multifn# (new clojure.lang.MultiFn ~(name ykey) dispatch-fn# default# hierarchy#)]
        (decl-yarn
+        ~(symbol (name ykey))
         ~ykey
         (yarn-multi-deps multifn# ~route-key)
         (fn [yctx# d#]
@@ -403,15 +407,16 @@
                      (catch Throwable e#
                        (.error d# e# (.-token yctx#)))))
                ([e#] (.error d# e# (.-token yctx#))))
-             r#)))))))
+             r#)))
+        multifn#))))
 
 
 (defn gen-reg-yarn-method
-  [yk yarn route-val]
+  [yk yarn route-val registry-sym]
   `(let [y# ~yarn
          rv# ~route-val]
      (defmethod
-       ~(yarn-multifn yk)
+       (yarn-multifn (get ~registry-sym ~yk))
        rv#
        ([] y#)
        ([yctx# d#] (yarn-yank y# yctx# d#)))))

@@ -99,7 +99,7 @@
    :name symbol?
    :doc (s/? string?)
    :dispatch-yarn ::yarn-ref
-   :multi-options (s/? (s/and list? #(even? (count %))))))
+   :multi-options (s/* any?)))
 
 (s/def ::defyarn-method
   (s/cat
@@ -250,11 +250,12 @@
          k (keyword (-> *ns* ns-name clojure.core/name)
                     (clojure.core/name name))
          dy (parse-yarn-ref &env dispatch-yarn)
-         my (impl/gen-yarn-multi k dy (apply hash-map multi-options))
+         my (impl/gen-yarn-multi k dy (apply array-map multi-options))
          [name m] (pick-yarn-meta name {} doc)
          spec (:spec m)]
      (list
       `do
+      `(when-let [f# (get *registry* ~k)] (println ">>>>" (f#)))
       (when spec `(s/def ~k ~spec))
       `(register-yarn ~my)
       `(def ~name ~k)))))
@@ -271,7 +272,7 @@
         k (parse-yarn-ref &env name)
         y (gensym)]
     `(let [~y (yarn ~k ~bind ~@body)
-           x# ~(impl/gen-reg-yarn-method k y dispatch-value)]
+           x# ~(impl/gen-reg-yarn-method k y dispatch-value `*registry*)]
        (register-yarn (get *registry* ~k) false)  ;; reregister to trigger cycle-check
        x#)))
 
@@ -281,7 +282,7 @@
   [yarn-ref dispatch-val-x dispatch-val-y]
   (let [cf (conform-and-check ::yarn-ref yarn-ref)
         y (parse-yarn-ref &env cf)]
-    `(prefer-method ~(impl/yarn-multifn y) ~dispatch-val-x ~dispatch-val-y)))
+    `(prefer-method (impl/yarn-multifn (get *registry* ~y)) ~dispatch-val-x ~dispatch-val-y)))
 
 
 (defmacro ^:private pick-opt [opts key default]
