@@ -112,11 +112,14 @@
     (api/token-node `let)
      ;; [ ~@bmap ]
     (api/vector-node
-     (map-evens
+     (concat
+      (map-evens
       ; [~s (do ~v (Object.))] - force type to be :any
-      #(api/list-node [(api/token-node `do) % (api/list-node '(java.lang.Object.))])
-      (:children bmap)))
-     ;; ~expr
+       #(api/list-node [(api/token-node `do) % (api/list-node (list (api/token-node 'java.lang.Object.)))])
+       (:children bmap))))
+    ;; ~key
+    key
+    ;; ~expr
     body
      ;; )
     )))
@@ -131,7 +134,7 @@
   (cons x xs))
 
 
-(defn defyarn [{:keys [node]}]
+(defn defyarn [{:keys [node] :as x}]
 
   (let [node-child (rest (:children node))
         [name bmap & body] (if (-> node-child second api/string-node?)
@@ -145,8 +148,7 @@
                           :when (api/keyword-node? k)
                           :when (= :spec (:k k))]
                       v))
-
-        name-kv (api/keyword-node (keyword (:string-value name "INVALID")) true)]
+        name-kv (api/keyword-node (keyword (:string-value name "INVALID")) [true])]
 
     {:node
      (api/list-node
@@ -160,6 +162,14 @@
            name-kv
            spec]))
 
+       ;; (yarn ::~name ~bmap ~body)
+       (yarn* (list* (api/reg-keyword!
+                      (with-meta name-kv (-> (meta name)
+                                             (assoc :end-col (-> name meta :col))  ;; zero-width - workaround highligting issues
+                                             (assoc :clj-kondo/ignore [:clojure-lsp/unused-public-var])))
+                      'knitty.core/defyarn)
+                     bmap
+                     body))
        ;; (def ~name ::~name)
        (if (and (api/token-node? name) (-> name :value symbol?))
          (api/list-node [(api/token-node 'def) name name-kv])
@@ -167,11 +177,6 @@
           (assoc (meta name)
                  :message "name must be a symbol"
                  :type :knitty/invalid-defyarn)))
-
-       ;; (yarn ::~name ~bmap ~body)
-       (api/reg-keyword! (with-meta (api/keyword-node name-kv) (meta name))
-                         'knitty.core/defyarn)
-       (yarn* (list* name-kv bmap body))
 
        ;; )
        ])}))
@@ -205,22 +210,32 @@
 
 (defn defyarn-multi [{:keys [node]}]
   (let [node-child (rest (:children node))
-        [name route-key & exx] (if (-> node-child second api/string-node?)
-                                 (skip-second node-child)
-                                 node-child)]
-    (when (seq exx)
+        [name route-key & opts-raw] (if (-> node-child second api/string-node?)
+                                      (skip-second node-child)
+                                      node-child)
+        opts (apply array-map (map api/sexpr opts-raw))]
+
+    (when-let [p (seq (dissoc opts :hierarchy :default))]
       (api/reg-finding!
-       (assoc (meta (first exx))
+       (assoc (meta (first p))
               :message "unexpected extra parameter"
               :type :knitty/invalid-defyarn)))
-     (defyarn
-       {:node
-        (api/list-node
-         (list*
-          (api/token-node 'knitty.core/defyarn)
-          name
-          (api/map-node [(api/token-node '_) route-key])
-          (api/token-node nil)))})))
+
+    {:node
+     (api/list-node
+      (list
+       (api/token-node `do)
+
+       (vary-meta
+        (api/list-node (list* (api/token-node `array-map) opts-raw))
+        assoc :clj-kondo/ignore [:unused-value])
+
+       (api/list-node
+        (list
+         (api/token-node 'knitty.core/defyarn)
+         name
+         (api/map-node [(api/token-node '_) route-key])
+         (api/token-node nil)))))}))
 
 
 (defn defyarn-method [{:keys [node]}]
@@ -228,7 +243,7 @@
         [name route-val bvec & body] node-child
         name' (if (and (api/token-node? name)
                        (-> name :value symbol?))
-                (api/token-node ::KEYWORD)
+                (api/keyword-node (keyword (:string-value name "INVALID")) [true])
                 name)]
     {:node
      (api/list-node
@@ -237,5 +252,5 @@
        route-val
        name
        ;; (yarn :name ...)
-       (yarn* [name' bvec body])])}))
+       (yarn* (list* name' bvec body))])}))
 
