@@ -81,7 +81,7 @@
          :case-map ::yarn-binding-case-map)))
 
 (s/def ::bind-and-body
-  (s/? (s/cat :bind ::yarn-binding :body (s/+ any?))))
+  (s/cat :bind ::yarn-binding :body (s/+ any?)))
 
 (s/def ::yarn
   (s/cat
@@ -92,7 +92,7 @@
   (s/cat
    :name symbol?
    :doc (s/? string?)
-   :bind-and-body ::bind-and-body))
+   :bind-and-body (s/? ::bind-and-body)))
 
 (s/def ::defyarn-multi
   (s/cat
@@ -141,10 +141,10 @@
         (throw (ex-info "yarn binding must be a qualified keyword" {::binding k})))
       k)))
 
-(defn- parse-yarn-ref [env x]
-  (case (first x)
-    :ident (resolve-yarn-sym env x)
-    :keyword x))
+(defn- parse-yarn-ref [env [x y]]
+  (case x
+    :ident (resolve-yarn-sym env y)
+    :keyword y))
 
 (defn- parse-case-params-map
   [env vv]
@@ -155,27 +155,31 @@
                  [x (parse-yarn-ref env y)]))
       :seq
       (into {} (map (comp (juxt identity identity)
+
                           (partial parse-yarn-ref env))) vv-val))))
+(defn- parse-bind-vec [env bind]
+  (->> bind
+       (mapcat (fn [[k [vt vv]]]
+                 [k
+                  (case vt
+                    :yarn-ref (parse-yarn-ref env vv)
+                    :case-map (parse-case-params-map env vv))]))
+       (apply array-map)))
+
 
 (defn- emit-yarn
   [env k cf mt]
   (let [{{:keys [bind body]} :bind-and-body} cf
         mt (merge mt (meta bind))
-        bind (into {}
-                   (for [[k [vt vv]] bind]
-                     [k
-                      (case vt
-                        :yarn-ref (parse-yarn-ref env vv)
-                        :case-map (parse-case-params-map env vv))
-                      ]))]
+        bind (parse-bind-vec env bind)]
     (impl/gen-yarn k bind `(do ~@body) mt)))
 
 
 (defn- conform-and-check [spec value]
   (let [x (s/conform spec value)]
     (when (s/invalid? x)
-      (throw (Exception. (str (s/explain-str spec value))))
-      x)))
+      (throw (Exception. (str (s/explain-str spec value)))))
+    x))
 
 
 (defmacro yarn
@@ -260,14 +264,16 @@
   "Creates and installs a new method of multiyarn associated with dispatch-value."
   {:arglists '([multiyarn-name dispatch-value bindings-vec & body])}
   [multiyarn-name dispatch-value bindings-vec & body]
-  (let [cf (conform-and-check ::defyarn-method (list* multiyarn-name dispatch-value bindings-vec body))
-        {:keys [name dispatch-value], {:keys [bind body]} ::bind-and-body} cf
+  (let [z (list* multiyarn-name dispatch-value bindings-vec body)
+        cf (conform-and-check ::defyarn-method z)
+        {:keys [name dispatch-value], {:keys [bind body]} :bind-and-body} cf
+        bind (parse-bind-vec &env bind)
         k (parse-yarn-ref &env name)
         y (gensym)]
-    `(let [~y (yarn ~k ~bind ~@body)]
-       ~(impl/gen-reg-yarn-method k y dispatch-value)
+    `(let [~y (yarn ~k ~bind ~@body)
+           x# ~(impl/gen-reg-yarn-method k y dispatch-value)]
        (register-yarn (get *registry* ~k) false)  ;; reregister to trigger cycle-check
-       )))
+       x#)))
 
 
 (defmacro yarn-prefer-method
