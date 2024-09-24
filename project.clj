@@ -24,6 +24,7 @@
                                   [com.clojure-goes-fast/clj-async-profiler "1.2.2"]
                                   [prismatic/plumbing "0.6.0"]
                                   [funcool/promesa "11.0.678"]
+                                  [clj-kondo/clj-kondo "LATEST"]
                                   ]
                    :jvm-opts ["-Djdk.attach.allowAttachSelf" "-XX:+UnlockDiagnosticVMOptions" "-XX:+DebugNonSafepoints"]
                    :global-vars {*warn-on-reflection* true}}}
