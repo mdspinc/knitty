@@ -13,11 +13,11 @@
   false)
 
 (def ^:dynamic ^java.util.concurrent.Executor *executor*
-    (impl/create-fjp
-     {:parallelism (.availableProcessors (Runtime/getRuntime))
-      :factory-prefix "knitty-fjp"
-      :exception-handler (fn [t e] (log/errorf e "uncaught exception in %s" t))
-      :async-mode true}))
+  (impl/create-fjp
+   {:parallelism (.availableProcessors (Runtime/getRuntime))
+    :factory-prefix "knitty-fjp"
+    :exception-handler (fn [t e] (log/errorf e "uncaught exception in %s" t))
+    :async-mode true}))
 
 
 (defn enable-tracing!
@@ -68,8 +68,7 @@
 (s/def ::yarn-binding-case-map
   (s/or
    :map (s/map-of any? ::yarn-ref)
-   :seq (s/coll-of ::yarn-ref)
-  ))
+   :seq (s/coll-of ::yarn-ref)))
 
 (s/def ::yarn-bindind-var
   (s/and symbol? valid-bind-type?))
@@ -124,7 +123,7 @@
 
 
 (defn bind-yarn
-  "Redeclares yarn as symlink to yarn-target."
+  "Redeclares yarn as a symlink to the yarn-target."
   [yarn yarn-target]
   {:pre [(qualified-keyword? yarn)
          (qualified-keyword? yarn-target)]}
@@ -325,23 +324,21 @@
   (cond
     (instance? knitty.javaimpl.YankResult yr) (.toAssociative ^knitty.javaimpl.YankResult yr)
     (map? yr) yr
-
     :else (throw (ex-info "invalid yank-result" {:knitty/invalid-result yr}))))
 
 
-(defn yank
+(defmacro yank
   "Computes and adds missing nodes into 'inputs' map. Always returns deferred."
   ([inputs yarns]
-   (yank inputs yarns nil))
+   `(yank ~inputs ~yarns nil))
   ([inputs yarns & {:as opts}]
-   (let [r (yank* inputs yarns opts)]
-     (-> r
-         (kd/bind yr->map)
-         (kd/revoke-to r)
-         ))))
+   `(let [r# (yank* ~inputs ~yarns ~opts)]
+      (-> r#
+          (kd/bind yr->map)
+          (kd/revoke-to r#)))))
 
 
-(defn yank1
+(defmacro yank1
   "Computes and returns a single node.
    Intended to be used in REPL sessions where there is needed to pick just a single yarn value.
    Tracing is disabled, use wrapped `yank*` if you need it.
@@ -351,14 +348,17 @@
        (md/chain (yank inputs [::yarn-key]) ::yarn-key)
    "
   ([inputs yarns]
-   (yank1 inputs yarns nil))
+   `(yank1 ~inputs ~yarns nil))
   ([inputs yarn & {:as opts}]
-   (let [k (if (keyword? yarn) yarn (impl/yarn-key yarn))
-         r (yank* inputs [yarn] (assoc opts :tracing false))]
-     (-> r
-         (kd/bind k)
-         (kd/revoke-to r)
-         ))))
+   (let [y (gensym)
+         k (if (keyword? yarn) y `(if (keyword? ~y) ~y (impl/yarn-key ~y)))
+         opts (assoc opts :tracing false)]
+     `(let [~y ~yarn
+            k# ~k
+            r# (yank* ~inputs [~y] ~opts)]
+        (-> r#
+            (kd/bind k#)
+            (kd/revoke-to r#))))))
 
 
 (defn yank-error?
