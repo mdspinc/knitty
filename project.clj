@@ -21,10 +21,10 @@
   :source-paths ["src"]
 
   :profiles {:dev {:dependencies [[criterium/criterium "0.4.6"]
-                                  [com.clojure-goes-fast/clj-async-profiler "1.2.2"]
+                                  [com.clojure-goes-fast/clj-async-profiler "1.3.1"]
                                   [prismatic/plumbing "0.6.0"]
                                   [funcool/promesa "11.0.678"]
-                                  [clj-kondo/clj-kondo "LATEST"]
+                                  [clj-kondo/clj-kondo "2024.08.29"]
                                   ]
                    :jvm-opts ["-Djdk.attach.allowAttachSelf" "-XX:+UnlockDiagnosticVMOptions" "-XX:+DebugNonSafepoints"]
                    :global-vars {*warn-on-reflection* true}}}
