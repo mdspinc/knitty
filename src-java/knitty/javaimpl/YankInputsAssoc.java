@@ -81,4 +81,9 @@ final class YankInputsAssoc extends YankInputs {
     public ISeq seq() {
         return wrapped.seq();
     }
+
+    @Override
+    public Object unwrapInputs() {
+        return wrapped;
+    }
 }

@@ -191,7 +191,7 @@ public final class YankCtx {
 
         exdata = exdata
             .assoc(KNITTY_FAILED_POY, this.finish())
-            .assoc(KNITTY_YANKED_POY, inputs)
+            .assoc(KNITTY_YANKED_POY, inputs.unwrapInputs())
             .assoc(KNITTY_YANKED_YARNS, yarns)
             .assoc(KNITTY_YANK_ERROR, Boolean.TRUE);
 

@@ -125,7 +125,7 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
         static {
             try {
                 MethodHandles.Lookup l = MethodHandles.lookup();
-                NEXT = l.findVarHandle(YankResultSeq.class, "_next", YankResultSeq.class);
+                NEXT = l.findVarHandle(YankResultSeq.class, "_next", ISeq.class);
             } catch (ReflectiveOperationException var1) {
                 throw new ExceptionInInitializerError(var1);
             }
@@ -134,7 +134,7 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
         private final KVCons kvcons;
         private final MapEntry value;
         private final Seqable tail;
-        private ISeq _next;
+        ISeq _next;
 
         YankResultSeq(KVCons kvcons, IPersistentMap meta, Seqable tail) {
             super(meta);
@@ -252,5 +252,10 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
     @Override
     public Object valAt(Object key) {
         return valAt(key, null);
+    }
+
+    @Override
+    public Object unwrapInputs() {
+        return this;
     }
 }
