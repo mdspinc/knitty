@@ -528,6 +528,37 @@
 
 ;; ==
 
+(defmacro impl-iterate-while*
+  [[_ [fx] & f]
+   [_ [px] & p]
+   x]
+  `(let [d# (create)
+         ef# (fn ~'on-err [e#] (error! d# e#))]
+    (on
+     ~x
+     (fn iter-step# [x#]
+       (when-not (.realized d#)
+         (cond
+
+           (deferred? x#)
+           (let [y# (KDeferred/wrapDeferred x#)]
+             (when-not (.listen0 y# iter-step# ef#)
+               (recur (try (.get y#) (catch Throwable t# (ef# t#))))))
+
+           (let [~px x#] ~@p)
+           (let [y# (unwrap1 (try (let [~fx x#] ~@f) (catch Throwable t# (wrap-err t#))))]
+             (if (deferred? y#)
+               (let [y# (KDeferred/wrapDeferred y#)]
+                 (when-not (.listen0 y# iter-step# ef#)
+                   (recur (try (.get y#) (catch Throwable t# (ef# t#))))))
+               (recur y#)))
+
+           :else
+           (success! d# x#))))
+     ef#)
+    d#))
+
+
 (defn iterate-while
   "Iteratively run 1-arg function `f` with initial value `x`.
    After each call check result of calling `p` and stop loop when result if falsy.
@@ -535,31 +566,7 @@
    Predicate `p` should always return synchonous values howerver.
    This is low-level routine, prefer `reduce` `while` or `loop`."
   [f p x]
-  (let [d (create)
-        ef (fn on-err [e] (error! d e))]
-    (on
-     x
-     (fn iter-step [x]
-       (when-not (.realized d)
-         (cond
-
-           (deferred? x)
-           (let [y (KDeferred/wrapDeferred x)]
-             (when-not (.listen0 y iter-step ef)
-               (recur (try (.get y) (catch Throwable t (ef t))))))
-
-           (p x)
-           (let [y (unwrap1 (try (f x) (catch Throwable t (wrap-err t))))]
-             (if (deferred? y)
-               (let [y (KDeferred/wrapDeferred y)]
-                 (when-not (.listen0 y iter-step ef)
-                   (recur (try (.get y) (catch Throwable t (ef t))))))
-               (recur y)))
-
-           :else
-           (success! d x))))
-     ef)
-    d))
+  (impl-iterate-while* (fn [x] (f x)) (fn [x] (p x)) x))
 
 
 (deftype DRecur [args])
@@ -584,9 +591,9 @@
   (let [bs (partition 2 bindings)
         syms (map first bs)
         init (map second bs)]
-    `(iterate-while
-      (fn ~'loop-step [r#] (let [[~@syms] (.-args ^DRecur r#)] ~@body))
-      (fn ~'loop-done? [r#] (instance? DRecur r#))
+    `(impl-iterate-while*
+      (fn [r#] (let [[~@syms] (.-args ^DRecur r#)] ~@body))
+      (fn [r#] (instance? DRecur r#))
       (knitty.deferred/recur ~@init))))
 
 (defmacro while
@@ -594,27 +601,27 @@
    Both test and body experssion may result into deferred.
    Returns deferred realized to `nil`."
   ([body]
-   `(iterate-while
-     (fn ~'while-step [x#] (when x# ~body))
+   `(impl-iterate-while*
+     (fn [x#] (when x# ~body))
      identity
      true))
   ([pred & body]
-   `(iterate-while
-     (fn ~'while-step [x#]
+   `(impl-iterate-while*
+     (fn [x#]
        (when x#
          (bind ~pred
                (fn ~'while-body [c#] (when c# (bind (do ~@body)
                                                     (constantly true)))))))
-     identity
+     (fn [x#] x#)
      true)))
 
 (defn chain*
   "Composes functions over the value `x`, returning a deferred containing the result."
   [x fs]
   (let [it (iterator fs)]
-    (iterate-while
-     (fn step [a] (bind a (.next it)))
-     (fn done? [_] (.hasNext it))
+    (impl-iterate-while*
+     (fn [a] (bind a (.next it)))
+     (fn [_] (.hasNext it))
      x)))
 
 (defn reduce
@@ -623,9 +630,9 @@
   [f initd xs]
   (bind
    (let [it (iterator xs)]
-     (iterate-while
-      (fn step [a] (bind (.next it) #(f a %)))
-      (fn done? [a] (and (not (reduced? a)) (.hasNext it)))
+     (impl-iterate-while*
+      (fn [a] (bind (.next it) #(f a %)))
+      (fn [a] (and (not (reduced? a)) (.hasNext it)))
       initd))
    unreduced))
 
@@ -634,9 +641,9 @@
    Fn `f` may return deferreds."
   [f xs]
   (let [it (iterator xs)]
-    (iterate-while
-     (fn step [_] (bind (.next it) f))
-     (fn done? [_] (.hasNext it))
+    (impl-iterate-while*
+     (fn [_] (bind (.next it) f))
+     (fn [_] (.hasNext it))
      nil)))
 
 ;; ==
