@@ -3,23 +3,16 @@ package knitty.javaimpl;
 import java.util.Objects;
 
 import clojure.lang.IFn;
-import clojure.lang.Var;
 import manifold.deferred.IDeferredListener;
 
 abstract class AListener {
 
     AListener next;
-    final Object frame;
 
     public abstract void success(Object x);
     public abstract void error(Object e);
 
     AListener() {
-        this.frame = Var.cloneThreadBindingFrame();
-    }
-
-    protected final void resetFrame() {
-        Var.resetThreadBindingFrame(frame);
     }
 
     static final class Dl extends AListener {

@@ -19,7 +19,6 @@ import clojure.lang.Keyword;
 import clojure.lang.PersistentArrayMap;
 import clojure.lang.RT;
 import clojure.lang.Util;
-import clojure.lang.Var;
 
 import manifold.deferred.IDeferred;
 import manifold.deferred.IDeferredListener;
@@ -161,7 +160,6 @@ public final class KDeferred
             }
             this.executor.execute(() -> {
                 Object t;
-                this.resetFrame();
                 try {
                     t = valFn.invoke(x);
                 } catch (Throwable e) {
@@ -182,7 +180,6 @@ public final class KDeferred
                 return;
             }
             this.executor.execute(() -> {
-                this.resetFrame();
                 if (errFn == null) {
                     dest.error(e, token);
                 } else {
@@ -459,18 +456,12 @@ public final class KDeferred
         STATE.setRelease(this, STATE_SUCC);
 
         if (node != null) {
-            Object frame = Var.getThreadBindingFrame();
-            try {
-                for (; node != null; node = node.next) {
-                    try {
-                        node.resetFrame();
-                        node.success(x);
-                    } catch (Throwable e) {
-                        logError(e, String.format("error in deferred success-handler: %s", node));
-                    }
+            for (; node != null; node = node.next) {
+                try {
+                    node.success(x);
+                } catch (Throwable e) {
+                    logError(e, String.format("error in deferred success-handler: %s", node));
                 }
-            } finally {
-                Var.resetThreadBindingFrame(frame);
             }
         }
 
@@ -530,18 +521,12 @@ public final class KDeferred
 
         if (node != null) {
             this.consumeError();
-            Object frame = Var.getThreadBindingFrame();
-            try {
-                for (; node != null; node = node.next) {
-                    try {
-                        node.resetFrame();
-                        node.error(x);
-                    } catch (Throwable e) {
-                        logError(e, String.format("error in deferred error-handler: %s", node));
-                    }
+            for (; node != null; node = node.next) {
+                try {
+                    node.error(x);
+                } catch (Throwable e) {
+                    logError(e, String.format("error in deferred error-handler: %s", node));
                 }
-            } finally {
-                Var.resetThreadBindingFrame(frame);
             }
         }
 
@@ -635,17 +620,11 @@ public final class KDeferred
         if (this.listen0(ls)) {
             return;
         }
-        Object frame = Var.getThreadBindingFrame();
-        try {
-            ls.resetFrame();
-            if (this.state() == STATE_SUCC) {
-                ls.success(value);
-            } else {
-                this.consumeError();
-                ls.error(value);
-            }
-        } finally {
-            Var.resetThreadBindingFrame(frame);
+        if (this.state() == STATE_SUCC) {
+            ls.success(value);
+        } else {
+            this.consumeError();
+            ls.error(value);
         }
     }
 
