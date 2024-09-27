@@ -150,10 +150,13 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
 
         @Override
         public ISeq next() {
-            if (((ISeq) NEXT.get(this)) == null) {
-                NEXT.compareAndSet(this, null, kvcons.next == KVCons.NIL ? tail.seq() : new YankResultSeq(kvcons.next, null, tail));
+            ISeq next = (ISeq) NEXT.getAcquire(this);
+            if (next == null) {
+                ISeq next1 = kvcons.next == KVCons.NIL ? tail.seq() : new YankResultSeq(kvcons.next, null, tail);
+                next = (ISeq) NEXT.compareAndExchangeRelease(this, next, next1);
+                return next == null ? next1 : next;
             }
-            return (ISeq) NEXT.get(this);
+            return next;
         }
 
         @Override
