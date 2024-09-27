@@ -259,10 +259,15 @@
          (assert (not (clojure.core/future-cancelled? f))))
 
   "
-  ([d cancel-fn] (revoke d cancel-fn nil))
+  {:inline (fn
+             ([d c] `(KDeferred/revoke ~d ~c nil))
+             ([d c e] `(KDeferred/revoke ~d ~c ~e)))
+   :inline-arities #{2 3}}
+  ([d cancel-fn] (KDeferred/revoke d cancel-fn nil))
   ([d cancel-fn err-handler] (KDeferred/revoke d cancel-fn err-handler)))
 
-(def ^:private revoke-to-error (knitty.javaimpl.RevokeException. "deferred is revoked by revoke-to"))
+(def ^:private revoke-to-error
+  (knitty.javaimpl.RevokeException. "deferred is revoked by revoke-to"))
 
 (defn revoke-to
   "Like `revoke`, but resolves `rd` with an exception instead of calling generic callback.
@@ -421,26 +426,25 @@
 
 ;; ==
 
-(defn- call-after-all'
+(defmacro call-after-all'
   [ds f]
-  (let [d (create)]
-    (kd-await!*
-     (fn on-await-iter
-       ([] (success! d (f)))
-       ([e] (error! d e)))
-     ds)
-    d))
+  `(let [d# (create)]
+     (kd-await!*
+      (fn ~'on-await-iter
+        ([] (success! d# ~f))
+        ([e#] (error! d# e#)))
+      ~ds)
+     d#))
 
 (defn zip*
   "Similar to `(apply zip vs)`, returns a seq instead of vector."
   ([vs] (call-after-all'
          vs
-         (fn []
-           (let [it (iterator vs)]
-             (iterator-seq
-              (reify java.util.Iterator
-                (hasNext [_] (.hasNext it))
-                (next [_] (unwrap1 (.next it)))))))))
+         (let [it (iterator vs)]
+           (iterator-seq
+            (reify java.util.Iterator
+              (hasNext [_] (.hasNext it))
+              (next [_] (unwrap1 (.next it))))))))
   ([a vs] (zip* (list* a vs)))
   ([a b vs] (zip* (list* a b vs)))
   ([a b c vs] (zip* (list* a b c vs)))
@@ -479,7 +483,7 @@
   ([a b c d e f g h i j k l m n o p & z]
    (bind
     (zip a b c d e f g h i j k l m n o p)
-    (fn on-await* [xg] (call-after-all' z #(into xg (map unwrap1) z))))))
+    (fn on-await-x [xg] (call-after-all' z (into xg (map unwrap1) z))))))
 
 
 (def ^:private ^java.util.Random alt-rnd
