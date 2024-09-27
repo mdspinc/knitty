@@ -5,6 +5,7 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
 
 import clojure.lang.AFn;
+import clojure.lang.Var;
 
 public abstract class ExecutionPool {
 
@@ -13,24 +14,35 @@ public abstract class ExecutionPool {
 
     private ExecutionPool() {}
 
-    public static ExecutionPool adapt(Executor executor) {
+    public static ExecutionPool adapt(Executor executor, Object bframe) {
         if (executor instanceof ForkJoinPool) {
-            return new ForkJoinPoolPool((ForkJoinPool) executor);
+            return new ForkJoinPoolPool((ForkJoinPool) executor, bframe);
         } else if (executor != null) {
-            return new ExecutorPool(executor);
+            return new ExecutorPool(executor, bframe);
         } else {
-            return new DirectCallPool();
+            return new DirectCallPool(bframe);
         }
     }
 
     static final class DirectCallPool extends ExecutionPool {
+
+        private final Object bframe;
+
+        public DirectCallPool(Object bframe) {
+            this.bframe = bframe;
+        }
 
         public void fork(AFn fn) {
             fn.invoke();
         }
 
         public void run(AFn fn) {
-            fn.invoke();
+            Object oldf = pushBFrame(bframe);
+            try {
+                fn.invoke();
+            } finally {
+                popBFrame(oldf);
+            }
         }
     }
 
@@ -44,16 +56,24 @@ public abstract class ExecutionPool {
             }
 
             public void run() {
-                insideExecutor.set(Boolean.TRUE);
-                fn.invoke();
+                insideExecutor.set(true);
+                Object oldf = pushBFrame(bframe);
+                try {
+                    fn.invoke();
+                } finally {
+                    popBFrame(oldf);
+                    insideExecutor.set(false);
+                }
             }
         }
 
         private final Executor executor;
+        private final Object bframe;
         private final ThreadLocal<Boolean> insideExecutor = new ThreadLocal<>();
 
-        public ExecutorPool(Executor executor) {
+        public ExecutorPool(Executor executor, Object bframe) {
             this.executor = executor;
+            this.bframe = bframe;
         }
 
         public void fork(AFn fn) {
@@ -80,10 +100,13 @@ public abstract class ExecutionPool {
             }
 
             protected boolean exec() {
+                Object oldf = pushBFrame(bframe);
                 try {
                     fn.invoke();
                 } catch (Throwable e) {
                     KDeferred.logError(e, "uncaugh exception in fj-task");
+                } finally {
+                    popBFrame(oldf);
                 }
                 return true;
             }
@@ -106,9 +129,11 @@ public abstract class ExecutionPool {
         }
 
         private final ForkJoinPool pool;
+        private final Object bframe;
 
-        public ForkJoinPoolPool(ForkJoinPool pool ) {
+        public ForkJoinPoolPool(ForkJoinPool pool, Object bframe) {
             this.pool = pool;
+            this.bframe = bframe;
         }
 
         public void fork(AFn fn) {
@@ -118,6 +143,20 @@ public abstract class ExecutionPool {
         public void run(AFn fn) {
             this.pool.execute(new FnForkTask(fn));
         }
+    }
 
+    private static Object pushBFrame(Object bframe) {
+        if (bframe == null) {
+            return null;
+        }
+        Object frame = Var.getThreadBindingFrame();
+        Var.resetThreadBindingFrame(bframe);
+        return frame;
+    }
+
+    private static void popBFrame(Object bframe) {
+        if (bframe != null) {
+            Var.resetThreadBindingFrame(bframe);
+        }
     }
 }

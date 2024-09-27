@@ -119,8 +119,8 @@ public final class YankCtx {
         }
     }
 
-    public static YankCtx create(Object inputs, YarnProvider yp, Executor executor, Object tracer, boolean preloadInputs) {
-        ExecutionPool pool = ExecutionPool.adapt(executor);
+    public static YankCtx create(Object inputs, YarnProvider yp, Executor executor, Object tracer, boolean preloadInputs, Object bframe) {
+        ExecutionPool pool = ExecutionPool.adapt(executor, bframe);
         YankInputs yinputs;
 
         if (inputs instanceof YankInputs) {

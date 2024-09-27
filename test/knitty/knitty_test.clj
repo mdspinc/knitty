@@ -2,11 +2,16 @@
   {:clj-kondo/ignore [:inline-def]}
   (:require [clojure.spec.alpha :as s]
             [clojure.test :as t :refer [deftest is testing]]
-            [knitty.core :as knitty
-             :refer [defyarn yank yarn]]
-            [knitty.test-util :refer [do-defs]]
+            [knitty.core :as knitty :refer [defyarn yank yarn]]
+            [knitty.deferred :as kd]
+            [knitty.test-util :as tu :refer [do-defs]]
             [manifold.deferred :as md]
             [manifold.executor :as executor]))
+
+
+(t/use-fixtures :each
+  (t/join-fixtures
+   [(tu/reset-registry-fixture)]))
 
 
 (deftest smoke-test
@@ -258,6 +263,26 @@
 
    (is (= {::y1 1, ::y2 2, ::yx 1} @(yank {} [yx])))
    ))
+
+
+(deftest capture-bindings-test
+
+  (do-defs
+
+   (def ^:dynamic *dyn-var* 0)
+
+   (defyarn y1 {} (md/timeout! (md/deferred) 5 *dyn-var*))
+   (defyarn y2 {_ y1} (kd/future *dyn-var*))
+   (defyarn y3 {_ y2} (md/future *dyn-var*))
+   (defyarn y4 {_ y3} (md/->deferred (future-call #(do *dyn-var*))))
+   (defyarn y5 {_ y4} *dyn-var*)
+
+   (binding [*dyn-var* 1]
+     (is (= {y1 0, y2 0, y3 0, y4 0, y5 0} @(yank {} [y5] {:bindings false})))
+     (is (= {y1 1, y2 1, y3 1, y4 1, y5 1} @(yank {} [y5] {:bindings true})))
+     (is (= {y1 1, y2 1, y3 1, y4 1, y5 1} @(yank {} [y5] {}))))))
+
+
 
 
 (comment

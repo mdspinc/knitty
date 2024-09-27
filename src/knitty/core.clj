@@ -285,7 +285,7 @@
 
 
 (defmacro ^:private pick-opt [opts key default]
-  `(if-let [x# (~key ~opts)] x# ~default))
+  `(if-some [x# (find ~opts ~key)] (val x#) ~default))
 
 (defn yank*
   "Computes missing nodes. Always returns deferred resolved into YankResult.
@@ -296,9 +296,11 @@
    (let [registry (pick-opt opts :registry *registry*)
          executor (pick-opt opts :executor *executor*)
          preload  (pick-opt opts :preload false)
+         bindings (pick-opt opts :bindings true)
          tracing  (trace/if-tracing (pick-opt opts :tracing *tracing*))
          tracer (trace/if-tracing (when tracing (trace/create-tracer inputs yarns)))
-         ctx (knitty.javaimpl.YankCtx/create inputs registry executor tracer (boolean preload))
+         bframe (when bindings (clojure.lang.Var/cloneThreadBindingFrame))
+         ctx (knitty.javaimpl.YankCtx/create inputs registry executor tracer (boolean preload) bframe)
          r (.yank ctx yarns)]
      (trace/if-tracing
       (if tracer
