@@ -4,8 +4,7 @@
             [knitty.deferred :as kd]
             [manifold.debug :as debug]
             [manifold.deferred :as md]
-            [promesa.core :as pc])
-  (:import [java.util.concurrent Executor Executors]))
+            [promesa.core :as pc]))
 
 
 (set! *warn-on-reflection* true)
@@ -35,24 +34,27 @@
   `(pc/promise 0))
 
 
-(def ^:dynamic *ff-callbacks* nil)
+(def ^:private defer-callbacks (java.util.ArrayList. 128))
+(def ^:private defer-random (java.util.Random.))
 
 (defmacro with-defer [body]
-  `(let [ff-callbacks# (java.util.ArrayList.)]
+  `(let [^java.util.ArrayList dcs# defer-callbacks
+         ]
      (try
-      (binding [*ff-callbacks* ff-callbacks#] ~body)
-      (finally
-        (run! #(%) ff-callbacks#)))))
+       ~body
+       (finally
+         (dotimes [i# (.size dcs#)] ((.get dcs# i#)))
+         (.clear dcs#)))))
 
-(def ^:private ^java.util.Random dffr-rnd
-  (java.util.Random.))
 
 (defmacro defer! [callback]
-  `(let [^java.util.ArrayList cs# *ff-callbacks*
-         n# (.size cs#)]
-     (.add cs# (fn [] ~callback))
-     (java.util.Collections/swap cs# (.nextInt dffr-rnd (unchecked-inc-int n#)) n#)))
-
+  `(let [^java.util.ArrayList dcs# defer-callbacks
+         ^java.util.Random rnd# defer-random
+         n# (.size dcs#)]
+     (.add dcs# (fn [] ~callback))
+     (java.util.Collections/swap dcs#
+                                 (.nextInt rnd# (unchecked-inc-int n#))
+                                 n#)))
 
 (defmacro ff0 []
   `(let [d# (md/deferred nil)]
@@ -65,13 +67,13 @@
       (defer! (resolve# 0)))))
 
 
-
 (def always-false false)
 
 (defn incx [^long x]
   (when always-false (for [x x] (for [x x] (for [x x] (for [x x] (for [x x] x))))))
   (unchecked-inc x))
 
+;; ===
 
 (deftest ^:benchmark benchmark-chain
 
@@ -105,19 +107,6 @@
                @(with-defer (kd/bind-> (create-d) incx incx incx incx incx)))
         (bench :bind-x10
                @(with-defer (kd/bind-> (create-d) incx incx incx incx incx incx incx incx incx incx))))
-
-      (testing :knitty
-
-        (bench :chain-x1
-               @(with-defer (kd/chain* (create-d) [incx])))
-        (bench :chain-x2
-               @(with-defer (kd/chain* (create-d) [incx incx])))
-        (bench :chain-x3
-               @(with-defer (kd/chain* (create-d) [incx incx incx])))
-        (bench :chain-x5
-               @(with-defer (kd/chain* (create-d) [incx incx incx incx incx])))
-        (bench :chain-x10
-               @(with-defer (kd/chain* (create-d) [incx incx incx incx incx incx incx incx incx incx]))))
 
       (testing :promesa
 
@@ -165,6 +154,7 @@
                       x5 (incx x4)]
                      x5)))
 
+  #_{:clj-kondo/ignore [:unresolved-symbol]}
   (testing :promesa
     (bench :let-x3-sync
            @(pc/let* [x1 (d0)
@@ -221,7 +211,6 @@
     (bench :zip-v20 @(md/zip' 0 0 0 0 0 0 0 0 0 0
                               0 0 0 0 0 0 0 0 0 0)))
 
-
   (testing :knitty
     (bench :zip-v1 @(kd/zip 0))
     (bench :zip-v2 @(kd/zip 0 0))
@@ -269,31 +258,25 @@
     (bench :zip-50 (doall @(kd/zip* (repeat 50 (d0)))))
     (bench :zip-200 (doall @(kd/zip* (repeat 200 (d0))))))
 
-  (testing :knitty-kd
-    (bench :zip-50 (doall @(kd/zip* (repeat 50 (kd/wrap 0)))))
-    (bench :zip-200 (doall @(kd/zip* (repeat 200 (kd/wrap 0))))))
-
   (testing :promesa
     (bench :zip-50 (doall @(pc/all (repeat 50 (d0-pc)))))
     (bench :zip-200 (doall @(pc/all (repeat 200 (d0-pc))))))
-
   ;;
   )
 
 (deftest ^:benchmark benchmark-zip-list-async
 
   (testing :manifold
-    (bench :zip-50 (doall @(with-defer (apply md/zip' (vec (repeatedly 50 #(ff0)))))))
-    (bench :zip-200 (doall @(with-defer (apply md/zip' (vec (repeatedly 200 #(ff0))))))))
+    (bench :zip-50 (doall @(with-defer (apply md/zip' (doall (repeatedly 50 #(ff0)))))))
+    (bench :zip-200 (doall @(with-defer (apply md/zip' (doall (repeatedly 200 #(ff0))))))))
 
   (testing :knitty
-    (bench :zip-50 (doall @(with-defer (kd/zip* (vec (repeatedly 50 #(ff0)))))))
-    (bench :zip-200 (doall @(with-defer (kd/zip* (vec (repeatedly 200 #(ff0))))))))
+    (bench :zip-50 (doall @(with-defer (kd/zip* (doall (repeatedly 50 #(ff0)))))))
+    (bench :zip-200 (doall @(with-defer (kd/zip* (doall (repeatedly 200 #(ff0))))))))
 
   (testing :promesa
-    (bench :zip-50 (doall @(with-defer (pc/all (vec (repeatedly 50 #(ff0-pc)))))))
-    (bench :zip-200 (doall @(with-defer (pc/all (vec (repeatedly 200 #(ff0-pc))))))))
-
+    (bench :zip-50 (doall @(with-defer (pc/all (doall (repeatedly 50 #(ff0-pc)))))))
+    (bench :zip-200 (doall @(with-defer (pc/all (doall (repeatedly 200 #(ff0-pc))))))))
   ;;
   )
 
@@ -309,6 +292,10 @@
     (bench :alt-3 @(kd/alt (d0) (d0) (d0)))
     (bench :alt-10 @(kd/alt (d0) (d0) (d0) (d0) (d0) (d0) (d0) (d0) (d0) (d0))))
 
+  (testing :promesa
+    (bench :alt-2 @(pc/race [(d0-pc) (d0-pc)]))
+    (bench :alt-3 @(pc/race [(d0-pc) (d0-pc) (d0-pc)]))
+    (bench :alt-10 @(pc/race [(d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc)])))
   ;;
   )
 
@@ -324,7 +311,11 @@
     (bench :alt-3 @(with-defer (kd/alt (ff0) (ff0) (ff0))))
     (bench :alt-10 @(with-defer (kd/alt (ff0) (ff0) (ff0) (ff0) (ff0) (ff0) (ff0) (ff0) (ff0) (ff0)))))
 
-   ;;
+  (testing :promesa
+    (bench :alt-2 @(with-defer (pc/race [(ff0-pc) (ff0-pc)])))
+    (bench :alt-3 @(with-defer (pc/race [(ff0-pc) (ff0-pc) (ff0-pc)])))
+    (bench :alt-10 @(with-defer (pc/race [(ff0-pc) (ff0-pc) (ff0-pc) (ff0-pc) (ff0-pc) (ff0-pc) (ff0-pc) (ff0-pc) (ff0-pc) (ff0-pc)]))))
+  ;;
   )
 
 (deftest ^:benchmark benchmark-loop-fut
@@ -338,37 +329,33 @@
                  (if (< x 100)
                    (md/recur (md/future (incx x)))
                    x))))))
-
-  (testing :knitty-loop
-    (bench :loop100
-           @(kd/loop [x (md/future 0)]
-              (if (< x 100)
-                (kd/recur (md/future (incx x)))
-                x))))
-
-  (testing :knitty-reduce
-    (bench :loop100
-           @(kd/reduce
-             (fn [x _] (if (< x 100) (md/future (incx x)) (reduced x)))
-             (md/future 0)
-             (range))))
-
-  (testing :knitty-iterate
-    (bench :loop100
-           @(kd/iterate-while
-             (fn [x] (md/future (incx x)))
-             (fn [x] (< x 100))
-             (md/future 0))))
-
+  #_{:clj-kondo/ignore [:unresolved-symbol]}
   (testing :promesa
     (bench :loop100
-           @(pc/loop [x (pc/future 0)]
-              (if (< x 100)
-                (pc/recur (pc/future (incx x)))
-                x))))
-
+           (pc/loop [x (pc/future 0)]
+             (if (< x 100)
+               (pc/recur (pc/future (incx x)))
+               x))))
   ;;
-  )
+  (testing :knitty
+    (testing :loop
+      (bench :loop100
+             @(kd/loop [x (md/future 0)]
+                (if (< x 100)
+                  (kd/recur (md/future (incx x)))
+                  x))))
+    #_(testing :reduce
+        (bench :loop100
+               @(kd/reduce
+                 (fn [x _] (if (< x 100) (md/future (incx x)) (reduced x)))
+                 (md/future 0)
+                 (range))))
+    #_(testing :iterate
+        (bench :loop100
+               @(kd/iterate-while
+                 (fn [x] (md/future (incx x)))
+                 (fn [x] (< x 100))
+                 (md/future 0))))))
 
 (deftest ^:benchmark bench-deferred
 
@@ -411,19 +398,5 @@
                  (md/success! d 1)
                  @d))))))
 
-
 (comment
-
-  (require '[clj-async-profiler.core :as prof])
-
-  (prof/serve-files 8888)
-
-  (dotimes [_ 1000000]
-    (doall @(kd/zip* (repeat 1000 (d0)))))
-
-  (prof/profile
-   (dotimes [_ 10000000]
-     (doall @(kd/zip* (repeat 100 (d0))))))
-
-
-  (+ 1 2))
+  (clojure.test/test-ns *ns*))
