@@ -7,7 +7,6 @@
                  [manifold/manifold "0.4.3"]
                  [org.hdrhistogram/HdrHistogram "2.2.2"]
                  [macroz/tangle "0.2.2"]
-                 [org.clojure/algo.monads "0.2.0"]
                  ]
 
   :plugins [[lein-aot-filter "0.1.0"]

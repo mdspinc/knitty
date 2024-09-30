@@ -3,15 +3,12 @@
 
 (ns knitty.deferred
   (:refer-clojure :exclude [future future-call run! while reduce loop])
-  (:require [clojure.algo.monads :as m]
-            [clojure.core :as c]
+  (:require [clojure.core :as c]
             [clojure.tools.logging :as log]
-            [clojure.tools.macro :refer [with-symbol-macros]]
             [manifold.deferred :as md])
   (:import [java.util.concurrent Executor]
            [knitty.javaimpl KAwaiter KDeferred]
            [manifold.deferred IDeferred IMutableDeferred]))
-
 
 (set! *warn-on-reflection* true)
 (set! *unchecked-math* :warn-on-boxed)
@@ -310,7 +307,7 @@
 (defn join
   "Coerce 'deferred with deferred value' to deferred with plain value.
 
-       @(join (future (future (future 1))))  ;; => 1
+       @(join (kd/future (kd/future (kd/future 1))))  ;; => 1
    "
   [d]
   (cond
@@ -322,42 +319,29 @@
 
 ;; ==
 
-(def ^{:doc "deferred realized with `nil`"}
-  anil
-  (wrap-val nil))
-
-#_{:clj-kondo/ignore [:unresolved-symbol]}
-(m/defmonad deferred-m
-  "Deferred monad. Defines `m-zero` as nil."
-  [m-zero anil
-   m-bind bind
-   m-result wrap])
-
-
-(defmacro with-monad-deferred
-  "Run code under deferred-monad using `clojure.algo.monads`."
-  [& exprs]
-  `(let [~'m-bind   bind
-         ~'m-result wrap
-         ~'m-zero   anil]
-     (with-symbol-macros ~@exprs)))
-
-
 (defmacro letm
   "Monadic let. Unwraps deferreds during binding, returning result as deferred.
    Unlike `manifold.deferred/let-flow` all steps are resolved in sequential order,
    so use `zip` if parallel execution is required.
-   Steps list can contain :let and :when special forms. See `clojure.algo.monads/domonad` for details.
+   Steps list can contain :let and :when special forms.
 
-    (letm [[x y] (zip (future (rand) (future (rand)))
+    (letm [[x y] (zip (kd/future (rand) (kd/future (rand)))
            :when (< x y)  ;; whole letm returns nil when condition is not met
            :let [d x]     ;; bind without unwrapping
-           z (future (* x y))]
+           z (kd/future (* x y))]
       (vector x y z @d))
    "
   [binds & body]
-  `(with-monad-deferred
-     (m/domonad ~binds (do ~@body))))
+  {:pre [(vector? binds)
+         (even? (count binds))]}
+  (if (seq binds)
+    (let [[x y & rest-binds] binds
+          rest-binds (vec rest-binds)]
+      (cond
+        (= :when x) `(if ~y (letm ~rest-binds ~@body) (wrap-val nil))
+        (= :let x)  `(let ~y (letm ~rest-binds ~@body))
+        :else       `(bind ~y (fn [~x] (letm ~rest-binds ~@body)))))
+    `(wrap (do ~@body))))
 
 ;; ==
 
@@ -418,8 +402,11 @@
                  ~df))
           (ls#))))))
 
-(definline kd-await!*
-  "Like `kd-await!` but accept iterable collection of deferreds."
+(defmacro await! [ls & ds]
+    `(kd-await! ~ls ~@(map #(do `(wrap ~%)) ds)))
+
+(definline await!*
+  "Like `await!` but accept iterable collection of deferreds."
   [ls ds]
   `(KAwaiter/awaitIter ~ls (iterator ~ds)))
 
@@ -429,7 +416,7 @@
 (defmacro call-after-all'
   [ds f]
   `(let [d# (create)]
-     (kd-await!*
+     (await!*
       (fn ~'on-await-iter
         ([] (success! d# ~f))
         ([e#] (error! d# e#)))
@@ -461,6 +448,15 @@
         ~@xs)
        res#)))
 
+(defmacro ^:private iter-full-reduce
+  [[_fn [a x] & f] val coll]
+  `(c/let [^java.lang.Iterable coll# ~coll
+           ^java.util.Iterator iter# (.iterator coll#)]
+     (c/loop [ret# ~val]
+       (if (.hasNext iter#)
+         (recur (c/let [~a ret#, ~x (.next iter#)] ~@f))
+         ret#))))
+
 (defn zip
   "Takes several values and returns a deferred that will yield vector of realized values."
   ([] (wrap-val []))
@@ -482,8 +478,20 @@
   ([a b c d e f g h i j k l m n o p] (zip-inline a b c d e f g h i j k l m n o p))
   ([a b c d e f g h i j k l m n o p & z]
    (bind
-    (zip a b c d e f g h i j k l m n o p)
-    (fn on-await-x [xg] (call-after-all' z (into xg (map unwrap1) z))))))
+    (zip-inline a b c d e f g h i j k l m n o p)
+    (fn on-await-x [xg]
+      (let [z (iter-full-reduce
+               (fn [^java.util.ArrayList a x] (doto a (.add (wrap x))))
+               (java.util.ArrayList. (count z))
+               z)]
+        (call-after-all'
+         z
+         (persistent!
+          (iter-full-reduce
+           (fn [a x] (conj! a (kd-get x)))
+           (transient xg)
+           z))))
+        ))))
 
 
 (def ^:private ^java.util.Random alt-rnd
@@ -519,7 +527,7 @@
    (doto (create) (alt-in a b c d)))
   ([a b c d & vs]
    (let [^KDeferred res (create)]
-     (clojure.core/reduce
+     (c/reduce
       (fn [_ x] (.chain res x nil) (when (.realized res) (reduced nil)))
       (doto (java.util.ArrayList. (+ (count vs) 4))
         (.addAll ^clojure.lang.PersistentList vs)
