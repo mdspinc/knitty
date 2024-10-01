@@ -285,6 +285,43 @@
   ;;
   )
 
+(deftest ^:benchmark benchmark-loop
+
+  (testing :manifold
+    (bench :loop100
+           @(tu/with-defer
+              (md/loop [x (ff 0)]
+                (md/chain'
+                 x
+                 (fn [x]
+                   (if (< x 1000)
+                     (md/recur (ff (ninl-inc x)))
+                     x)))))))
+
+  (testing :knitty
+    (testing :loop
+      (bench :loop100
+             @(tu/with-defer
+                (kd/loop [x (ff 0)]
+                  (if (< x 1000)
+                    (kd/recur (ff (ninl-inc x)))
+                    x)))))
+    (testing :reduce
+      (bench :loop100
+             @(tu/with-defer
+                (kd/reduce
+                 (fn [x _] (if (< x 1000) (ff (ninl-inc x)) (reduced x)))
+                 (ff 0)
+                 (range)))))
+    (testing :iterate
+      (bench :loop100
+             @(tu/with-defer
+                (kd/iterate-while
+                 (fn [x] (ff (ninl-inc x)))
+                 (fn [x] (< x 1000))
+                 (ff 0))))))
+    ;;
+  )
 
 (deftest ^:benchmark benchmark-loop-fut
 

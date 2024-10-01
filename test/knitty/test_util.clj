@@ -194,26 +194,34 @@
 
 
 
-(def defer-callbacks (java.util.ArrayList. 128))
+(def defer-callbacks (java.util.concurrent.atomic.AtomicReference.))
 (def defer-random (java.util.Random.))
 
+
 (defmacro with-defer [body]
-  `(let [^java.util.ArrayList dcs# defer-callbacks]
+  `(let [^java.util.concurrent.atomic.AtomicReference dcs# defer-callbacks]
      (try
+       (.set dcs# (java.util.ArrayList.))
        ~body
        (finally
-         (dotimes [i# (.size dcs#)] ((.get dcs# i#)))
-         (.clear dcs#)))))
+         (loop []
+           (let [^java.util.ArrayList xxs# (.get dcs#)]
+             (when (not (.isEmpty xxs#))
+               (.set dcs# (java.util.ArrayList.))
+               (dotimes [i# (.size xxs#)] ((.get xxs# i#)))
+               (recur))))))))
 
 
 (defmacro defer! [callback]
-  `(let [^java.util.ArrayList dcs# defer-callbacks
+  `(let [^java.util.concurrent.atomic.AtomicReference dcs# defer-callbacks
+         ^java.util.ArrayList xxs# (.get dcs#)
          ^java.util.Random rnd# defer-random
-         n# (.size dcs#)]
-     (.add dcs# (fn [] ~callback))
-     (java.util.Collections/swap dcs#
+         n# (.size xxs#)]
+     (.add xxs# (fn [] ~callback))
+     (java.util.Collections/swap xxs#
                                  (.nextInt rnd# (unchecked-inc-int n#))
                                  n#)))
+
 
 (def always-false false)
 
