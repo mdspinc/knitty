@@ -11,15 +11,6 @@
 (set! *unchecked-math* true)
 
 
-(defn disable-manifold-leak-detection-fixture
-  []
-  (fn [t]
-    (let [e debug/*dropped-error-logging-enabled?*]
-      (debug/disable-dropped-error-logging!)
-      (try (t)
-           (finally
-             (.bindRoot #'debug/*dropped-error-logging-enabled?* e))))))
-
 (t/use-fixtures :once
   (t/join-fixtures
    [(tracing-enabled-fixture false)
@@ -33,29 +24,6 @@
 (defmacro d0-pc []
   `(pc/promise 0))
 
-
-(def ^:private defer-callbacks (java.util.ArrayList. 128))
-(def ^:private defer-random (java.util.Random.))
-
-(defmacro with-defer [body]
-  `(let [^java.util.ArrayList dcs# defer-callbacks
-         ]
-     (try
-       ~body
-       (finally
-         (dotimes [i# (.size dcs#)] ((.get dcs# i#)))
-         (.clear dcs#)))))
-
-
-(defmacro defer! [callback]
-  `(let [^java.util.ArrayList dcs# defer-callbacks
-         ^java.util.Random rnd# defer-random
-         n# (.size dcs#)]
-     (.add dcs# (fn [] ~callback))
-     (java.util.Collections/swap dcs#
-                                 (.nextInt rnd# (unchecked-inc-int n#))
-                                 n#)))
-
 (defmacro ff0 []
   `(let [d# (md/deferred nil)]
      (defer! (md/success! d# 0))
@@ -65,13 +33,6 @@
   `(pc/promise
     (fn [resolve# _reject#]
       (defer! (resolve# 0)))))
-
-
-(def always-false false)
-
-(defn incx [^long x]
-  (when always-false (for [x x] (for [x x] (for [x x] (for [x x] (for [x x] x))))))
-  (unchecked-inc x))
 
 ;; ===
 
@@ -85,41 +46,41 @@
       (testing :manifold
 
         (bench :chain-x1
-               @(with-defer (md/chain' (create-d) incx)))
+               @(with-defer (md/chain' (create-d) ninl-inc)))
         (bench :chain-x2
-               @(with-defer (md/chain' (create-d) incx incx)))
+               @(with-defer (md/chain' (create-d) ninl-inc ninl-inc)))
         (bench :chain-x3
-               @(with-defer (md/chain' (create-d) incx incx incx)))
+               @(with-defer (md/chain' (create-d) ninl-inc ninl-inc ninl-inc)))
         (bench :chain-x5
-               @(with-defer (md/chain' (create-d) incx incx incx incx incx)))
+               @(with-defer (md/chain' (create-d) ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc)))
         (bench :chain-x10
-               @(with-defer (md/chain' (create-d) incx incx incx incx incx incx incx incx incx incx))))
+               @(with-defer (md/chain' (create-d) ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc))))
 
       (testing :knitty
 
         (bench :bind-x1
-               @(with-defer (kd/bind-> (create-d) incx)))
+               @(with-defer (kd/bind-> (create-d) ninl-inc)))
         (bench :bind-x2
-               @(with-defer (kd/bind-> (create-d) incx incx)))
+               @(with-defer (kd/bind-> (create-d) ninl-inc ninl-inc)))
         (bench :bind-x3
-               @(with-defer (kd/bind-> (create-d) incx incx incx)))
+               @(with-defer (kd/bind-> (create-d) ninl-inc ninl-inc ninl-inc)))
         (bench :bind-x5
-               @(with-defer (kd/bind-> (create-d) incx incx incx incx incx)))
+               @(with-defer (kd/bind-> (create-d) ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc)))
         (bench :bind-x10
-               @(with-defer (kd/bind-> (create-d) incx incx incx incx incx incx incx incx incx incx))))
+               @(with-defer (kd/bind-> (create-d) ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc))))
 
       (testing :promesa
 
         (bench :chain-x1
-               @(with-defer (pc/-> (create-d) incx)))
+               @(with-defer (pc/-> (create-d) ninl-inc)))
         (bench :chain-x2
-               @(with-defer (pc/-> (create-d) incx incx)))
+               @(with-defer (pc/-> (create-d) ninl-inc ninl-inc)))
         (bench :chain-x3
-               @(with-defer (pc/-> (create-d) incx incx incx)))
+               @(with-defer (pc/-> (create-d) ninl-inc ninl-inc ninl-inc)))
         (bench :chain-x5
-               @(with-defer (pc/-> (create-d) incx incx incx incx incx)))
+               @(with-defer (pc/-> (create-d) ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc)))
         (bench :chain-x10
-               @(with-defer (pc/-> (create-d) incx incx incx incx incx incx incx incx incx incx)))))
+               @(with-defer (pc/-> (create-d) ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc)))))
     ;;
     ))
 
@@ -129,44 +90,44 @@
   (testing :manifold
     (bench :let-x3-sync
            @(md/let-flow' [x1 (d0)
-                           x2 (incx x1)
+                           x2 (ninl-inc x1)
                            x3 (d0)]
                           (+ x1 x2 x3)))
     (bench :let-x5
            @(md/let-flow' [x1 (d0)
-                           x2 (incx x1)
+                           x2 (ninl-inc x1)
                            x3 (+ x2)
-                           x4 (incx x3)
-                           x5 (incx x4)]
+                           x4 (ninl-inc x3)
+                           x5 (ninl-inc x4)]
                           x5)))
 
   (testing :knitty
     (bench :let-x3-sync
            @(kd/letm [x1 (d0)
-                      x2 (incx x1)
+                      x2 (ninl-inc x1)
                       x3 (d0)]
                      (+ x1 x2 x3)))
     (bench :let-x5
            @(kd/letm [x1 (d0)
-                      x2 (incx x1)
+                      x2 (ninl-inc x1)
                       x3 (md/future x2)
-                      x4 (incx x3)
-                      x5 (incx x4)]
+                      x4 (ninl-inc x3)
+                      x5 (ninl-inc x4)]
                      x5)))
 
   #_{:clj-kondo/ignore [:unresolved-symbol]}
   (testing :promesa
     (bench :let-x3-sync
            @(pc/let* [x1 (d0)
-                      x2 (incx x1)
+                      x2 (ninl-inc x1)
                       x3 (d0)]
                      (+ x1 x2 x3)))
     (bench :let-x5
            @(pc/let* [x1 (d0)
-                      x2 (incx x1)
+                      x2 (ninl-inc x1)
                       x3 (md/future x2)
-                      x4 (incx x3)
-                      x5 (incx x4)]
+                      x4 (ninl-inc x3)
+                      x5 (ninl-inc x4)]
                      x5)))
   ;;
   )
@@ -327,14 +288,14 @@
                x
                (fn [x]
                  (if (< x 100)
-                   (md/recur (md/future (incx x)))
+                   (md/recur (md/future (ninl-inc x)))
                    x))))))
   #_{:clj-kondo/ignore [:unresolved-symbol]}
   (testing :promesa
     (bench :loop100
            (pc/loop [x (pc/future 0)]
              (if (< x 100)
-               (pc/recur (pc/future (incx x)))
+               (pc/recur (pc/future (ninl-inc x)))
                x))))
   ;;
   (testing :knitty
@@ -342,18 +303,18 @@
       (bench :loop100
              @(kd/loop [x (md/future 0)]
                 (if (< x 100)
-                  (kd/recur (md/future (incx x)))
+                  (kd/recur (md/future (ninl-inc x)))
                   x))))
     #_(testing :reduce
         (bench :loop100
                @(kd/reduce
-                 (fn [x _] (if (< x 100) (md/future (incx x)) (reduced x)))
+                 (fn [x _] (if (< x 100) (md/future (ninl-inc x)) (reduced x)))
                  (md/future 0)
                  (range))))
     #_(testing :iterate
         (bench :loop100
                @(kd/iterate-while
-                 (fn [x] (md/future (incx x)))
+                 (fn [x] (md/future (ninl-inc x)))
                  (fn [x] (< x 100))
                  (md/future 0))))))
 

@@ -7,7 +7,8 @@
             [clojure.string :as str]
             [clojure.test :as t]
             [criterium.core :as cc]
-            [manifold.deferred :as md])
+            [manifold.deferred :as md]
+            [manifold.debug :as md-debug])
   (:import [java.time LocalDateTime]
            [java.time.format DateTimeFormatter]))
 
@@ -44,8 +45,7 @@
   [& {:keys [prefix ids deps emit-body fork?]
       :or {prefix "node"
            emit-body (fn [i & _] i)
-           fork? `(constantly false)
-           }}]
+           fork? `(constantly false)}}]
   (let [g (ns-name *ns*)]
     `(compile-yarn-graph* '~g (name ~prefix) ~ids ~deps ~emit-body ~fork?)))
 
@@ -76,9 +76,9 @@
 
 (defn current-test-id []
   (str/join "/"
-   (concat
-    (reverse (map #(:name (meta %)) t/*testing-vars*))
-    (reverse t/*testing-contexts*))))
+            (concat
+             (reverse (map #(:name (meta %)) t/*testing-vars*))
+             (reverse t/*testing-contexts*))))
 
 
 (defn track-results [id r]
@@ -105,8 +105,7 @@
 
 
 (defn report-benchmark-results [testid rs]
-  (let [res-file (io/file (str bench-results-dir "/" testid ".edn"))
-        ]
+  (let [res-file (io/file (str bench-results-dir "/" testid ".edn"))]
     (io/make-parents res-file)
     (let [oldr (->>
                 (file-seq (io/file bench-results-dir))
@@ -132,8 +131,7 @@
                :time (fmt-time-value v)}
               (for [oid oids
                     :let [or (get oldm [oid k])]]
-                [oid (some-> or :mean first (/ v) fmt-ratio-diff)]
-                )))))))))
+                [oid (some-> or :mean first (/ v) fmt-ratio-diff)])))))))))
 
 
 (defn report-benchmark-fixture
@@ -166,7 +164,7 @@
    `do
    (for [b body]
      `(binding [*ns* ~*ns*]
-        (eval '~b)))))34
+        (eval '~b))))) 34
 
 
 (defmacro slow-future [delay & body]
@@ -183,3 +181,56 @@
         (t)
         (finally
           (alter-var-root #'knitty.core/*registry* (constantly r)))))))
+
+
+(defn disable-manifold-leak-detection-fixture
+  []
+  (fn [t]
+    (let [e md-debug/*dropped-error-logging-enabled?*]
+      (md-debug/disable-dropped-error-logging!)
+      (try (t)
+           (finally
+             (.bindRoot #'md-debug/*dropped-error-logging-enabled?* e))))))
+
+
+
+(def defer-callbacks (java.util.ArrayList. 128))
+(def defer-random (java.util.Random.))
+
+(defmacro with-defer [body]
+  `(let [^java.util.ArrayList dcs# defer-callbacks]
+     (try
+       ~body
+       (finally
+         (dotimes [i# (.size dcs#)] ((.get dcs# i#)))
+         (.clear dcs#)))))
+
+
+(defmacro defer! [callback]
+  `(let [^java.util.ArrayList dcs# defer-callbacks
+         ^java.util.Random rnd# defer-random
+         n# (.size dcs#)]
+     (.add dcs# (fn [] ~callback))
+     (java.util.Collections/swap dcs#
+                                 (.nextInt rnd# (unchecked-inc-int n#))
+                                 n#)))
+
+(def always-false false)
+
+(defmacro ninl [x]
+  `(if always-false
+     (for [x# (range 10)] (for [x# (range x#)] (for [x# (range x#)] (for [x# (range x#)] (for [x# (range x#)] x#)))))
+     ~x))
+
+(defn ninl-inc
+  ([]
+   (ninl 0))
+  ([^long x]
+   (ninl (unchecked-inc x))))
+
+(defmacro eval-template [emit-body vss-expr]
+  (let [emit-body (eval emit-body)
+        vss-expr (eval vss-expr)]
+    (list*
+     `do
+     (map #(apply emit-body %) vss-expr))))
