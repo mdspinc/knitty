@@ -1,6 +1,6 @@
 (ns knitty.bench.deferred
   (:require [clojure.test :as t :refer [deftest testing]]
-            [knitty.test-util :refer :all]
+            [knitty.test-util :as tu :refer :all]
             [knitty.deferred :as kd]
             [manifold.debug :as debug]
             [manifold.deferred :as md]
@@ -24,10 +24,13 @@
 (defmacro d0-pc []
   `(pc/promise 0))
 
-(defmacro ff0 []
+(defmacro ff [x]
   `(let [d# (md/deferred nil)]
-     (defer! (md/success! d# 0))
+     (defer! (md/success! d# ~x))
      d#))
+
+(defmacro ff0 []
+  `(ff 0))
 
 (defmacro ff0-pc []
   `(pc/promise
@@ -87,48 +90,51 @@
 
 (deftest ^:benchmark benchmark-let
 
-  (testing :manifold
-    (bench :let-x3-sync
-           @(md/let-flow' [x1 (d0)
-                           x2 (ninl-inc x1)
-                           x3 (d0)]
-                          (+ x1 x2 x3)))
-    (bench :let-x5
-           @(md/let-flow' [x1 (d0)
-                           x2 (ninl-inc x1)
-                           x3 (+ x2)
-                           x4 (ninl-inc x3)
-                           x5 (ninl-inc x4)]
-                          x5)))
+  (tu/with-md-executor
+    (testing :manifold
+      (bench :let-x3-sync
+             @(md/let-flow' [x1 (d0)
+                             x2 (ninl-inc x1)
+                             x3 (d0)]
+                            (+ x1 x2 x3)))
+      (bench :let-x5
+             @(md/let-flow' [x1 (d0)
+                             x2 (tu/md-future (ninl-inc x1))
+                             x3 (tu/md-future (ninl-inc x2))
+                             x4 (tu/md-future (ninl-inc x3))
+                             x5 (ninl-inc x4)]
+                            x5))))
 
-  (testing :knitty
-    (bench :let-x3-sync
-           @(kd/letm [x1 (d0)
-                      x2 (ninl-inc x1)
-                      x3 (d0)]
-                     (+ x1 x2 x3)))
-    (bench :let-x5
-           @(kd/letm [x1 (d0)
-                      x2 (ninl-inc x1)
-                      x3 (md/future x2)
-                      x4 (ninl-inc x3)
-                      x5 (ninl-inc x4)]
-                     x5)))
+  (tu/with-md-executor
+    (testing :knitty
+      (bench :let-x3-sync
+             @(kd/letm [x1 (d0)
+                        x2 (ninl-inc x1)
+                        x3 (d0)]
+                       (+ x1 x2 x3)))
+      (bench :let-x5
+             @(kd/letm [x1 (d0)
+                        x2 (tu/md-future (ninl-inc x1))
+                        x3 (tu/md-future (ninl-inc x2))
+                        x4 (tu/md-future (ninl-inc x3))
+                        x5 (ninl-inc x4)]
+                       x5))))
 
   #_{:clj-kondo/ignore [:unresolved-symbol]}
-  (testing :promesa
-    (bench :let-x3-sync
-           @(pc/let* [x1 (d0)
-                      x2 (ninl-inc x1)
-                      x3 (d0)]
-                     (+ x1 x2 x3)))
-    (bench :let-x5
-           @(pc/let* [x1 (d0)
-                      x2 (ninl-inc x1)
-                      x3 (md/future x2)
-                      x4 (ninl-inc x3)
-                      x5 (ninl-inc x4)]
-                     x5)))
+  (tu/with-md-executor
+    (testing :promesa
+      (bench :let-x3-sync
+             @(pc/let* [x1 (d0)
+                        x2 (ninl-inc x1)
+                        x3 (d0)]
+                       (+ x1 x2 x3)))
+      (bench :let-x5
+             @(pc/let* [x1 (d0)
+                        x2 (tu/md-future (ninl-inc x1))
+                        x3 (tu/md-future (ninl-inc x2))
+                        x4 (tu/md-future (ninl-inc x3))
+                        x5 (ninl-inc x4)]
+                       x5))))
   ;;
   )
 
@@ -279,44 +285,53 @@
   ;;
   )
 
+
 (deftest ^:benchmark benchmark-loop-fut
 
-  (testing :manifold
-    (bench :loop100
-           @(md/loop [x (md/future 0)]
-              (md/chain'
-               x
-               (fn [x]
-                 (if (< x 100)
-                   (md/recur (md/future (ninl-inc x)))
-                   x))))))
-  #_{:clj-kondo/ignore [:unresolved-symbol]}
-  (testing :promesa
-    (bench :loop100
-           (pc/loop [x (pc/future 0)]
-             (if (< x 100)
-               (pc/recur (pc/future (ninl-inc x)))
-               x))))
-  ;;
-  (testing :knitty
-    (testing :loop
+  (tu/with-md-executor
+    (testing :manifold
       (bench :loop100
-             @(kd/loop [x (md/future 0)]
-                (if (< x 100)
-                  (kd/recur (md/future (ninl-inc x)))
-                  x))))
-    #_(testing :reduce
-        (bench :loop100
-               @(kd/reduce
-                 (fn [x _] (if (< x 100) (md/future (ninl-inc x)) (reduced x)))
-                 (md/future 0)
-                 (range))))
-    #_(testing :iterate
-        (bench :loop100
-               @(kd/iterate-while
-                 (fn [x] (md/future (ninl-inc x)))
-                 (fn [x] (< x 100))
-                 (md/future 0))))))
+             @(md/loop [x (tu/md-future 0)]
+                (md/chain'
+                 x
+                 (fn [x]
+                   (if (< x 100)
+                     (md/recur (tu/md-future (ninl-inc x)))
+                     x)))))))
+
+    (testing :knitty
+        (tu/with-md-executor
+          (testing :loop
+            (bench :loop100
+                   @(kd/loop [x (tu/md-future 0)]
+                      (if (< x 100)
+                        (kd/recur (tu/md-future (ninl-inc x)))
+                        x)))))
+      (tu/with-md-executor
+        (testing :reduce
+          (bench :loop100
+                 @(kd/reduce
+                   (fn [x _] (if (< x 100) (tu/md-future (ninl-inc x)) (reduced x)))
+                   (tu/md-future 0)
+                   (range)))))
+      (tu/with-md-executor
+        (testing :iterate
+          (bench :loop100
+                 @(kd/iterate-while
+                   (fn [x] (tu/md-future (ninl-inc x)))
+                   (fn [x] (< x 100))
+                   (tu/md-future 0))))))
+
+  #_{:clj-kondo/ignore [:unresolved-symbol]}
+  (tu/with-md-executor
+    (testing :promesa
+      (bench :loop100
+             (pc/loop [x (pc/future 0)]
+               (if (< x 100)
+                 (pc/recur (pc/future (ninl-inc x)))
+                 x)))))
+    ;;
+  )
 
 (deftest ^:benchmark bench-deferred
 

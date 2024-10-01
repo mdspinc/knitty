@@ -8,7 +8,8 @@
             [clojure.test :as t]
             [criterium.core :as cc]
             [manifold.deferred :as md]
-            [manifold.debug :as md-debug])
+            [manifold.debug :as md-debug]
+            [manifold.executor :as ex])
   (:import [java.time LocalDateTime]
            [java.time.format DateTimeFormatter]))
 
@@ -156,7 +157,6 @@
                      (cc/benchmark-round-robin ~(mapv #(list `do %) (list* expr1 exprs))
                                                benchmark-opts)))))
 
-
 (defmacro do-defs
   "eval forms one by one - allows to intermix defs"
   [& body]
@@ -234,3 +234,12 @@
     (list*
      `do
      (map #(apply emit-body %) vss-expr))))
+
+(defmacro with-md-executor [& body]
+  `(let [~'__knitty__test_util__md_executor (ex/execute-pool)]
+     ~@body))
+
+(defmacro md-future
+  "Equivalent to 'manifold.deferred/future', but use didicated executor"
+  [& body]
+  `(md/future-with ~'__knitty__test_util__md_executor ~@body))
