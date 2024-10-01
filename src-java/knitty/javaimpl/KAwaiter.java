@@ -1,5 +1,7 @@
 package knitty.javaimpl;
 
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.util.Iterator;
 
 import clojure.lang.AFn;
@@ -7,372 +9,155 @@ import manifold.deferred.IDeferred;
 
 public final class KAwaiter {
 
-    public static boolean await(AFn ls) {
-        return true;
-    }
+    private static final class Ls extends AListener {
 
-    public static boolean await(AFn ls, KDeferred x1) {
-        if (x1.state() == 1) {
-            return true;
-        } else {
-            return !x1.listen0(new L0(ls));
+        private final KAwaiter ka;
+            Ls(KAwaiter ka) {
+            this.ka = ka;
         }
-    }
 
-    private static byte mixStates(KDeferred x1, KDeferred x2) {
-        return (byte) (((x1.state() & 1) << 1) | (x2.state() & 1));
-    }
-
-    public static boolean await(AFn ls, KDeferred x1, KDeferred x2) {
-        switch (mixStates(x1, x2)) {
-            case 0b00: x2.listen(new L1(ls, x1)); return false;
-            case 0b01: x2 = x1;
-            case 0b10: return !x2.listen0(new L0(ls));
-            case 0b11: return true;
-        }
-        return true;
-    }
-
-    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3) {
-        switch (mixStates(x2, x3)) {
-            case 0b00: x3.listen(new L2(ls, x1, x2)); return false;
-            case 0b01: x3 = x2;
-            case 0b10: x3.listen(new L1(ls, x1)); return false;
-            case 0b11: return await(ls, x1);
-        }
-        return true;
-    }
-
-    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4) {
-        switch (mixStates(x3, x4)) {
-            case 0b00: x4.listen(new L3(ls, x1, x2, x3)); return false;
-            case 0b01: x4 = x3;
-            case 0b10: x4.listen(new L2(ls, x1, x2)); return false;
-            case 0b11: return await(ls, x1, x2);
-        }
-        return true;
-    }
-
-    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5) {
-        switch (mixStates(x4, x5)) {
-            case 0b00: x5.listen(new L4(ls, x1, x2, x3, x4)); return false;
-            case 0b01: x5 = x4;
-            case 0b10: x5.listen(new L3(ls, x1, x2, x3)); return false;
-            case 0b11: return await(ls, x1, x2, x3);
-        }
-        return true;
-    }
-
-    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6) {
-        switch (mixStates(x5, x6)) {
-            case 0b00: return awaitArr(ls, x1, x2, x3, x4, x5, x6);
-            case 0b01: x6 = x5;
-            case 0b10: x6.listen(new L4(ls, x1, x2, x3, x4)); return false;
-            case 0b11: return await(ls, x1, x2, x3, x4);
-        }
-        return true;
-    }
-
-    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7) {
-        if ((x1.state() & x2.state() & x3.state() & x4.state()) == 1) {
-            return await(ls, x5, x6, x7);
-        } else {
-            return awaitArr(ls, x1, x2, x3, x4, x5, x6, x7);
-        }
-    }
-
-    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8) {
-        if ((x1.state() & x2.state() & x3.state() & x4.state()) == 1) {
-            return await(ls, x5, x6, x7, x8);
-        } else {
-            return awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8);
-        }
-    }
-
-    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9) {
-        if ((x1.state() & x2.state() & x3.state() & x4.state()) == 1) {
-            return await(ls, x5, x6, x7, x8, x9);
-        } else {
-            return awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9);
-        }
-    }
-
-    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10) {
-        if ((x1.state() & x2.state() & x3.state() & x4.state()) == 1) {
-            return await(ls, x5, x6, x7, x8, x9, x10);
-        } else {
-            return awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10);
-        }
-    }
-
-    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11) {
-        if ((x1.state() & x2.state() & x3.state() & x4.state()) == 1) {
-            return await(ls, x5, x6, x7, x8, x9, x10, x11);
-        } else {
-            return awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11);
-        }
-    }
-
-    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12) {
-        if ((x1.state() & x2.state() & x3.state() & x4.state()) == 1) {
-            return await(ls, x5, x6, x7, x8, x9, x10, x11, x12);
-        } else {
-            return awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12);
-        }
-    }
-
-    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12, KDeferred x13) {
-        if ((x1.state() & x2.state() & x3.state() & x4.state()) == 1) {
-            return await(ls, x5, x6, x7, x8, x9, x10, x11, x12, x13);
-        } else {
-            return awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13);
-        }
-    }
-
-    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11,  KDeferred x12, KDeferred x13, KDeferred x14) {
-        if ((x1.state() & x2.state() & x3.state() & x4.state()) == 1) {
-            return await(ls, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14);
-        } else {
-            return awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14);
-        }
-    }
-
-    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12, KDeferred x13, KDeferred x14, KDeferred x15) {
-        if ((x1.state() & x2.state() & x3.state() & x4.state()) == 1) {
-            return await(ls, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15);
-        } else {
-            return awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15);
-        }
-    }
-
-    public static boolean await(AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8, KDeferred x9, KDeferred x10, KDeferred x11, KDeferred x12, KDeferred x13, KDeferred x14, KDeferred x15, KDeferred x16) {
-        if ((x1.state() & x2.state() & x3.state() & x4.state()) == 1) {
-            return await(ls, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16);
-        } else {
-            return awaitArr(ls, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16);
-        }
-    }
-
-    public static boolean awaitArr(AFn ls, KDeferred[] ds, int len) {
-        for (int i = len - 1; i >= 0; --i) {
-            KDeferred d = ds[i];
-            if (d.state() != 1) {
-                d.listen(new Arr(i - 1, ls, ds));
-                return false;
+        public void success(Object x) {
+            if ((int) CNT.getAndAddAcquire(this.ka, (int) -1) == 1) {
+                this.ka.ls.invoke();
             }
         }
-        return true;
-    }
 
-    public static boolean awaitArr(AFn ls, KDeferred... ds) {
-        for (int i = ds.length - 1; i >= 0; --i) {
-            KDeferred d = ds[i];
-            if (d.state() != 1) {
-                d.listen(new Arr(i - 1, ls, ds));
-                return false;
+        public void error(Object e) {
+            if ((int) CNT.getAndSetAcquire(this.ka, (int) -1) > 0) {
+                this.ka.ls.invoke(e);
             }
         }
-        return true;
     }
 
-    public static KDeferred[] createArr(long n) {
-        return new KDeferred[(int) n];
-    }
-
-    public static void setArrItem(KDeferred[] a, long i, KDeferred d) {
-        a[(int) i] = d;
-    }
-
-    public static void awaitIter(AFn ls, Iterator<?> ds) {
-        if (ds.hasNext()) {
-            new Iter(ds, ls).success(null);
-        } else {
-            ls.invoke();
-        }
-    }
-
-    // Awaiters
-
-    private static abstract class Lx extends AListener {
-
+    private static final class L0 extends AListener {
         final AFn ls;
 
-        Lx(AFn ls) {
+        L0(AFn ls) {
             this.ls = ls;
         }
 
         public void error(Object e) {
             ls.invoke(e);
         }
-    }
-
-    private static final class L0 extends Lx {
-
-        L0(AFn ls) {
-            super(ls);
-        }
 
         public void success(Object x) {
             ls.invoke();
         }
     }
 
-    private static final class L1 extends Lx {
+    private final AFn ls;
+    private int acnt = Integer.MAX_VALUE;
+    private int _cnt = Integer.MAX_VALUE;
 
-        private final KDeferred x1;
-
-        L1(
-                AFn ls,
-                KDeferred x1) {
-            super(ls);
-            this.x1 = x1;
-        }
-
-        public void success(Object _x) {
-            if (await(ls, x1)) {
-                ls.invoke();
-            }
-        }
-    }
-
-    private static final class L2 extends Lx {
-
-        private final KDeferred x1;
-        private final KDeferred x2;
-
-        L2(
-                AFn ls,
-                KDeferred x1,
-                KDeferred x2) {
-            super(ls);
-            this.x1 = x1;
-            this.x2 = x2;
-        }
-
-        public void success(Object _x) {
-            if (await(ls, x1, x2)) {
-                ls.invoke();
-            }
-        }
-    }
-
-    private static final class L3 extends Lx {
-
-        private final KDeferred x1;
-        private final KDeferred x2;
-        private final KDeferred x3;
-
-        L3(
-                AFn ls,
-                KDeferred x1,
-                KDeferred x2,
-                KDeferred x3) {
-            super(ls);
-            this.x1 = x1;
-            this.x2 = x2;
-            this.x3 = x3;
-        }
-
-        public void success(Object _x) {
-            if (await(ls, x1, x2, x3)) {
-                ls.invoke();
-            }
-        }
-    }
-
-    private static final class L4 extends Lx {
-
-        private final KDeferred x1;
-        private final KDeferred x2;
-        private final KDeferred x3;
-        private final KDeferred x4;
-
-        L4(
-                AFn ls,
-                KDeferred x1,
-                KDeferred x2,
-                KDeferred x3,
-                KDeferred x4) {
-            super(ls);
-            this.x1 = x1;
-            this.x2 = x2;
-            this.x3 = x3;
-            this.x4 = x4;
-        }
-
-        public void success(Object _x) {
-            if (await(ls, x1, x2, x3, x4)) {
-                ls.invoke();
-            }
-        }
-    }
-
-    private static final Exception EXPECTED_ERR = new IllegalStateException("kdeferred expected to be in error state()");
+    private static final VarHandle CNT;
     static {
-        EXPECTED_ERR.setStackTrace(new StackTraceElement[0]);
-    }
-
-    private static class Arr extends Lx {
-
-        private final int ii;
-        private final KDeferred[] ds;
-
-        Arr(int ii, AFn ls, KDeferred[] ds) {
-            super(ls);
-            this.ii = ii;
-            this.ds = ds;
-        }
-
-        public void success(Object x) {
-            try {
-                for (int i = this.ii; i >= 0; --i) {
-                    KDeferred d = ds[i];
-                    ds[i] = null;
-                    if (d.state() != 1) {
-                        if (d.listen0(new Arr(i - 1, ls, ds))) {
-                            return;
-                        } else if (d.state() != 1) {
-                            this.error(d.errorValue(EXPECTED_ERR));
-                            return;
-                        }
-                    }
-                }
-                ls.invoke();
-            } catch (Throwable e) {
-                KDeferred.logError(e, String.format("error in awaiter callback: %s", ls));
-            }
+        try {
+            MethodHandles.Lookup l = MethodHandles.lookup();
+            CNT = l.findVarHandle(KAwaiter.class, "_cnt", int.class);
+        } catch (ReflectiveOperationException e) {
+            throw new ExceptionInInitializerError(e);
         }
     }
 
-    private static class Iter extends Lx {
+    private KAwaiter(AFn ls) {
+        this.ls = ls;
+    }
 
-        private final Iterator<?> da;
+    public boolean await() {
+        return (acnt == Integer.MAX_VALUE) || ((int) CNT.getAndAddRelease(KAwaiter.this, -acnt) == acnt);
+    }
 
-        Iter(Iterator<?> da, AFn ls) {
-            super(ls);
-            this.da = da;
+    private boolean isDone() {
+        return ((int) CNT.getOpaque(this)) <= 0;
+    }
+
+    public static KAwaiter start(AFn ls) {
+        return new KAwaiter(ls);
+    }
+
+    private void with0(KDeferred d1) {
+        if (this.acnt <= 0) {
+            throw new IllegalStateException("more than 2147483647 deferreds are awaited");
         }
+        this.acnt -= 1;
+        d1.listen(new Ls(this));
+    }
 
-        public void success(Object x) {
-            try {
-                while (da.hasNext()) {
-                    Object p = da.next();
-                    if (p instanceof IDeferred && ((IDeferred) p).successValue(this) == this) {
-                        KDeferred d = KDeferred.wrapDeferred((IDeferred) p);
-                        if (d.state() != 1) {
-                            if (d.listen0(new Iter(da, ls))) {
-                                return;
-                            } else if (d.state() != 1) {
-                                this.error(d.errorValue(EXPECTED_ERR));
-                                return;
-                            }
-                        }
-                    }
-                }
-                ls.invoke();
-            } catch (Throwable e) {
-                KDeferred.logError(e, String.format("error in awaiter callback: %s", ls));
+    public void with(KDeferred x1) {
+        if(x1.state() != 1) {
+            with0(x1);
+        }
+    }
+
+    public void with(KDeferred x1, KDeferred x2) {
+        switch ((byte) (((x1.state() & 1) << 1) | (x2.state() & 1))) {
+            case 0b00: with0(x2);
+            case 0b01: x2 = x1;
+            case 0b10: with0(x2);
+            // case 0b11:
+        }
+    }
+
+    public void with(KDeferred x1, KDeferred x2, KDeferred x3) {
+        switch ((byte) (((x1.state() & 1) << 1) | (x2.state() & 1))) {
+            case 0b00: with0(x2);
+            case 0b01: x2 = x1;
+            case 0b10: with0(x2);
+            // case 0b11:
+        }
+        if (x3.state() != 1) {
+            with0(x3);
+        }
+    }
+
+    public void with(KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4) {
+        switch ((byte) (((x1.state() & 1) << 1) | (x2.state() & 1))) {
+            case 0b00: with0(x2);
+            case 0b01: x2 = x1;
+            case 0b10: with0(x2);
+            // case 0b11:
+        }
+        switch ((byte) (((x3.state() & 1) << 1) | (x4.state() & 1))) {
+            case 0b00: with0(x4);
+            case 0b01: x4 = x3;
+            case 0b10: with0(x4);
+            // case 0b11:
+        }
+    }
+
+    public static boolean await1(AFn ls, KDeferred x1) {
+        if (x1.state() == 1) {
+            return true;
+        } else {
+            x1.listen(new L0(ls));
+            return false;
+        }
+    }
+
+    public static boolean awaitIter(AFn ls, Iterator<?> ds) {
+        KAwaiter ka = start(ls);
+        while (ds.hasNext() && !ka.isDone()) {
+            Object d = ds.next();
+            if (d instanceof IDeferred) {
+                KDeferred kd = KDeferred.wrapDeferred((IDeferred) d);
+                ka.with(kd);
             }
         }
+        return ka.await();
+    }
+
+    public static boolean awaitArr(AFn ls, KDeferred[] ds, int len) {
+        KAwaiter ka = start(ls);
+        int i = 0;
+        for (; i+3 < len; i += 4) {
+            ka.with(ds[i], ds[i+1], ds[i+2], ds[i+3]);
+        }
+        if (i+2 < len) {
+            ka.with(ds[i], ds[i+1]);
+        }
+        if (i < len) {
+            ka.with(ds[i]);
+        }
+        return ka.await();
     }
 }

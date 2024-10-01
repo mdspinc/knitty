@@ -358,48 +358,13 @@
   ([ls]
    `(~ls))
   ([ls x1]
-   `(let [ls# ~ls] (when (KAwaiter/await ls# ~x1) (ls#))))
-  ([ls x1 x2]
-   `(let [ls# ~ls] (when (KAwaiter/await ls# ~x1 ~x2) (ls#))))
-  ([ls x1 x2 x3]
-   `(let [ls# ~ls] (when (KAwaiter/await ls# ~x1 ~x2 ~x3) (ls#))))
-  ([ls x1 x2 x3 x4]
-   `(let [ls# ~ls] (when (KAwaiter/await ls# ~x1 ~x2 ~x3 ~x4) (ls#))))
-  ([ls x1 x2 x3 x4 x5]
-   `(let [ls# ~ls] (when (KAwaiter/await ls# ~x1 ~x2 ~x3 ~x4 ~x5) (ls#))))
-  ([ls x1 x2 x3 x4 x5 x6]
-   `(let [ls# ~ls] (when (KAwaiter/await ls# ~x1 ~x2 ~x3 ~x4 ~x5 ~x6) (ls#))))
-  ([ls x1 x2 x3 x4 x5 x6 x7]
-   `(let [ls# ~ls] (when (KAwaiter/await ls# ~x1 ~x2 ~x3 ~x4 ~x5 ~x6 ~x7) (ls#))))
-  ([ls x1 x2 x3 x4 x5 x6 x7 x8]
-   `(let [ls# ~ls] (when (KAwaiter/await ls# ~x1 ~x2 ~x3 ~x4 ~x5 ~x6 ~x7 ~x8) (ls#))))
-  ([ls x1 x2 x3 x4 x5 x6 x7 x8 x9]
-   `(let [ls# ~ls] (when (KAwaiter/await ls# ~x1 ~x2 ~x3 ~x4 ~x5 ~x6 ~x7 ~x8 ~x9) (ls#))))
-  ([ls x1 x2 x3 x4 x5 x6 x7 x8 x9 x10]
-   `(let [ls# ~ls] (when (KAwaiter/await ls# ~x1 ~x2 ~x3 ~x4 ~x5 ~x6 ~x7 ~x8 ~x9 ~x10) (ls#))))
-  ([ls x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11]
-   `(let [ls# ~ls] (when (KAwaiter/await ls# ~x1 ~x2 ~x3 ~x4 ~x5 ~x6 ~x7 ~x8 ~x9 ~x10 ~x11) (ls#))))
-  ([ls x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12]
-   `(let [ls# ~ls] (when (KAwaiter/await ls# ~x1 ~x2 ~x3 ~x4 ~x5 ~x6 ~x7 ~x8 ~x9 ~x10 ~x11 ~x12) (ls#))))
-  ([ls x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13]
-   `(let [ls# ~ls] (when (KAwaiter/await ls# ~x1 ~x2 ~x3 ~x4 ~x5 ~x6 ~x7 ~x8 ~x9 ~x10 ~x11 ~x12 ~x13) (ls#))))
-  ([ls x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14]
-   `(let [ls# ~ls] (when (KAwaiter/await ls# ~x1 ~x2 ~x3 ~x4 ~x5 ~x6 ~x7 ~x8 ~x9 ~x10 ~x11 ~x12 ~x13 ~x14) (ls#))))
-  ([ls x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15]
-   `(let [ls# ~ls] (when (KAwaiter/await ls# ~x1 ~x2 ~x3 ~x4 ~x5 ~x6 ~x7 ~x8 ~x9 ~x10 ~x11 ~x12 ~x13 ~x14 ~x15) (ls#))))
-  ([ls x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16]
-   `(let [ls# ~ls] (when (KAwaiter/await ls# ~x1 ~x2 ~x3 ~x4 ~x5 ~x6 ~x7 ~x8 ~x9 ~x10 ~x11 ~x12 ~x13 ~x14 ~x15 ~x16) (ls#))))
-  ([ls x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 & xs]
-   (let [xs (list* x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 xs)
-         n (count xs)
-         df (gensym)]
+   `(let [ls# ~ls] (when (KAwaiter/await1 ls# ~x1) (ls#))))
+  ([ls x1 & xs]
+   (let [xs (list* x1 xs)
+         xsp (partition-all 4 xs)]
      `(let [ls# ~ls]
-        (when (KAwaiter/awaitArr
-               ls#
-               (let [~df (KAwaiter/createArr ~n)]
-                 ~@(for [[i x] (map vector (range) xs)]
-                     `(KAwaiter/setArrItem ~df ~i ~x))
-                 ~df))
+        (when (.await (doto (KAwaiter/start ls#)
+                        ~@(map (fn [x] `(.with ~@x)) xsp)))
           (ls#))))))
 
 (defmacro await! [ls & ds]
@@ -408,8 +373,16 @@
 (definline await!*
   "Like `await!` but accept iterable collection of deferreds."
   [ls ds]
-  `(KAwaiter/awaitIter ~ls (iterator ~ds)))
+  `(let [ls# ~ls]
+     (when (KAwaiter/awaitIter ls# (iterator ~ds))
+       (ls#))))
 
+(let [ls #(do)
+      x1 (wrap 1)
+      x2 (wrap 1)
+      x3 (wrap 1)
+      x4 (wrap 1)]
+  (kd-await! ls x1 x2 x3 x4))
 
 ;; ==
 
