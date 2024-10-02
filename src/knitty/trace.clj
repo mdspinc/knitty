@@ -119,8 +119,11 @@
 
 
 (defn- safe-minus [a b]
-  (when (and a b (not (zero? a)) (not (zero? b)))
-    (- a b)))
+  (when (and a b)
+    (let [^long a a
+          ^long b b]
+      (when (and (not (zero? a)) (not (zero? b)))
+        (- a b)))))
 
 
 (defn parse-trace [t]
@@ -220,7 +223,7 @@
                   :cause (= (ytcause dk) y)
                   :timex (when-let [t (safe-minus (::trace-finish t)
                                                   (::trace-finish (resolve-knots (ytlog dk))))]
-                           (when (pos? t) t))
+                           (when (pos? (long t)) t))
                   :used (not (nil? time))
                   :type dt
                   :yankid-src yankid
