@@ -2,7 +2,8 @@
   {:clj-kondo/ignore [:inline-def]}
   (:require [clojure.test :as t :refer [are deftest is testing]]
             [clojure.tools.logging :as log]
-            [knitty.deferred :as kd]))
+            [knitty.deferred :as kd]
+            [knitty.test-util :refer [eval-template]]))
 
 
 (defmacro future' [& body]
@@ -21,26 +22,26 @@
     (throw ex)))
 
 
-(defn capture-success
-  ([result]
-   (capture-success result true))
-  ([result expected-return-value]
-   (let [p (promise)]
-     (kd/on result
-                    #(do (deliver p %) expected-return-value)
-                    (fn [_] (throw (Exception. "ERROR"))))
-     p)))
+(defn capture-success [result]
+  (let [p (promise)]
+    (kd/on result p (fn [_] (throw (Exception. "ERROR"))))
+    p))
 
 
-(defn capture-error
-  ([result]
-   (capture-error result true))
-  ([result expected-return-value]
-   (let [p (promise)]
-     (kd/on result
-                    (fn [_] (throw (Exception. "SUCCESS")))
-                    #(do (deliver p %) expected-return-value))
-     p)))
+(defn capture-error [result]
+  (let [p (promise)]
+    (kd/on result (fn [_] (throw (Exception. "SUCCESS"))) p)
+    p))
+
+
+(defn mut-seq-producer [& xs]
+  (let [x (atom (seq xs))]
+    (reify
+      clojure.lang.IFn
+      (invoke [_] (ffirst (swap-vals! x next)))
+      clojure.lang.Seqable
+      (seq [_] (seq @x))
+      )))
 
 
 (deftest test-catch
@@ -151,7 +152,7 @@
   (let [d  (kd/create)
         ex (IllegalStateException. "boom")]
     (is (= true (kd/error! d ex)))
-    (is (= ex @(capture-error d ::return)))
+    (is (= ex @(capture-error d)))
     (is (thrown? IllegalStateException @d)))
 
   ;; claim and error!
@@ -161,7 +162,7 @@
     (is token)
     (is (= false (kd/error! d ex)))
     (is (= true (kd/error! d ex token)))
-    (is (= ex @(capture-error d ::return)))
+    (is (= ex @(capture-error d)))
     (is (thrown? IllegalStateException (deref d 1000 ::timeout))))
 
   ;; test deref with delayed result
@@ -267,6 +268,74 @@
              (kd/loop [{:keys [a]} {:a 1}] a))))
   (is @(capture-success
         (kd/loop [[x & xs] [1 2 3]] (or (= x 3) (kd/recur xs))))))
+
+
+
+(deftest test-while
+
+  (testing "body produces a non-deferred value"
+    (is (nil?
+         @(capture-success
+           (kd/while nil))))
+    (is (nil?
+         @(capture-success
+           (kd/while false)))))
+
+  (testing "body raises exception"
+    (let [ex (Exception.)]
+      (is (= ex @(capture-error
+                  (kd/while (throw ex)))))))
+
+  (testing "body produces a realized result"
+    (is (nil? @(capture-success
+                  (kd/while (kd/wrap-val false))))))
+
+  (testing "body produces a realized error result"
+    (let [ex (Exception.)]
+      (is (= ex @(capture-error
+                  (kd/while (kd/wrap-err ex)))))))
+
+  (testing "body produces a delayed result"
+    (is (nil? @(capture-success
+                (kd/while (future' false))))))
+
+  (testing "body produces a delayed error result"
+    (let [ex (Exception.)]
+      (is (= ex @(capture-error
+                  (kd/while (future-error ex)))))
+      (is (= ex @(capture-error
+                  (kd/while (future-error ex) (do)))))
+      (is (= ex @(capture-error
+                  (kd/while true (future-error ex)))))))
+
+  (testing "iterate over sync values"
+    (let [ds (mut-seq-producer 1 2 3 false)]
+      (is (nil? @(capture-success
+                  (kd/while (ds)))))
+      (is (empty? ds))))
+
+  (testing "iterate over async values without body"
+    (let [ds (mut-seq-producer (future' 1) (future' 2) (future' 3) (future' false))]
+      (is (nil? @(capture-success
+                  (kd/while (ds)))))
+      (is (empty? ds))))
+
+  (testing "iterate over async values with sync body"
+    (let [ds (mut-seq-producer (future' 1) (future' 2) (future' 3) (future' false))
+          c (atom 0)]
+      (is (nil? @(capture-success
+                  (kd/while (ds) (swap! c inc)))))
+      (is (empty? ds))
+      (is (= 3 @c))))
+
+  (testing "iterate over async values with async body"
+    (let [ds (mut-seq-producer (future' 1) (future' 2) (future' 3) (future' false))
+          c (atom 0)]
+      (is (nil? @(capture-success
+                  (kd/while (ds) (future' (swap! c inc))))))
+      (is (empty? ds))
+      (is (= 3 @c))))
+  )
 
 
 (deftest test-finally
