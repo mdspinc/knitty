@@ -516,32 +516,35 @@
 (defmacro impl-iterate-while*
   [[_ [fx] & f]
    [_ [px] & p]
-   x]
-  `(let [d# (create)
-         ef# (fn ~'on-err [e#] (error! d# e#))]
-    (on
-     ~x
-     (fn iter-step# [x#]
-       (when-not (.realized d#)
-         (cond
+   x
+   ret-nil?]
+  (let [xx (gensym)]
+    `(let [d# (create)
+           ef# (fn ~'on-err [e#] (error! d# e#))]
+       (on
+        ~x
+        (fn loop-step# [~xx]
+          (when-not (.realized d#)
+            (cond
 
-           (deferred? x#)
-           (let [y# (KDeferred/wrapDeferred x#)]
-             (when-not (.listen0 y# iter-step# ef#)
-               (recur (try (.get y#) (catch Throwable t# (ef# t#))))))
+              (deferred? ~xx)
+              (let [y# (KDeferred/wrapDeferred ~xx)]
+                (when-not (.listen0 y# loop-step# ef#)
+                  (recur (try (.get y#) (catch Throwable t# (ef# t#))))))
 
-           (let [~px x#] ~@p)
-           (let [y# (unwrap1 (try (let [~fx x#] ~@f) (catch Throwable t# (wrap-err t#))))]
-             (if (deferred? y#)
-               (let [y# (KDeferred/wrapDeferred y#)]
-                 (when-not (.listen0 y# iter-step# ef#)
-                   (recur (try (.get y#) (catch Throwable t# (ef# t#))))))
-               (recur y#)))
+              (let [~px ~xx] ~@p)
+              (let [y# (unwrap1 (try (let [~fx ~xx] ~@f)
+                                     (catch Throwable t# (wrap-err t#))))]
+                (if (deferred? y#)
+                  (let [y# (KDeferred/wrapDeferred y#)]
+                    (when-not (.listen0 y# loop-step# ef#)
+                      (recur (try (.get y#) (catch Throwable t# (ef# t#))))))
+                  (recur y#)))
 
-           :else
-           (success! d# x#))))
-     ef#)
-    d#))
+              :else
+              (success! d# ~(when-not ret-nil? xx)))))
+        ef#)
+       d#)))
 
 
 (defn iterate-while
@@ -551,7 +554,7 @@
    Predicate `p` should always return synchonous values howerver.
    This is low-level routine, prefer `reduce` `while` or `loop`."
   [f p x]
-  (impl-iterate-while* (fn [x] (f x)) (fn [x] (p x)) x))
+  (impl-iterate-while* (fn [x] (f x)) (fn [x] (p x)) x false))
 
 
 (deftype DRecur [args])
@@ -579,7 +582,8 @@
     `(impl-iterate-while*
       (fn [r#] (let [[~@syms] (.-args ^DRecur r#)] ~@body))
       (fn [r#] (instance? DRecur r#))
-      (knitty.deferred/recur ~@init))))
+      (knitty.deferred/recur ~@init)
+      false)))
 
 (defmacro while
   "Deferred-aware version of `clojure.core/while`.
@@ -588,7 +592,8 @@
   ([body]
    `(impl-iterate-while*
      (fn [x#] (when x# ~body))
-     identity
+     (fn [x#] x#)
+     true
      true))
   ([pred & body]
    `(impl-iterate-while*
@@ -598,6 +603,7 @@
                (fn ~'while-body [c#] (when c# (bind (do ~@body)
                                                     (constantly true)))))))
      (fn [x#] x#)
+     true
      true)))
 
 (defn chain*
@@ -607,7 +613,8 @@
     (impl-iterate-while*
      (fn [a] (bind a (.next it)))
      (fn [_] (.hasNext it))
-     x)))
+     x
+     false)))
 
 (defn reduce
   "Deferred-aware version of `clojure.core/reduce`.
@@ -618,7 +625,8 @@
      (impl-iterate-while*
       (fn [a] (bind (.next it) #(f a %)))
       (fn [a] (and (not (reduced? a)) (.hasNext it)))
-      initd))
+      initd
+      false))
    unreduced))
 
 (defn run!
@@ -629,7 +637,8 @@
     (impl-iterate-while*
      (fn [_] (bind (.next it) f))
      (fn [_] (.hasNext it))
-     nil)))
+     nil
+     true)))
 
 ;; ==
 
