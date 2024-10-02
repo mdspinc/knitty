@@ -6,8 +6,7 @@
   :dependencies [[org.clojure/clojure "1.11.3"]
                  [manifold/manifold "0.4.3"]
                  [org.hdrhistogram/HdrHistogram "2.2.2"]
-                 [macroz/tangle "0.2.2"]
-                 ]
+                 [macroz/tangle "0.2.2"]]
 
   :plugins [[lein-aot-filter "0.1.0"]
             [lein-shell "0.5.0"]]
@@ -18,15 +17,14 @@
   :javac-options ["--release" "17"]
   :jvm-opts ["-server"]
   :source-paths ["src"]
+  :global-vars {*warn-on-reflection* true}
 
   :profiles {:dev {:dependencies [[criterium/criterium "0.4.6"]
-                                  [com.clojure-goes-fast/clj-async-profiler "1.3.1"]
+                                  [com.clojure-goes-fast/clj-async-profiler "1.3.2"]
                                   [prismatic/plumbing "0.6.0"]
                                   [funcool/promesa "11.0.678"]
-                                  [clj-kondo/clj-kondo "2024.08.29"]
-                                  ]
-                   :jvm-opts ["-Djdk.attach.allowAttachSelf" "-XX:+UnlockDiagnosticVMOptions" "-XX:+DebugNonSafepoints"]
-                   :global-vars {*warn-on-reflection* true}}}
+                                  [clj-kondo/clj-kondo "2024.09.27"]]
+                   :jvm-opts ["-Djdk.attach.allowAttachSelf" "-XX:+UnlockDiagnosticVMOptions" "-XX:+DebugNonSafepoints"]}}
 
   :prep-tasks [["javac"]
                ["compile"]
