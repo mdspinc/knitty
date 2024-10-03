@@ -2,7 +2,6 @@ package knitty.javaimpl;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
-import java.util.Arrays;
 import java.util.Objects;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.Executor;
@@ -201,8 +200,8 @@ public final class YankCtx {
 
     void doYank(Iterable<?> yarns, KDeferred res) {
 
-        int di = 0;
-        KDeferred[] ds = null;
+        KAwaiter ka = null;
+        AFn ls = new YankDoneLs(res, yarns);
 
         for (Object x : yarns) {
             Objects.requireNonNull(x, "yarn must be non-null");
@@ -223,19 +222,10 @@ public final class YankCtx {
                 }
                 r = this.fetch(i0, k, y);
             }
-            if (r.state() != KDeferred.STATE_SUCC) {
-                if (ds == null) {
-                    ds = new KDeferred[8];
-                } else if (di == ds.length) {
-                    ds = Arrays.copyOf(ds, ds.length * 2);
-                }
-                ds[di++] = r;
-            }
+            ka = KAwaiter.with(ka, ls, r);
         }
 
-        AFn ls = new YankDoneLs(res, yarns);
-
-        if (KAwaiter.awaitArr(ls, ds, di)) {
+        if (KAwaiter.await(ka)) {
             res.success(finish(), null);
         }
     }

@@ -420,7 +420,7 @@ public final class KDeferred
     }
 
     byte state() {
-        return (byte) STATE.getAcquire(this);
+        return (byte) STATE.getOpaque(this);
     }
 
     private Boolean invalidToken() {
@@ -470,7 +470,7 @@ public final class KDeferred
 
     private Boolean successX(Object x, Object token) {
         do {
-            switch (this.state()) {
+            switch ((byte) STATE.getAcquire(this)) {
                 case STATE_LSTN:
                     if (STATE.weakCompareAndSetAcquire(this, STATE_LSTN, STATE_LOCK)) {
                         return success0(x, token);
@@ -535,7 +535,7 @@ public final class KDeferred
 
     public Boolean errorX(Object x, Object token) {
         do {
-            switch (this.state()) {
+            switch ((byte) STATE.getAcquire(this)) {
                 case STATE_LSTN:
                     if (STATE.weakCompareAndSetAcquire(this, STATE_LSTN, STATE_LOCK)) {
                         return error0(x, token);
@@ -554,17 +554,17 @@ public final class KDeferred
     }
 
     public boolean listen0(IFn onSuc, IFn onErr) {
-        byte s = this.state();
+        byte s = (byte) STATE.getAcquire(this);
         return (s & STATE_DONE_MASK) == 0 && listen0(s, new AListener.Fn(onSuc, onErr));
     }
 
     public boolean listen0(IDeferredListener ls) {
-        byte s = this.state();
+        byte s = (byte) STATE.getAcquire(this);
         return (s & STATE_DONE_MASK) == 0 && listen0(s, new AListener.Dl(ls));
     }
 
     boolean listen0(AListener ls) {
-        return listen0(this.state(), ls);
+        return listen0((byte) STATE.getAcquire(this), ls);
     }
 
     private boolean listen0(byte s, AListener ls) {
@@ -586,7 +586,7 @@ public final class KDeferred
                 case STATE_ERRR:
                     return false;
                 case STATE_LOCK:
-                    s = this.state();
+                    s = (byte) STATE.getAcquire(this);
                     Thread.onSpinWait();
             }
         }
@@ -596,7 +596,7 @@ public final class KDeferred
         if (this.listen0(onSuc, onErr)) {
             return;
         }
-        if (this.state() == STATE_SUCC) {
+        if ((byte) STATE.getAcquire(this) == STATE_SUCC) {
             onSuc.invoke(this.value);
         } else {
             this.consumeError();
@@ -608,7 +608,7 @@ public final class KDeferred
         if (this.listen0(ls)) {
             return;
         }
-        if (this.state() == STATE_SUCC) {
+        if ((byte) STATE.getAcquire(this) == STATE_SUCC) {
             ls.onSuccess(this.value);
         } else {
             this.consumeError();
@@ -620,7 +620,7 @@ public final class KDeferred
         if (this.listen0(ls)) {
             return;
         }
-        if (this.state() == STATE_SUCC) {
+        if ((byte) STATE.getAcquire(this) == STATE_SUCC) {
             ls.success(value);
         } else {
             this.consumeError();
@@ -634,7 +634,7 @@ public final class KDeferred
             return Boolean.TRUE;
         }
 
-        if (this.state() == STATE_SUCC) {
+        if ((byte) STATE.getAcquire(this) == STATE_SUCC) {
             ls.onSuccess(value);
         } else {
             this.consumeError();
@@ -651,7 +651,7 @@ public final class KDeferred
             return Boolean.TRUE;
         }
 
-        if (this.state() == STATE_SUCC) {
+        if ((byte) STATE.getAcquire(this) == STATE_SUCC) {
             onSuc.invoke(value);
         } else {
             this.consumeError();
@@ -674,7 +674,7 @@ public final class KDeferred
 
     public boolean claim(Object token) {
         while (true) {
-            byte s = this.state();
+            byte s = (byte) STATE.getAcquire(this);
             switch (s) {
                 case STATE_LSTN:
                     if (!STATE.weakCompareAndSetAcquire(this, s, STATE_LOCK)) {
@@ -702,15 +702,15 @@ public final class KDeferred
     }
 
     public boolean realized() {
-        return (this.state() & STATE_DONE_MASK) != 0;
+        return ((byte) STATE.getAcquire(this) & STATE_DONE_MASK) != 0;
     }
 
     public boolean isRealized() {
-        return (this.state() & STATE_DONE_MASK) != 0;
+        return ((byte) STATE.getAcquire(this) & STATE_DONE_MASK) != 0;
     }
 
     public Object successValue(Object fallback) {
-        return this.state() == STATE_SUCC ? value : fallback;
+        return (byte) STATE.getAcquire(this) == STATE_SUCC ? value : fallback;
     }
 
     @SuppressWarnings("unchecked")
@@ -728,7 +728,7 @@ public final class KDeferred
     }
 
     public Object errorValue(Object fallback) {
-        if (this.state() == STATE_ERRR) {
+        if ((byte) STATE.getAcquire(this) == STATE_ERRR) {
             this.consumeError();
             return value;
         }
@@ -736,18 +736,18 @@ public final class KDeferred
     }
 
     public Object unwrap() {
-        return this.state() == STATE_SUCC ? value : this;
+        return (byte) STATE.getAcquire(this) == STATE_SUCC ? value : this;
     }
 
     private Object getErr() {
-        if (this.state() == STATE_ERRR) {
+        if ((byte) STATE.getAcquire(this) == STATE_ERRR) {
             throwErr();
         }
         throw new IllegalStateException("kdeferred is not realized");
     }
 
     public final Object get() {
-        return (this.state() == STATE_SUCC) ? value : getErr();
+        return ((byte) STATE.getAcquire(this) == STATE_SUCC) ? value : getErr();
     }
 
     private CountDownLatch acquireCountdDownLatch() {
@@ -758,7 +758,7 @@ public final class KDeferred
 
     public Object deref(long ms, Object timeoutValue) {
 
-        switch (this.state()) {
+        switch ((byte) STATE.getAcquire(this)) {
             case STATE_SUCC:
                 return value;
             case STATE_ERRR:
@@ -775,7 +775,7 @@ public final class KDeferred
             throw Util.sneakyThrow(e);
         }
 
-        switch (this.state()) {
+        switch ((byte) STATE.getAcquire(this)) {
             case STATE_SUCC:
                 return value;
             case STATE_ERRR:
@@ -787,7 +787,7 @@ public final class KDeferred
 
     public Object deref() {
 
-        switch (this.state()) {
+        switch ((byte) STATE.getAcquire(this)) {
             case STATE_SUCC:
                 return value;
             case STATE_ERRR:
@@ -800,7 +800,7 @@ public final class KDeferred
             throw Util.sneakyThrow(e);
         }
 
-        switch (this.state()) {
+        switch ((byte) STATE.getAcquire(this)) {
             case STATE_SUCC:
                 return value;
             case STATE_ERRR:
@@ -842,7 +842,7 @@ public final class KDeferred
         byte s;
         loop:
         while (true) {
-            switch ((s = this.state())) {
+            switch ((s = (byte) STATE.getAcquire(this))) {
                 case STATE_LSTN:
                     KDeferred dest = new KDeferred(token);
                     if (this.listen0(s, new Bind(dest, valFn, errFn, token))) {

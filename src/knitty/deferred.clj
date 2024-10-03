@@ -361,11 +361,13 @@
    `(let [ls# ~ls] (when (KAwaiter/await1 ls# ~x1) (ls#))))
   ([ls x1 & xs]
    (let [xs (list* x1 xs)
-         xsp (partition-all 4 xs)]
-     `(let [ls# ~ls]
-        (when (.await (doto (KAwaiter/start ls#)
-                        ~@(map (fn [x] `(.with ~@x)) xsp)))
-          (ls#))))))
+         xsp (partition-all 4 xs)
+         lss (gensym)]
+     `(let [~lss ~ls]
+        (when (-> nil
+                  ~@(map (fn [x] `(KAwaiter/with ~lss ~@x)) xsp)
+                  (KAwaiter/await))
+          (~lss))))))
 
 (defmacro await! [ls & ds]
     `(kd-await! ~ls ~@(map #(do `(wrap ~%)) ds)))
@@ -376,13 +378,6 @@
   `(let [ls# ~ls]
      (when (KAwaiter/awaitIter ls# (iterator ~ds))
        (ls#))))
-
-(let [ls #(do)
-      x1 (wrap 1)
-      x2 (wrap 1)
-      x3 (wrap 1)
-      x4 (wrap 1)]
-  (kd-await! ls x1 x2 x3 x4))
 
 ;; ==
 

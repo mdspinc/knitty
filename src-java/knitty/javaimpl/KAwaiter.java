@@ -67,62 +67,74 @@ public final class KAwaiter {
         return (acnt == Integer.MAX_VALUE) || ((int) CNT.getAndAddRelease(KAwaiter.this, -acnt) == acnt);
     }
 
-    private boolean isDone() {
-        return ((int) CNT.getOpaque(this)) <= 0;
+    private static boolean failed(KAwaiter ka) {
+        return ka != null && ((int) CNT.getOpaque(ka)) <= 0;
     }
 
     public static KAwaiter start(AFn ls) {
         return new KAwaiter(ls);
     }
 
-    private void with0(KDeferred d1) {
-        if (this.acnt <= 0) {
+    private static KAwaiter with0(KAwaiter ka, AFn ls, KDeferred d1) {
+        if (ka == null) {
+            ka = new KAwaiter(ls);
+        } else if (ka.acnt <= 0) {
             throw new IllegalStateException("more than 2147483647 deferreds are awaited");
         }
-        this.acnt -= 1;
-        d1.listen(new Ls(this));
+        ka.acnt -= 1;
+        d1.listen(new Ls(ka));
+        return ka;
     }
 
-    public void with(KDeferred x1) {
-        if(x1.state() != 1) {
-            with0(x1);
+    public static KAwaiter with(KAwaiter ka, AFn ls, KDeferred x1) {
+        if (x1.state() == 1) {
+            return ka;
+        } else {
+            return with0(ka, ls, x1);
         }
     }
 
-    public void with(KDeferred x1, KDeferred x2) {
+    public static KAwaiter with(KAwaiter ka, AFn ls, KDeferred x1, KDeferred x2) {
         switch ((byte) (((x1.state() & 1) << 1) | (x2.state() & 1))) {
-            case 0b00: with0(x2);
+            case 0b00: ka = with0(ka, ls, x2);
             case 0b01: x2 = x1;
-            case 0b10: with0(x2);
+            case 0b10: ka = with0(ka, ls, x2);
             // case 0b11:
         }
+        return ka;
     }
 
-    public void with(KDeferred x1, KDeferred x2, KDeferred x3) {
+    public static KAwaiter with(KAwaiter ka, AFn ls, KDeferred x1, KDeferred x2, KDeferred x3) {
         switch ((byte) (((x1.state() & 1) << 1) | (x2.state() & 1))) {
-            case 0b00: with0(x2);
+            case 0b00: ka = with0(ka, ls, x2);
             case 0b01: x2 = x1;
-            case 0b10: with0(x2);
+            case 0b10: ka = with0(ka, ls, x2);
             // case 0b11:
         }
-        if (x3.state() != 1) {
-            with0(x3);
+        if (x3.state() == 1) {
+            return ka;
         }
+        return with0(ka, ls, x3);
     }
 
-    public void with(KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4) {
+    public static KAwaiter with(KAwaiter ka, AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4) {
         switch ((byte) (((x1.state() & 1) << 1) | (x2.state() & 1))) {
-            case 0b00: with0(x2);
+            case 0b00: ka = with0(ka, ls, x2);
             case 0b01: x2 = x1;
-            case 0b10: with0(x2);
+            case 0b10: ka = with0(ka, ls, x2);
             // case 0b11:
         }
         switch ((byte) (((x3.state() & 1) << 1) | (x4.state() & 1))) {
-            case 0b00: with0(x4);
+            case 0b00: ka = with0(ka, ls, x4);
             case 0b01: x4 = x3;
-            case 0b10: with0(x4);
+            case 0b10: ka = with0(ka, ls, x4);
             // case 0b11:
         }
+        return ka;
+    }
+
+    public static boolean await(KAwaiter ka) {
+        return ka == null || ka.await();
     }
 
     public static boolean await1(AFn ls, KDeferred x1) {
@@ -135,29 +147,14 @@ public final class KAwaiter {
     }
 
     public static boolean awaitIter(AFn ls, Iterator<?> ds) {
-        KAwaiter ka = start(ls);
-        while (ds.hasNext() && !ka.isDone()) {
+        KAwaiter ka = null;
+        while (ds.hasNext() && !failed(ka)) {
             Object d = ds.next();
             if (d instanceof IDeferred) {
                 KDeferred kd = KDeferred.wrapDeferred((IDeferred) d);
-                ka.with(kd);
+                ka = with(ka, ls, kd);
             }
         }
-        return ka.await();
-    }
-
-    public static boolean awaitArr(AFn ls, KDeferred[] ds, int len) {
-        KAwaiter ka = start(ls);
-        int i = 0;
-        for (; i+3 < len; i += 4) {
-            ka.with(ds[i], ds[i+1], ds[i+2], ds[i+3]);
-        }
-        if (i+2 < len) {
-            ka.with(ds[i], ds[i+1]);
-        }
-        if (i < len) {
-            ka.with(ds[i]);
-        }
-        return ka.await();
+        return await(ka);
     }
 }
