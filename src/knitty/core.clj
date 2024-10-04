@@ -285,11 +285,19 @@
 
 
 (defmacro ^:private pick-opt [opts key default]
-  `(if-some [x# (find ~opts ~key)] (val x#) ~default))
+  `(if (contains? ~opts ~key) (~key ~opts) ~default))
 
 (defn yank*
   "Computes missing nodes. Always returns deferred resolved into YankResult.
-   YankResult implements ILookup, Seqable, IObj, IKVReduce and IReduceInit."
+   YankResult implements ILookup, Seqable, IObj, IKVReduce and IReduceInit.
+
+   Optinans are:
+    - `:executor` a instance of `java.util.concurrent.Executor` which is used to run code;
+    - `:preload`  preload all values from input map;
+    - `:bindings` flag, indicating that thread-local bindings should be captured and installed for yarns;
+    - `:tracing`  flag, do we need to capture tracing (introduce some perfomance penalties);
+    - `:registry` a knitty registry with avalable yarns, usefull for mocking code.
+    "
   ([inputs yarns]
    (yank* inputs yarns nil))
   ([inputs yarns opts]
