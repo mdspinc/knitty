@@ -378,11 +378,19 @@ public final class KDeferred
     }
 
     public final boolean own() {
-        return ((byte) OWNED.getOpaque(this) == 0) && ((byte) OWNED.compareAndExchangeRelease(this, (byte) 0, (byte) 1) == 0);
+        if ((byte) OWNED.getOpaque(this) == 1) {
+            return false;
+        }
+        while (!OWNED.weakCompareAndSetPlain(this, (byte) 0, (byte) 1)) {
+            if ((byte) OWNED.getOpaque(this) == (byte) 1) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public final boolean owned() {
-        return (byte) OWNED.getAcquire(this) == 1;
+        return (byte) OWNED.getOpaque(this) == 1;
     }
 
     public synchronized IPersistentMap meta() {
