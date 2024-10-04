@@ -1,21 +1,36 @@
 (ns knitty.trace
   (:require [clojure.set :as set]
-            [knitty.deferred :as kd])
+            [knitty.deferred :as kd]
+            [clojure.string :as str]
+            [clojure.tools.logging :as log])
   (:import [java.util.concurrent.atomic AtomicReference AtomicLong]))
 
 
 (set! *warn-on-reflection* true)
+(set! *unchecked-math* :warn-on-boxed)
 
 
-(def elide-tracing
-  (#{"1" "true" "yes"} (System/getProperty "knitty.elide-tracing")))
+(defn- parse-bool-flag [fname s]
+  (when s
+    (let [s' (str/lower-case s)]
+      (cond
+        (#{"1" "true" "yes" "y"} s') true
+        (#{"0" "false" "no", "n"} s') false
+        :else (do (log/warnf "Invalid bool flag %s - %s" fname s) nil)))))
+
+
+(def elide-tracing?
+  (boolean
+   (some->
+    (parse-bool-flag "env:KNITTY_ELIDE_TRACING" (System/getenv "KNITTY_ELIDE_TRACING"))
+    (or (parse-bool-flag "property:knitty.elide-tracing" (System/getProperty "knitty.elide-tracing"))))))
 
 
 (defmacro if-tracing
   ([trace-body]
-   (when-not elide-tracing trace-body))
+   (when-not elide-tracing? trace-body))
   ([trace-body notrace-body]
-   (if elide-tracing notrace-body trace-body)))
+   (if elide-tracing? notrace-body trace-body)))
 
 
 (definterface Tracer
