@@ -280,24 +280,24 @@ public final class KDeferred
 
     private final static class Revoke extends AListener {
 
-        private final IDeferred d;
+        private final KDeferred kd;
         private final IFn canceller;
         private final IFn errCallback;
 
-        public Revoke(IDeferred d, IFn canceller, IFn errCallback) {
-            this.d = d;
+        public Revoke(KDeferred kd, IFn canceller, IFn errCallback) {
+            this.kd = kd;
             this.canceller = canceller;
             this.errCallback = errCallback;
         }
 
         public void success(Object x) {
-            if (!d.realized()) {
+            if (!kd.realized()) {
                 canceller.invoke();
             }
         }
 
         public void error(Object x) {
-            if (!d.realized()) {
+            if (!kd.realized()) {
                 canceller.invoke();
             }
             if (errCallback != null) {
@@ -921,12 +921,13 @@ public final class KDeferred
     }
 
     public static KDeferred revoke(IDeferred d, IFn canceller, IFn errCallback) {
-        if (d.realized()) {
-            return wrapDeferred(d);
+        KDeferred dd = wrapDeferred(d);
+        if (dd.realized()) {
+            return dd;
         } else {
             KDeferred kd = new KDeferred();
-            kd.listen0(new Revoke(d, canceller, errCallback));
-            kd.chain(d, null);
+            kd.listen0(new Revoke(dd, canceller, errCallback));
+            kd.chain(dd, null);
             return kd;
         }
     }
