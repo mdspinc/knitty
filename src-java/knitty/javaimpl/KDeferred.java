@@ -7,9 +7,11 @@ import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import clojure.lang.AFn;
 import clojure.lang.ExceptionInfo;
@@ -25,14 +27,16 @@ import manifold.deferred.IDeferred;
 import manifold.deferred.IDeferredListener;
 import manifold.deferred.IMutableDeferred;
 
-public final class KDeferred
+public class KDeferred
         implements
         clojure.lang.IDeref,
         clojure.lang.IBlockingDeref,
         clojure.lang.IPending,
         clojure.lang.IReference,
         IDeferred,
-        IMutableDeferred {
+        IMutableDeferred,
+        CompletionStageMixin
+    {
 
     public static final BlockingQueue<Object> ELD_LEAKED_ERRORS =
         new ArrayBlockingQueue<>(128);
@@ -101,13 +105,13 @@ public final class KDeferred
             try {
                 t = valFn.invoke(x);
             } catch (Throwable e) {
-                dest.error(e);
+                dest.fireError(e);
                 return;
             }
             if (t instanceof IDeferred) {
                 dest.chain(t);
             } else {
-                dest.success(t);
+                dest.fireValue(t);
             }
         }
 
@@ -124,13 +128,13 @@ public final class KDeferred
                     t = errFn.invoke(e);
                 } catch (Throwable e1) {
                     e1.initCause(coerceError(e));
-                    dest.error(e1);
+                    dest.fireError(e1);
                     return;
                 }
                 if (t instanceof IDeferred) {
                     dest.chain(t);
                 } else {
-                    dest.success(t);
+                    dest.fireValue(t);
                 }
             }
         }
@@ -354,7 +358,7 @@ public final class KDeferred
     private IPersistentMap meta;
     private ErrorLeakDetector eld;
 
-    private void fireError(Object err) {
+    private void detectLeakedError(Object err) {
         if (!(err instanceof CancellationException)) {
             ErrorLeakDetector x = new ErrorLeakDetector(err);
             this.eld = x;
@@ -433,7 +437,7 @@ public final class KDeferred
         if (this.token == null) {
             throw new IllegalStateException("invalid claim-token");
         } else {
-            return Boolean.FALSE;
+            return false;
         }
     }
 
@@ -442,16 +446,7 @@ public final class KDeferred
     }
 
     public Object success(Object x) {
-        if (STATE.weakCompareAndSetAcquire(this, STATE_LSTN, STATE_LOCK)) {
-            if (this.lss == null && this.token == null) {
-                this.value = x;
-                STATE.setRelease(this, STATE_SUCC);
-                return Boolean.TRUE;
-            } else {
-                return success0(x, null);
-            }
-        }
-        return success1(x, null);
+        return success(x, null);
     }
 
     public Object success(Object x, Object token) {
@@ -459,7 +454,7 @@ public final class KDeferred
             if (this.lss == null && this.token == token) {
                 this.value = x;
                 STATE.setRelease(this, STATE_SUCC);
-                return Boolean.TRUE;
+                return true;
             } else {
                 return success0(x, token);
             }
@@ -467,7 +462,7 @@ public final class KDeferred
         return success1(x, token);
     }
 
-    private Boolean success0(Object x, Object token) {
+    private boolean success0(Object x, Object token) {
         if (token != this.token) {
             return invalidToken();
         }
@@ -487,10 +482,10 @@ public final class KDeferred
             }
         }
 
-        return Boolean.TRUE;
+        return true;
     }
 
-    private Boolean success1(Object x, Object token) {
+    private boolean success1(Object x, Object token) {
         do {
             switch ((byte) STATE.getAcquire(this)) {
                 case STATE_LSTN:
@@ -505,22 +500,13 @@ public final class KDeferred
 
                 case STATE_SUCC:
                 case STATE_ERRR:
-                    return Boolean.FALSE;
+                    return false;
             }
         } while (true);
     }
 
     public Object error(Object x) {
-        if (STATE.weakCompareAndSetAcquire(this, STATE_LSTN, STATE_LOCK)) {
-            if (this.lss == null && this.token == null) {
-                this.value = x;
-                STATE.setRelease(this, STATE_ERRR);
-                return Boolean.TRUE;
-            } else {
-                return error0(x, null);
-            }
-        }
-        return error1(x, null);
+        return error(x, null);
     }
 
     public Object error(Object x, Object token) {
@@ -528,7 +514,7 @@ public final class KDeferred
             if (this.lss == null && this.token == token) {
                 this.value = x;
                 STATE.setRelease(this, STATE_ERRR);
-                return Boolean.TRUE;
+                return true;
             } else {
                 return error0(x, token);
             }
@@ -536,7 +522,7 @@ public final class KDeferred
         return error1(x, token);
     }
 
-    private Boolean error0(Object x, Object token) {
+    private boolean error0(Object x, Object token) {
         if (token != this.token) {
             return invalidToken();
         }
@@ -545,7 +531,7 @@ public final class KDeferred
         AListener node = this.lss;
         this.lss = null;
         if (node == null) {
-            this.fireError(x);
+            this.detectLeakedError(x);
         }
 
         STATE.setRelease(this, STATE_ERRR);
@@ -561,10 +547,10 @@ public final class KDeferred
             }
         }
 
-        return Boolean.TRUE;
+        return true;
     }
 
-    public Boolean error1(Object x, Object token) {
+    public boolean error1(Object x, Object token) {
         do {
             switch ((byte) STATE.getAcquire(this)) {
                 case STATE_LSTN:
@@ -579,7 +565,7 @@ public final class KDeferred
 
                 case STATE_SUCC:
                 case STATE_ERRR:
-                    return Boolean.FALSE;
+                    return false;
             }
         } while (true);
     }
@@ -595,9 +581,6 @@ public final class KDeferred
     }
 
     boolean listen0(AListener ls) {
-        if (ls.next != null) {
-            throw new IllegalArgumentException("listener is already used for another deferred");
-        }
         byte s = (byte) STATE.getAcquire(this);
         return (s & STATE_DONE_MASK) == 0 && listen0(s, ls);
     }
@@ -663,7 +646,7 @@ public final class KDeferred
     public Object addListener(Object lss) {
         IDeferredListener ls = (IDeferredListener) lss;
         if (this.listen0(ls)) {
-            return Boolean.TRUE;
+            return true;
         }
 
         if ((byte) STATE.getAcquire(this) == STATE_SUCC) {
@@ -672,7 +655,7 @@ public final class KDeferred
             this.consumeError();
             ls.onError(value);
         }
-        return Boolean.FALSE;
+        return false;
     }
 
     public Object onRealized(Object onSucc, Object onErrr) {
@@ -680,7 +663,7 @@ public final class KDeferred
         IFn onErr = (IFn) onErrr;
 
         if (this.listen0(onSuc, onErr)) {
-            return Boolean.TRUE;
+            return true;
         }
 
         if ((byte) STATE.getAcquire(this) == STATE_SUCC) {
@@ -689,7 +672,7 @@ public final class KDeferred
             this.consumeError();
             onErr.invoke(value);
         }
-        return Boolean.FALSE;
+        return false;
     }
 
     public Object cancelListener(Object listener) {
@@ -873,7 +856,7 @@ public final class KDeferred
                 x = xx;
             }
         }
-        this.success(x);
+        this.fireValue(x);
     }
 
     private void chain0(IDeferred x, Object token) {
@@ -958,9 +941,24 @@ public final class KDeferred
         }
     }
 
+    public static KDeferred wrapCompletionStage(CompletionStage s) {
+        KDeferred d = new KDeferred();
+        s.handle((x, e) -> {
+            if (e == null) {
+                d.fireValue(x);
+            } else {
+                d.fireError(e);
+            }
+            return null;
+        });
+        return d;
+    }
+
     public static KDeferred wrap(Object x) {
         if (x instanceof IDeferred) {
             return wrapDeferred((IDeferred) x);
+        } else if (x instanceof CompletionStage) {
+            return wrapCompletionStage((CompletionStage) x);
         } else {
             return new KDeferred(STATE_SUCC, x);
         }
@@ -976,5 +974,83 @@ public final class KDeferred
             kd.chain(dd);
             return kd;
         }
+    }
+
+    // == support CompletionStageMixin == //
+
+    public CompletionStageMixin coerce(Object x) {
+        return wrap(x);
+    }
+
+    public CompletionStageMixin dup() {
+        return new KDeferred();
+    }
+
+    private void consume0(Consumer xc, Consumer ec) {
+        byte s = (byte) STATE.getAcquire(this);
+        if (((s & STATE_DONE_MASK) == 0) && this.listen0(s, new AListener() {
+            public void success(Object x) {
+                xc.accept(x);
+            }
+            public void error(Object e) {
+                ec.accept(e);
+            }
+        })) {
+            return;
+        }
+        if ((byte) STATE.getAcquire(this) == STATE_SUCC) {
+            xc.accept(value);
+        } else {
+            ec.accept(value);
+        }
+    }
+
+    private void consume0(Consumer xc, Consumer ec, Executor ex) {
+        this.listen(new AListener() {
+            public void success(Object x) {
+                ExecutionPool.adapt(ex).fork(() -> xc.accept(x));
+            }
+            public void error(Object e) {
+                ExecutionPool.adapt(ex).fork(() -> ec.accept(e));
+            }
+        });
+    }
+
+    public void consume(Consumer xc, Consumer ec, Executor ex) {
+        if (ex == null) {
+            this.consume0(xc, ec);
+        } else {
+            this.consume0(xc, ec, ex);
+        }
+    }
+
+    public void fireValue(Object x) {
+        if (STATE.weakCompareAndSetAcquire(this, STATE_LSTN, STATE_LOCK)) {
+            if (this.lss == null && this.token == null) {
+                this.value = x;
+                STATE.setRelease(this, STATE_SUCC);
+            } else {
+                success0(x, null);
+            }
+        } else {
+            success1(x, null);
+        }
+    }
+
+    public void fireError(Object x) {
+        if (STATE.weakCompareAndSetAcquire(this, STATE_LSTN, STATE_LOCK)) {
+            if (this.lss == null && this.token == null) {
+                this.value = x;
+                STATE.setRelease(this, STATE_ERRR);
+            } else {
+                error0(x, null);
+            }
+        } else {
+            error1(x, null);
+        }
+    }
+
+    public Executor defaultExecutor() {
+        return null;
     }
 }

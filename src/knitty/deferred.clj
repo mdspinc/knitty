@@ -169,8 +169,8 @@
     (wrap d)
     (let [dd (create)]
       (on d
-          (fn on-val [x] (.execute executor #(success! dd x)))
-          (fn on-err [e] (.execute executor #(error! dd e))))
+          (fn on-val [x] (.execute executor #(.fireValue dd x)))
+          (fn on-err [e] (.execute executor #(.fireError dd e))))
       dd)))
 
 
@@ -379,8 +379,8 @@
   `(let [d# (create)]
      (await!*
       (fn ~'on-await-iter
-        ([] (success! d# ~f))
-        ([e#] (error! d# e#)))
+        ([] (.fireValue d# ~f))
+        ([e#] (.fireError d# e#)))
       ~ds)
      d#))
 
@@ -404,8 +404,8 @@
      (let [res# (create)]
        (kd-await!
         (fn ~(symbol (str "on-await-" (count xs)))
-          ([] (success! res# ~(vec (for [x xs] `(kd-get ~x)))))
-          ([e#] (error! res# e#)))
+          ([] (.fireValue res# ~(vec (for [x xs] `(kd-get ~x)))))
+          ([e#] (.fireError res# e#)))
         ~@xs)
        res#)))
 
@@ -529,7 +529,7 @@
                   (recur y#)))
 
               :else
-              (success! d# ~(when-not ret-nil? xx)))))
+              (.fireValue d# ~(when-not ret-nil? xx)))))
         ef#)
        d#)))
 

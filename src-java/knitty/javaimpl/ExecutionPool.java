@@ -10,9 +10,14 @@ import clojure.lang.Var;
 public abstract class ExecutionPool {
 
     public abstract void fork(AFn fn);
+    public abstract void fork(Runnable r);
     public abstract void run(AFn fn);
 
     private ExecutionPool() {}
+
+    public static ExecutionPool adapt(Executor executor) {
+        return adapt(executor, null);
+    }
 
     public static ExecutionPool adapt(Executor executor, Object bframe) {
         if (executor instanceof ForkJoinPool) {
@@ -43,6 +48,10 @@ public abstract class ExecutionPool {
             } finally {
                 popBFrame(oldf);
             }
+        }
+
+        public void fork(Runnable r) {
+            r.run();
         }
     }
 
@@ -86,6 +95,10 @@ public abstract class ExecutionPool {
             } else {
                 this.executor.execute(new FnWrapper(fn));
             }
+        }
+
+        public void fork(Runnable r) {
+            executor.execute(r);
         }
     }
 
@@ -142,6 +155,10 @@ public abstract class ExecutionPool {
 
         public void run(AFn fn) {
             this.pool.execute(new FnForkTask(fn));
+        }
+
+        public void fork(Runnable r) {
+            ForkJoinTask.adapt(r).fork();
         }
     }
 
