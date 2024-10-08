@@ -99,37 +99,20 @@ public final class KAwaiter {
             case 0b00: ka = with0(ka, ls, x2);
             case 0b01: x2 = x1;
             case 0b10: ka = with0(ka, ls, x2);
-            // case 0b11:
+            case 0b11:
         }
         return ka;
     }
 
     public static KAwaiter with(KAwaiter ka, AFn ls, KDeferred x1, KDeferred x2, KDeferred x3) {
-        switch ((byte) (((x1.state() & 1) << 1) | (x2.state() & 1))) {
-            case 0b00: ka = with0(ka, ls, x2);
-            case 0b01: x2 = x1;
-            case 0b10: ka = with0(ka, ls, x2);
-            // case 0b11:
-        }
-        if (x3.state() == 1) {
-            return ka;
-        }
-        return with0(ka, ls, x3);
+        ka = with(ka, ls, x1, x2);
+        ka = with(ka, ls, x3);
+        return ka;
     }
 
     public static KAwaiter with(KAwaiter ka, AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4) {
-        switch ((byte) (((x1.state() & 1) << 1) | (x2.state() & 1))) {
-            case 0b00: ka = with0(ka, ls, x2);
-            case 0b01: x2 = x1;
-            case 0b10: ka = with0(ka, ls, x2);
-            // case 0b11:
-        }
-        switch ((byte) (((x3.state() & 1) << 1) | (x4.state() & 1))) {
-            case 0b00: ka = with0(ka, ls, x4);
-            case 0b01: x4 = x3;
-            case 0b10: ka = with0(ka, ls, x4);
-            // case 0b11:
-        }
+        ka = with(ka, ls, x1, x2);
+        ka = with(ka, ls, x3, x4);
         return ka;
     }
 

@@ -29,17 +29,17 @@
 
 (definline wrap-err
   "A realized deferred with error."
-  [e]
+  ^KDeferred [e]
   `(KDeferred/wrapErr ~e))
 
 (definline wrap-val
   "A realized deferred with value."
-  [v]
+  ^KDeferred [v]
   `(KDeferred/wrapVal ~v))
 
 (definline wrap
   "Coerce type `x` from IDeferred to Knitty deferred or returns realized deferred with value `x`."
-  [x]
+  ^KDeferred [x]
   `(KDeferred/wrap ~x))
 
 (defn wrap*
@@ -57,7 +57,7 @@
           (wrap-val v)))
 
       :else
-      (.bind (KDeferred/wrap y) wrap* wrap* nil))))
+      (.bind (KDeferred/wrap y) wrap* wrap*))))
 
 (defmacro do-wrap
   "Run `body` and returns value as deferred, catch and wrap any exceptions."
@@ -68,7 +68,7 @@
 
 (defn future-call
   "Equivalent to `clojure.core/future-call`, but returns a Knitty deferred."
-  [f]
+  ^KDeferred [f]
   (let [frame (clojure.lang.Var/cloneThreadBindingFrame)
         d (create)]
     (.execute
@@ -77,7 +77,7 @@
        (clojure.lang.Var/resetThreadBindingFrame frame)
        (try
          (when-not (.realized d)
-           (.chain d (f) nil))
+           (.chain d (f)))
          (catch Throwable e (.error d e nil)))))
     d))
 
@@ -100,8 +100,8 @@
 
 (definline kd-chain-from
   "Conveys value (or error) from deferred `d` to Knitty deferred `kd`."
-  [kd d token]
-  `(let [^KDeferred x# ~kd] (.chain x# ~d ~token)))
+  [kd d]
+  `(let [^KDeferred x# ~kd] (.chain x# ~d)))
 
 (defmacro success!
   "Puts a deferred into a realized state with provided value `x`."
@@ -142,9 +142,8 @@
                 (fn err [e] (on-err e)))))
 
 (defmacro ^:private bind-inline
-  ([d val-fn] `(.bind (wrap ~d) ~val-fn nil nil))
-  ([d val-fn err-fn] `(.bind (wrap ~d) ~val-fn ~err-fn nil))
-  ([d val-fn err-fn token] `(.bind (wrap ~d) ~val-fn ~err-fn ~token)))
+  ([d val-fn] `(.bind (wrap ~d) ~val-fn nil))
+  ([d val-fn err-fn] `(.bind (wrap ~d) ~val-fn ~err-fn)))
 
 (defn bind
   "Bind 1-arg callbacks fn to deferred. Returns new deferred with amended value.
@@ -152,30 +151,27 @@
    another deferred or throw an exception. Optional `err-fn` accepts single argument with error.
    "
   {:inline (fn [d & args] (apply #'bind-inline nil nil d args))
-   :inline-arities #{2 3 4}}
-  ([d val-fn] (bind-inline d val-fn))
-  ([d val-fn err-fn] (bind-inline d val-fn err-fn))
-  ([d val-fn err-fn token] (bind-inline d val-fn err-fn token)))
+   :inline-arities #{2 3}}
+  (^KDeferred [d val-fn] (bind-inline d val-fn))
+  (^KDeferred [d val-fn err-fn] (bind-inline d val-fn err-fn)))
 
 (defn bind-ex
   "Similar to `bind`, but run all callbacks on specified `executor`."
-  ([d ^Executor executor val-fn]
-   (.bind (wrap d) val-fn nil nil executor))
-  ([d ^Executor executor val-fn err-fn]
-   (.bind (wrap d) val-fn err-fn nil executor))
-  ([d ^Executor executor val-fn err-fn token]
-   (.bind (wrap d) val-fn err-fn token executor)))
+  (^KDeferred [d ^Executor executor val-fn]
+   (.bind (wrap d) val-fn nil executor))
+  (^KDeferred [d ^Executor executor val-fn err-fn]
+   (.bind (wrap d) val-fn err-fn executor)))
 
 (defn onto
   "Returns a deferred whose callbacks will be run on `executor`."
-  ([d ^Executor executor]
-   (if (nil? executor)
-     d
-     (let [dd (create)]
-       (on d
-           (fn on-val [x] (.execute executor #(success! dd x)))
-           (fn on-err [e] (.execute executor #(error! dd e))))
-       dd))))
+  ^KDeferred [d ^Executor executor]
+  (if (nil? executor)
+    (wrap d)
+    (let [dd (create)]
+      (on d
+          (fn on-val [x] (.execute executor #(success! dd x)))
+          (fn on-err [e] (.execute executor #(error! dd e))))
+      dd)))
 
 
 (defn- map-subset? [a-map b-map]
@@ -186,8 +182,7 @@
     (fn? ee) ee
     (and (class? ee) (.isAssignableFrom Throwable ee)) (fn check-ex-instance [e] (instance? ee e))
     (map? ee) (fn check-ex-data [e] (some-> e ex-data (->> (map-subset? ee))))
-    :else (throw (ex-info "expected exception class, predicate fn or ex-data submap" {::ex ee}))
-    ))
+    :else (throw (ex-info "expected exception class, predicate fn or ex-data submap" {::ex ee}))))
 
 (defn bind-err
   "Bind 1-arg callback fn to deferred. Callback called when deferred is realized with an error.
@@ -202,8 +197,8 @@
          (bind-err {:type :my-error}           #(hande-exinfo-with-matched-type %))
          (bind-err                             #(handle-any-error %)))
    "
-  ([mv f] (bind mv identity f))
-  ([mv exc f]
+  (^KDeferred [mv f] (bind mv identity f))
+  (^KDeferred [mv exc f]
    (let [ep (build-err-predicate exc)]
      (bind-err mv (fn on-err [e] (if (ep e) (f e) (wrap-err e)))))))
 
@@ -211,7 +206,7 @@
   "Bind 0-arg function to be executed when deferred is realized (either with value or error).
    Callback result is ignored, any thrown execiptions are re-wrapped.
    "
-  ([d f0]
+  (^KDeferred [d f0]
    (bind
     d
     (fn on-val [x] (bind (f0) (fn ret-val [_] x)))
@@ -260,8 +255,8 @@
              ([d c] `(KDeferred/revoke ~d ~c nil))
              ([d c e] `(KDeferred/revoke ~d ~c ~e)))
    :inline-arities #{2 3}}
-  ([d cancel-fn] (KDeferred/revoke d cancel-fn nil))
-  ([d cancel-fn err-handler] (KDeferred/revoke d cancel-fn err-handler)))
+  (^KDeferred [d cancel-fn] (KDeferred/revoke d cancel-fn nil))
+  (^KDeferred [d cancel-fn err-handler] (KDeferred/revoke d cancel-fn err-handler)))
 
 (def ^:private revoke-to-error
   (knitty.javaimpl.RevokeException. "deferred is revoked by revoke-to"))
@@ -278,20 +273,18 @@
             (revoke-to x)  ;; bypass cancelation to `x`
             ))
   "
-  ([^IDeferred d ^IDeferred rd]
+  (^KDeferred [^IDeferred d ^IDeferred rd]
    (revoke d #(error! rd revoke-to-error)))
-  ([^IDeferred d ^IDeferred rd & rds]
+  (^KDeferred [^IDeferred d ^IDeferred rd & rds]
    (revoke d #(do (error! rd revoke-to-error)
                   (doseq [x rds] (error! x revoke-to-error))))))
 
 (defn connect
   "Conveys the realized value of `d-from` into `d-dest`."
   ([d-from d-dest]
-   (connect d-from d-dest nil))
-  ([d-from d-dest token]
    (on (wrap d-from)
-       (fn on-val [x] (success! d-dest x token))
-       (fn on-err [e] (error! d-dest e token)))))
+       (fn on-val [x] (success! d-dest x))
+       (fn on-err [e] (error! d-dest e)))))
 
 (defn- join0 [x d t]
   (on x
@@ -309,10 +302,10 @@
 
        @(join (kd/future (kd/future (kd/future 1))))  ;; => 1
    "
-  [d]
+  ^KDeferred [d]
   (cond
-    (not (deferred? d)) (wrap d)
-    (and (realized? d) (not (deferred? (unwrap1 d)))) d
+    (not (deferred? d)) (wrap-val d)
+    (and (realized? d) (not (deferred? (unwrap1 d)))) (wrap d)
     :else (let [d0 (create d)]
             (join0 d d0 d)
             d0)))
@@ -370,7 +363,7 @@
           (~lss))))))
 
 (defmacro await! [ls & ds]
-    `(kd-await! ~ls ~@(map #(do `(wrap ~%)) ds)))
+  `(kd-await! ~ls ~@(map #(do `(wrap ~%)) ds)))
 
 (definline await!*
   "Like `await!` but accept iterable collection of deferreds."
@@ -393,18 +386,18 @@
 
 (defn zip*
   "Similar to `(apply zip vs)`, returns a seq instead of vector."
-  ([vs] (call-after-all'
+  (^KDeferred [vs] (call-after-all'
          vs
          (let [it (iterator vs)]
            (iterator-seq
             (reify java.util.Iterator
               (hasNext [_] (.hasNext it))
               (next [_] (unwrap1 (.next it))))))))
-  ([a vs] (zip* (list* a vs)))
-  ([a b vs] (zip* (list* a b vs)))
-  ([a b c vs] (zip* (list* a b c vs)))
-  ([a b c d vs] (zip* (list* a b c d vs)))
-  ([a b c d e & vs] (zip* (concat [a b c d e] vs))))
+  (^KDeferred [a vs] (zip* (list* a vs)))
+  (^KDeferred [a b vs] (zip* (list* a b vs)))
+  (^KDeferred [a b c vs] (zip* (list* a b c vs)))
+  (^KDeferred [a b c d vs] (zip* (list* a b c d vs)))
+  (^KDeferred [a b c d e & vs] (zip* (concat [a b c d e] vs))))
 
 (defmacro ^:private zip-inline [& xs]
   `(let [~@(mapcat identity (for [x xs] [x `(wrap ~x)]))]
@@ -427,24 +420,24 @@
 
 (defn zip
   "Takes several values and returns a deferred that will yield vector of realized values."
-  ([] (wrap-val []))
-  ([a] (bind a (fn on-await-1 [x] [x])))
-  ([a b] (zip-inline a b))
-  ([a b c] (zip-inline a b c))
-  ([a b c d] (zip-inline a b c d))
-  ([a b c d e] (zip-inline a b c d e))
-  ([a b c d e f] (zip-inline a b c d e f))
-  ([a b c d e f g] (zip-inline a b c d e f g))
-  ([a b c d e f g h] (zip-inline a b c d e f g h))
-  ([a b c d e f g h i] (zip-inline a b c d e f g h i))
-  ([a b c d e f g h i j] (zip-inline a b c d e f g h i j))
-  ([a b c d e f g h i j k] (zip-inline a b c d e f g h i j k))
-  ([a b c d e f g h i j k l] (zip-inline a b c d e f g h i j k l))
-  ([a b c d e f g h i j k l m] (zip-inline a b c d e f g h i j k l m))
-  ([a b c d e f g h i j k l m n] (zip-inline a b c d e f g h i j k l m n))
-  ([a b c d e f g h i j k l m n o] (zip-inline a b c d e f g h i j k l m n o))
-  ([a b c d e f g h i j k l m n o p] (zip-inline a b c d e f g h i j k l m n o p))
-  ([a b c d e f g h i j k l m n o p & z]
+  (^KDeferred [] (wrap-val []))
+  (^KDeferred [a] (bind a (fn on-await-1 [x] [x])))
+  (^KDeferred [a b] (zip-inline a b))
+  (^KDeferred [a b c] (zip-inline a b c))
+  (^KDeferred [a b c d] (zip-inline a b c d))
+  (^KDeferred [a b c d e] (zip-inline a b c d e))
+  (^KDeferred [a b c d e f] (zip-inline a b c d e f))
+  (^KDeferred [a b c d e f g] (zip-inline a b c d e f g))
+  (^KDeferred [a b c d e f g h] (zip-inline a b c d e f g h))
+  (^KDeferred [a b c d e f g h i] (zip-inline a b c d e f g h i))
+  (^KDeferred [a b c d e f g h i j] (zip-inline a b c d e f g h i j))
+  (^KDeferred [a b c d e f g h i j k] (zip-inline a b c d e f g h i j k))
+  (^KDeferred [a b c d e f g h i j k l] (zip-inline a b c d e f g h i j k l))
+  (^KDeferred [a b c d e f g h i j k l m] (zip-inline a b c d e f g h i j k l m))
+  (^KDeferred [a b c d e f g h i j k l m n] (zip-inline a b c d e f g h i j k l m n))
+  (^KDeferred [a b c d e f g h i j k l m n o] (zip-inline a b c d e f g h i j k l m n o))
+  (^KDeferred [a b c d e f g h i j k l m n o p] (zip-inline a b c d e f g h i j k l m n o p))
+  (^KDeferred [a b c d e f g h i j k l m n o p & z]
    (bind
     (zip-inline a b c d e f g h i j k l m n o p)
     (fn on-await-x [xg]
@@ -458,8 +451,7 @@
           (iter-full-reduce
            (fn [a x] (conj! a (kd-get x)))
            (transient xg)
-           z))))
-        ))))
+           z))))))))
 
 
 (def ^:private ^java.util.Random alt-rnd
@@ -468,35 +460,35 @@
 (defn- alt-in
   ([^KDeferred res a b]
    (if (== 0 (.nextInt alt-rnd 2))
-     (do (.chain res a nil) (when-not (.realized res) (.chain res b nil)))
-     (do (.chain res b nil) (when-not (.realized res) (.chain res a nil)))))
+     (do (.chain res a) (when-not (.realized res) (.chain res b)))
+     (do (.chain res b) (when-not (.realized res) (.chain res a)))))
   ([^KDeferred res a b c]
    (case (.nextInt alt-rnd 3)
-     0 (do (.chain res a nil) (when-not (.realized res) (alt-in res b c)))
-     1 (do (.chain res b nil) (when-not (.realized res) (alt-in res a c)))
-     2 (do (.chain res c nil) (when-not (.realized res) (alt-in res a b)))))
+     0 (do (.chain res a) (when-not (.realized res) (alt-in res b c)))
+     1 (do (.chain res b) (when-not (.realized res) (alt-in res a c)))
+     2 (do (.chain res c) (when-not (.realized res) (alt-in res a b)))))
   ([^KDeferred res a b c d]
    (case (.nextInt alt-rnd 4)
-     0 (do (.chain res a nil) (when-not (.realized res) (alt-in res b c d)))
-     1 (do (.chain res b nil) (when-not (.realized res) (alt-in res a c d)))
-     2 (do (.chain res c nil) (when-not (.realized res) (alt-in res a b d)))
-     3 (do (.chain res d nil) (when-not (.realized res) (alt-in res a b c))))))
+     0 (do (.chain res a) (when-not (.realized res) (alt-in res b c d)))
+     1 (do (.chain res b) (when-not (.realized res) (alt-in res a c d)))
+     2 (do (.chain res c) (when-not (.realized res) (alt-in res a b d)))
+     3 (do (.chain res d) (when-not (.realized res) (alt-in res a b c))))))
 
 (defn alt
   "Takes several values, some of which may be a deferred, and returns a
   deferred that will yield the value which was realized first."
-  ([a]
+  (^KDeferred [a]
    (wrap a))
-  ([a b]
+  (^KDeferred [a b]
    (doto (create) (alt-in a b)))
-  ([a b c]
+  (^KDeferred [a b c]
    (doto (create) (alt-in a b c)))
-  ([a b c d]
+  (^KDeferred [a b c d]
    (doto (create) (alt-in a b c d)))
-  ([a b c d & vs]
+  (^KDeferred [a b c d & vs]
    (let [^KDeferred res (create)]
      (c/reduce
-      (fn [_ x] (.chain res x nil) (when (.realized res) (reduced nil)))
+      (fn [_ x] (.chain res x) (when (.realized res) (reduced nil)))
       (doto (java.util.ArrayList. (+ (count vs) 4))
         (.addAll ^clojure.lang.PersistentList vs)
         (.add a)
@@ -548,7 +540,7 @@
    Function `f` may return deferreds, initial value `x` also may be deferred.
    Predicate `p` should always return synchonous values howerver.
    This is low-level routine, prefer `reduce` `while` or `loop`."
-  [f p x]
+  ^KDeferred [f p x]
   (impl-iterate-while* (fn [x] (f x)) (fn [x] (p x)) x false))
 
 
@@ -603,7 +595,7 @@
 
 (defn chain*
   "Composes functions over the value `x`, returning a deferred containing the result."
-  [x fs]
+  ^KDeferred [x fs]
   (let [it (iterator fs)]
     (impl-iterate-while*
      (fn [a] (bind a (.next it)))
@@ -614,7 +606,7 @@
 (defn reduce
   "Deferred-aware version of `clojure.core/reduce`.
    Step function `f` may return deferred values, `xs` may be sequence of deferreds."
-  [f initd xs]
+  ^KDeferred [f initd xs]
   (bind
    (let [it (iterator xs)]
      (impl-iterate-while*
@@ -627,7 +619,7 @@
 (defn run!
   "Sequentially apply `f` to sequence of deferreds `xs` for side effects.
    Fn `f` may return deferreds."
-  [f xs]
+  ^KDeferred [f xs]
   (let [it (iterator xs)]
     (impl-iterate-while*
      (fn [_] (bind (.next it) f))
@@ -657,14 +649,14 @@
               []
               (let [[[_ fds0]] (swap-vals! s pop-fds)]
                 (when-let [[f d] (peek fds0)]
-                  (kd-chain-from d (do-wrap (f)) nil))))
+                  (kd-chain-from d (do-wrap (f))))))
 
             (semaphore-fn [f]
               (let [d (create)
                     [[^long n0] [^long n1]] (swap-vals! s conj-fds f d)]
                 (on d maybe-release)
                 (when-not (== n0 n1)
-                  (kd-chain-from d (do-wrap (f)) nil))
+                  (kd-chain-from d (do-wrap (f))))
                 d))]
       semaphore-fn)))
 
