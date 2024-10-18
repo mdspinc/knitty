@@ -127,7 +127,7 @@ public class KDeferred
                 try {
                     t = errFn.invoke(e);
                 } catch (Throwable e1) {
-                    e1.initCause(coerceError(e));
+                    e1.addSuppressed(coerceError(e));
                     dest.fireError(e1);
                     return;
                 }
