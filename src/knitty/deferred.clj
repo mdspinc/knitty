@@ -133,16 +133,15 @@
    When only one callback is provided it shold be 0-arg fn.
    When both callbacks provided - they must accept 1 argument (value or error)."
   ([x on-any]
-   (.onRealized (wrap x)
-                (fn val [x] (if (deferred? x) (on x on-any) (on-any)))
-                (fn err [_] (on-any))))
+   (let [f (fn val [x] (if (deferred? x) (on x on-any) (on-any)))]
+     (.onRealized (wrap x) f f)))
   ([x on-ok on-err]
    (.onRealized (wrap x)
                 (fn val [x] (if (deferred? x) (on x on-ok on-err) (on-ok x)))
-                (fn err [e] (on-err e)))))
+                (fn err [x] (if (deferred? x) (on x on-err on-err) (on-err x))))))
 
 (defmacro ^:private bind-inline
-  ([d val-fn] `(.bind (wrap ~d) ~val-fn nil))
+  ([d val-fn] `(.bind (wrap ~d) ~val-fn))
   ([d val-fn err-fn] `(.bind (wrap ~d) ~val-fn ~err-fn)))
 
 (defn bind
@@ -404,7 +403,7 @@
      (let [res# (create)]
        (kd-await!
         (fn ~(symbol (str "on-await-" (count xs)))
-          ([] (.fireValue res# ~(vec (for [x xs] `(kd-get ~x)))))
+          ([] (.fireValue res# ~(vec (for [x xs] `(.getRaw ~x)))))
           ([e#] (.fireError res# e#)))
         ~@xs)
        res#)))
@@ -449,7 +448,7 @@
          z
          (persistent!
           (iter-full-reduce
-           (fn [a x] (conj! a (kd-get x)))
+           (fn [a x] (conj! a (.getRaw ^KDeferred x)))
            (transient xg)
            z))))))))
 

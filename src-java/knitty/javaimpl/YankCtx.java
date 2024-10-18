@@ -70,7 +70,7 @@ public final class YankCtx {
             try {
                 doYank(yarns, res);
             } catch (Throwable t) {
-                res.error(wrapYankErr(t, yarns));
+                res.fireError(wrapYankErr(t, yarns));
             }
             return null;
         }
@@ -262,7 +262,7 @@ public final class YankCtx {
             return v;
         }
 
-        KDeferred d = new KDeferred(token);
+        KDeferred d = KDeferred.create(token);
         KDeferred r;
         do {
             if (AR1.weakCompareAndSetPlain(a1, i1, null, d)) {
@@ -353,11 +353,13 @@ public final class YankCtx {
     AListener canceller() {
         return new AListener() {
 
+            @Override
             public void success(Object _v) {
                 if (!isFrozen()) {
                     cancel(null);
                 }
             }
+            @Override
             public void error(Object e) {
                 if (!isFrozen()) {
                     Throwable t;

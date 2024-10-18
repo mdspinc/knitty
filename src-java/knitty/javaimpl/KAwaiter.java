@@ -12,7 +12,8 @@ public final class KAwaiter {
     private static final class Ls extends AListener {
 
         private final KAwaiter ka;
-            Ls(KAwaiter ka) {
+
+        Ls(KAwaiter ka) {
             this.ka = ka;
         }
 
@@ -75,44 +76,90 @@ public final class KAwaiter {
         return new KAwaiter(ls);
     }
 
-    private static KAwaiter with0(KAwaiter ka, AFn ls, KDeferred d1) {
+    private static KAwaiter start(KAwaiter ka, AFn ls) {
         if (ka == null) {
-            ka = new KAwaiter(ls);
-        } else if (ka.acnt <= 0) {
-            throw new IllegalStateException("more than 2147483647 deferreds are awaited");
+            return new KAwaiter(ls);
+        } else if (ka.acnt <= 4) {
+            throw new IllegalStateException("too much deferreds are awaited");
+        } else {
+            return ka;
         }
-        ka.acnt -= 1;
-        d1.listen(new Ls(ka));
-        return ka;
+    }
+
+    private void with0(KDeferred d1) {
+        this.acnt -= 1;
+        d1.listen(new Ls(this));
     }
 
     public static KAwaiter with(KAwaiter ka, AFn ls, KDeferred x1) {
-        if (x1.state() == 1) {
+        int s1 = x1.succeeded;
+        if (s1 == 1) {
             return ka;
         } else {
-            return with0(ka, ls, x1);
+            ka = start(ka, ls);
+            ka.with0(x1);
+            return ka;
         }
     }
 
     public static KAwaiter with(KAwaiter ka, AFn ls, KDeferred x1, KDeferred x2) {
-        switch ((byte) (((x1.state() & 1) << 1) | (x2.state() & 1))) {
-            case 0b00: ka = with0(ka, ls, x2);
-            case 0b01: x2 = x1;
-            case 0b10: ka = with0(ka, ls, x2);
-            case 0b11:
+        int s1 = x1.succeeded;
+        int s2 = x2.succeeded;
+        if ((s1 & s2) == 0) {
+            ka = start(ka, ls);
+            switch ((s2 << 1) | s1) {
+                case 0b00: ka.with0(x1);  // 2 1
+                case 0b01: x1 = x2;       // 2
+                case 0b10: ka.with0(x1);  // 1
+            }
         }
         return ka;
     }
 
     public static KAwaiter with(KAwaiter ka, AFn ls, KDeferred x1, KDeferred x2, KDeferred x3) {
-        ka = with(ka, ls, x1, x2);
-        ka = with(ka, ls, x3);
+        int s1 = x1.succeeded;
+        int s2 = x2.succeeded;
+        int s3 = x3.succeeded;
+        if ((s1 & s2 & s3) == 0) {
+            ka = start(ka, ls);
+            switch ((s3 << 2) | (s2 << 1) | s1) {
+                case 0b000: ka.with0(x1);  // 3 2 1
+                case 0b001: x1 = x3;       // 3 2
+                case 0b100: x3 = x2;       // 2 1
+                case 0b010: ka.with0(x1);  // 3 1
+                case 0b011: x2 = x3;       // 3
+                case 0b101: x1 = x2;       // 2
+                case 0b110: ka.with0(x1);  // 1
+            }
+        }
         return ka;
     }
 
     public static KAwaiter with(KAwaiter ka, AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4) {
-        ka = with(ka, ls, x1, x2);
-        ka = with(ka, ls, x3, x4);
+        int s1 = x1.succeeded;
+        int s2 = x2.succeeded;
+        int s3 = x3.succeeded;
+        int s4 = x4.succeeded;
+        if ((s1 & s2 & s3 & s4) == 0) {
+            ka = start(ka, ls);
+            switch ((s4 << 3) | (s3 << 2) | (s2 << 1) | s1) {
+                case 0b0000: ka.with0(x1);  // 4 3 2 1
+                case 0b0001: x1 = x2;       // 4 3 2
+                case 0b0010: x2 = x4;       // 4 3 1
+                case 0b1000: x4 = x3;       // 3 2 1
+                case 0b0100: ka.with0(x1);  // 4 2 1
+                case 0b0101: x1 = x4;       // 4 2
+                case 0b1100: x3 = x2;       // 2 1
+                case 0b1010: x2 = x1;       // 1 3
+                case 0b1001: x4 = x2;       // 3 2
+                case 0b0011: x1 = x3;       // 4 3
+                case 0b0110: ka.with0(x1);  // 4 1
+                case 0b0111: x3 = x4;       // 4
+                case 0b1011: x2 = x3;       // 3
+                case 0b1101: x1 = x2;       // 2
+                case 0b1110: ka.with0(x1);  // 1
+            }
+        }
         return ka;
     }
 
@@ -121,7 +168,7 @@ public final class KAwaiter {
     }
 
     public static boolean await1(AFn ls, KDeferred x1) {
-        if (x1.state() == 1) {
+        if (x1.succeeded == 1) {
             return true;
         } else {
             x1.listen(new L0(ls));

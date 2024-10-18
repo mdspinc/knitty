@@ -295,7 +295,7 @@
         (mapcat identity
                 (for [[ds _dk] bind
                       :when (#{:sync :fork-sync} (bind-param-type ds))]
-                  [ds `(kd/kd-get ~ds)]))
+                  [ds `(.getRaw ~ds)]))
 
         all-deps-tr (into
                      []
@@ -374,7 +374,7 @@
   (let [i (long (KwMapper/registerKeyword k))]
     (fn yank-route-key [^YankCtx yctx ^KDeferred _]
       (tracer-> yctx .traceRouteBy ykey k)
-      (.get (.fetch yctx i k)))))
+      (kd/kd-get (.fetch yctx i k)))))
 
 
 (defn yarn-multi-deps [multifn route-key]
