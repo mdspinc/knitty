@@ -20,6 +20,10 @@
     :async-mode true}))
 
 
+(knitty.javaimpl.KDeferred/setExecutorProviderFn
+ (fn get-executor [] *executor*))
+
+
 (defn enable-tracing!
   "Globally enable knitty tracing."
   ([]

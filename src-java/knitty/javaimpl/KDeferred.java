@@ -408,6 +408,13 @@ public class KDeferred
         }
     }
 
+    private static volatile IFn GET_EXECUTOR = new AFn() {
+        @Override
+        public Object invoke() {
+            return clojure.lang.Agent.soloExecutor;
+        };
+    };
+
     private static volatile IFn LOG_EXCEPTION = new AFn() {
 
         @Override
@@ -422,6 +429,10 @@ public class KDeferred
 
     public static void setExceptionLogFn(IFn f) {
         LOG_EXCEPTION = f;
+    }
+
+    public static void setExecutorProviderFn(IFn f) {
+        GET_EXECUTOR = f;
     }
 
     final static class ErrBox {
@@ -1192,6 +1203,6 @@ public class KDeferred
 
     @Override
     public Executor defaultExecutor() {
-        return null;
+        return (Executor) KDeferred.GET_EXECUTOR.invoke();
     }
 }
