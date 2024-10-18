@@ -116,15 +116,17 @@
 (definline deferred?
   "Returns true if the object is an instance of a deferred."
   [x]
-  `(instance? IDeferred ~x))
+  `(KDeferred/isDeferred ~x))
 
 (definline unwrap1
   "Unwraps deferred (once). Returns realized value or the deferred itself."
   [x]
-  `(let [x# ~x]
-     (if (instance? IDeferred x#)
-       (.successValue ^IDeferred x# x#)
-       x#)))
+  `(KDeferred/unwrap1 ~x))
+
+(definline unwrap
+  "Unwraps deferred (once). Returns realized value or the deferred itself."
+  [x]
+  `(KDeferred/unwrap ~x))
 
 ;; ==
 
@@ -132,13 +134,13 @@
   "Registers callback fns to run when deferred is realized.
    When only one callback is provided it shold be 0-arg fn.
    When both callbacks provided - they must accept 1 argument (value or error)."
+  {:inline (fn ([x on-ok on-err] `(.onRealizedUnwrapped (wrap ~x) ~on-ok ~on-err)))
+   :inline-arities #{3}}
   ([x on-any]
-   (let [f (fn val [x] (if (deferred? x) (on x on-any) (on-any)))]
-     (.onRealized (wrap x) f f)))
+   (let [f (fn onany [_] (on-any))] (on x f f)))
   ([x on-ok on-err]
-   (.onRealized (wrap x)
-                (fn val [x] (if (deferred? x) (on x on-ok on-err) (on-ok x)))
-                (fn err [x] (if (deferred? x) (on x on-err on-err) (on-err x))))))
+   (.onRealizedUnwrapped (wrap x) on-ok on-err)))
+
 
 (defmacro ^:private bind-inline
   ([d val-fn] `(.bind (wrap ~d) ~val-fn))
@@ -278,12 +280,11 @@
    (revoke d #(do (error! rd revoke-to-error)
                   (doseq [x rds] (error! x revoke-to-error))))))
 
-(defn connect
+(definline connect
   "Conveys the realized value of `d-from` into `d-dest`."
-  ([d-from d-dest]
-   (on (wrap d-from)
-       (fn on-val [x] (success! d-dest x))
-       (fn on-err [e] (error! d-dest e)))))
+  [d-from d-dest]
+  `(KDeferred/connect ~d-from ~d-dest))
+
 
 (defn- join0 [x d t]
   (on x
