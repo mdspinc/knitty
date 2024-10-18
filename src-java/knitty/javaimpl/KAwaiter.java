@@ -30,6 +30,40 @@ public final class KAwaiter {
         }
     }
 
+    private static final class Lsv extends AFn {
+
+        private final KAwaiter ka;
+
+        Lsv(KAwaiter ka) {
+            this.ka = ka;
+        }
+
+        @Override
+        public Object invoke(Object x) {
+            if ((int) CNT.getAndAddAcquire(this.ka, (int) -1) == 1) {
+                this.ka.ls.invoke();
+            }
+            return null;
+        }
+    }
+
+    private static final class Lse extends AFn {
+
+        private final KAwaiter ka;
+
+        Lse(KAwaiter ka) {
+            this.ka = ka;
+        }
+
+        @Override
+        public Object invoke(Object x) {
+            if ((int) CNT.getAndAddAcquire(this.ka, (int) -1) == 1) {
+                this.ka.ls.invoke();
+            }
+            return null;
+        }
+    }
+
     private static final class L0 extends AListener {
         final AFn ls;
 
@@ -91,6 +125,28 @@ public final class KAwaiter {
         d1.listen(new Ls(this));
     }
 
+    private AFn lsv;
+    private AFn lse;
+
+    private void with0(IDeferred d1) {
+        this.acnt -= 1;
+        if (lsv == null) {
+            lsv = new Lsv(this);
+            lse = new Lse(this);
+        }
+        d1.onRealized(lsv, lse);
+    }
+
+    private static KAwaiter with(KAwaiter ka, AFn ls, IDeferred x1) {
+        if (x1.successValue(x1) != x1) {
+            return ka;
+        } else {
+            ka = start(ka, ls);
+            ka.with0(x1);
+            return ka;
+        }
+    }
+
     public static KAwaiter with(KAwaiter ka, AFn ls, KDeferred x1) {
         int s1 = x1.succeeded;
         if (s1 == 1) {
@@ -103,62 +159,40 @@ public final class KAwaiter {
     }
 
     public static KAwaiter with(KAwaiter ka, AFn ls, KDeferred x1, KDeferred x2) {
-        int s1 = x1.succeeded;
-        int s2 = x2.succeeded;
+        byte s1 = x1.succeeded;
+        byte s2 = x2.succeeded;
         if ((s1 & s2) == 0) {
             ka = start(ka, ls);
-            switch ((s2 << 1) | s1) {
-                case 0b00: ka.with0(x1);  // 2 1
-                case 0b01: x1 = x2;       // 2
-                case 0b10: ka.with0(x1);  // 1
-            }
+            if (s1 == 0) ka.with0(x1);
+            if (s2 == 0) ka.with0(x2);
         }
         return ka;
     }
 
     public static KAwaiter with(KAwaiter ka, AFn ls, KDeferred x1, KDeferred x2, KDeferred x3) {
-        int s1 = x1.succeeded;
-        int s2 = x2.succeeded;
-        int s3 = x3.succeeded;
+        byte s1 = x1.succeeded;
+        byte s2 = x2.succeeded;
+        byte s3 = x3.succeeded;
         if ((s1 & s2 & s3) == 0) {
             ka = start(ka, ls);
-            switch ((s3 << 2) | (s2 << 1) | s1) {
-                case 0b000: ka.with0(x1);  // 3 2 1
-                case 0b001: x1 = x3;       // 3 2
-                case 0b100: x3 = x2;       // 2 1
-                case 0b010: ka.with0(x1);  // 3 1
-                case 0b011: x2 = x3;       // 3
-                case 0b101: x1 = x2;       // 2
-                case 0b110: ka.with0(x1);  // 1
-            }
+            if (s1 == 0) ka.with0(x1);
+            if (s2 == 0) ka.with0(x2);
+            if (s3 == 0) ka.with0(x3);
         }
         return ka;
     }
 
     public static KAwaiter with(KAwaiter ka, AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4) {
-        int s1 = x1.succeeded;
-        int s2 = x2.succeeded;
-        int s3 = x3.succeeded;
-        int s4 = x4.succeeded;
+        byte s1 = x1.succeeded;
+        byte s2 = x2.succeeded;
+        byte s3 = x3.succeeded;
+        byte s4 = x4.succeeded;
         if ((s1 & s2 & s3 & s4) == 0) {
             ka = start(ka, ls);
-            switch ((s4 << 3) | (s3 << 2) | (s2 << 1) | s1) {
-                case 0b0000: ka.with0(x1);  // 4 3 2 1
-                case 0b0001: x1 = x2;       // 4 3 2
-                case 0b0010: x2 = x4;       // 4 3 1
-                case 0b1000: x4 = x3;       // 3 2 1
-                case 0b0100: ka.with0(x1);  // 4 2 1
-                case 0b0101: x1 = x4;       // 4 2
-                case 0b1100: x3 = x2;       // 2 1
-                case 0b1010: x2 = x1;       // 1 3
-                case 0b1001: x4 = x2;       // 3 2
-                case 0b0011: x1 = x3;       // 4 3
-                case 0b0110: ka.with0(x1);  // 4 1
-                case 0b0111: x3 = x4;       // 4
-                case 0b1011: x2 = x3;       // 3
-                case 0b1101: x1 = x2;       // 2
-                case 0b1110: ka.with0(x1);  // 1
-            }
+            if (s1 == 0) ka.with0(x1);
+            if (s2 == 0) ka.with0(x2);
+            if (s3 == 0) ka.with0(x3);
+            if (s4 == 0) ka.with0(x4);
         }
         return ka;
     }
@@ -176,13 +210,46 @@ public final class KAwaiter {
         }
     }
 
+    public static boolean awaitArr(AFn ls, Object... ds) {
+        KAwaiter ka = null;
+        for (int i = 0; i < ds.length; ++i) {
+            Object d = ds[i];
+            if (d instanceof IDeferred) {
+                if (d instanceof KDeferred) {
+                    ka = with(ka, ls, (KDeferred) d);
+                } else {
+                    ka = with(ka, ls, (IDeferred) d);
+                }
+            }
+        }
+        return await(ka);
+    }
+
+    public static void doUnwrapArr(Object[] ds) {
+        for (int i = 0; i < ds.length; ++i) {
+            Object d = ds[i];
+            if (d instanceof IDeferred) {
+                ds[i] = KDeferred.unwrap1(d);
+            }
+        }
+    }
+
+    public static void doWrapArr(Object[] ds) {
+        for (int i = 0; i < ds.length; ++i) {
+            ds[i] = KDeferred.wrap(ds[i]);
+        }
+    }
+
     public static boolean awaitIter(AFn ls, Iterator<?> ds) {
         KAwaiter ka = null;
-        while (ds.hasNext() && !failed(ka)) {
+        while (ds.hasNext()) {
             Object d = ds.next();
             if (d instanceof IDeferred) {
-                KDeferred kd = KDeferred.wrapDeferred((IDeferred) d);
-                ka = with(ka, ls, kd);
+                if (d instanceof KDeferred) {
+                    ka = with(ka, ls, (KDeferred) d);
+                } else {
+                    ka = with(ka, ls, (IDeferred) d);
+                }
             }
         }
         return await(ka);

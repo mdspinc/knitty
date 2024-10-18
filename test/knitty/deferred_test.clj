@@ -103,9 +103,10 @@
   (is (= 2
          @(let [d (kd/create)]
             (kd/letm [[x] (future' [1])]
-                     (kd/letm [[x'] (future' [(inc x)])
-                               y (future' true)]
-                              (when y x')))))))
+                     (kd/join
+                      (kd/letm [[x'] (future' [(inc x)])
+                                y (future' true)]
+                               (when y x'))))))))
 
 
 (deftest test-chain-errors

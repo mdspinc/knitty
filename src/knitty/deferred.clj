@@ -77,7 +77,7 @@
        (clojure.lang.Var/resetThreadBindingFrame frame)
        (try
          (when-not (.realized d)
-           (.chain d (f)))
+           (.chain d (f) nil))
          (catch Throwable e (.error d e nil)))))
     d))
 
@@ -134,12 +134,12 @@
   "Registers callback fns to run when deferred is realized.
    When only one callback is provided it shold be 0-arg fn.
    When both callbacks provided - they must accept 1 argument (value or error)."
-  {:inline (fn ([x on-ok on-err] `(.onRealizedUnwrapped (wrap ~x) ~on-ok ~on-err)))
+  {:inline (fn ([x on-ok on-err] `(.onRealized (wrap ~x) ~on-ok ~on-err)))
    :inline-arities #{3}}
   ([x on-any]
    (let [f (fn onany [_] (on-any))] (on x f f)))
   ([x on-ok on-err]
-   (.onRealizedUnwrapped (wrap x) on-ok on-err)))
+   (.onRealized (wrap x) on-ok on-err)))
 
 
 (defmacro ^:private bind-inline
@@ -286,16 +286,13 @@
   `(KDeferred/connect ~d-from ~d-dest))
 
 
-(defn- join0 [x d t]
-  (on x
-      (fn on-val [x]
-        (if (deferred? x)
-          (join0 x d t)
-          (success! d x t)))
-      (fn on-err [e]
-        (if (deferred? e)
-          (join0 e d t)
-          (error! d e t)))))
+(definline join1
+  "Coerce 'deferred with deferred value' to deferred with plain value.
+
+       @(join1 (kd/future (kd/future 1)))  ;; => 1
+   "
+  [d]
+  `(bind ~d identity))
 
 (defn join
   "Coerce 'deferred with deferred value' to deferred with plain value.
@@ -303,14 +300,8 @@
        @(join (kd/future (kd/future (kd/future 1))))  ;; => 1
    "
   ^KDeferred [d]
-  (cond
-    (not (deferred? d)) (wrap-val d)
-    (and (realized? d) (not (deferred? (unwrap1 d)))) (wrap d)
-    :else (let [d0 (create d)]
-            (join0 d d0 d)
-            d0)))
+  (bind d (fn [x] (if (deferred? x) (join x) x))))
 
-;; ==
 
 (defmacro letm
   "Monadic let. Unwraps deferreds during binding, returning result as deferred.
@@ -374,25 +365,26 @@
 
 ;; ==
 
-(defmacro call-after-all'
-  [ds f]
-  `(let [d# (create)]
-     (await!*
-      (fn ~'on-await-iter
-        ([] (.fireValue d# ~f))
-        ([e#] (.fireError d# e#)))
-      ~ds)
+(defmacro call-after-all-arr'
+  [ds-arr f]
+  `(let [d# (create)
+         a# ~ds-arr]
+     (when
+      (KAwaiter/awaitArr
+       (fn ~'on-await-iter
+         ([] (.fireValue d# ~f))
+         ([e#] (.fireError d# e#)))
+       a#)
+       (.fireValue d# ~f))
      d#))
+
+(defn- seq-to-arr ^objects [s]
+  (clojure.lang.RT/seqToArray s))
 
 (defn zip*
   "Similar to `(apply zip vs)`, returns a seq instead of vector."
-  (^KDeferred [vs] (call-after-all'
-         vs
-         (let [it (iterator vs)]
-           (iterator-seq
-            (reify java.util.Iterator
-              (hasNext [_] (.hasNext it))
-              (next [_] (unwrap1 (.next it))))))))
+  (^KDeferred [vs] (let [a (seq-to-arr vs)]
+                     (call-after-all-arr' a (seq (doto a (KAwaiter/doUnwrapArr))))))
   (^KDeferred [a vs] (zip* (list* a vs)))
   (^KDeferred [a b vs] (zip* (list* a b vs)))
   (^KDeferred [a b c vs] (zip* (list* a b c vs)))
@@ -408,15 +400,6 @@
           ([e#] (.fireError res# e#)))
         ~@xs)
        res#)))
-
-(defmacro ^:private iter-full-reduce
-  [[_fn [a x] & f] val coll]
-  `(c/let [^java.lang.Iterable coll# ~coll
-           ^java.util.Iterator iter# (.iterator coll#)]
-     (c/loop [ret# ~val]
-       (if (.hasNext iter#)
-         (recur (c/let [~a ret#, ~x (.next iter#)] ~@f))
-         ret#))))
 
 (defn zip
   "Takes several values and returns a deferred that will yield vector of realized values."
@@ -441,18 +424,13 @@
    (bind
     (zip-inline a b c d e f g h i j k l m n o p)
     (fn on-await-x [xg]
-      (let [z (iter-full-reduce
-               (fn [^java.util.ArrayList a x] (doto a (.add (wrap x))))
-               (java.util.ArrayList. (count z))
-               z)]
-        (call-after-all'
+      (let [z (seq-to-arr z)]
+        (KAwaiter/doWrapArr z)
+        (call-after-all-arr'
          z
          (persistent!
-          (iter-full-reduce
-           (fn [a x] (conj! a (.getRaw ^KDeferred x)))
-           (transient xg)
-           z))))))))
-
+          (areduce z i ret (transient xg)
+                   (conj! ret (.getRaw ^KDeferred (aget z i)))))))))))
 
 (def ^:private ^java.util.Random alt-rnd
   (java.util.Random.))

@@ -3,7 +3,6 @@ package knitty.javaimpl;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.lang.ref.Cleaner;
-import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CancellationException;
@@ -12,6 +11,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 import clojure.lang.AFn;
 import clojure.lang.ExceptionInfo;
@@ -27,11 +27,13 @@ import manifold.deferred.IDeferredListener;
 import manifold.deferred.IMutableDeferred;
 
 public class KDeferred
+        extends AFn
         implements
         clojure.lang.IDeref,
         clojure.lang.IBlockingDeref,
         clojure.lang.IPending,
         clojure.lang.IReference,
+        clojure.lang.IFn,
         IDeferred,
         IMutableDeferred,
         CompletionStageMixin
@@ -82,51 +84,6 @@ public class KDeferred
         }
     }
 
-    private final static class OnUnwrapped extends AListener {
-
-        private final IFn valFn; // non-null
-        private final IFn errFn; // nullable
-
-        private OnUnwrapped(IFn valFn, IFn errFn) {
-            this.valFn = valFn;
-            this.errFn = errFn;
-        }
-
-        @Override
-        public void success(Object x) {
-            if (x instanceof IDeferred) {
-                wrapDeferred((IDeferred) x).listen(new OnUnwrapped(valFn, errFn));
-                return;
-            }
-            try {
-                valFn.invoke(x);
-            } catch (Throwable e) {
-                logError(e, "error in success callback");
-            }
-        }
-
-        @Override
-        public void error(Object x) {
-            if (errFn == null) {
-                return;
-            }
-            if (x instanceof IDeferred) {
-                wrapDeferred((IDeferred) x).listen(new OnUnwrapped(errFn, errFn));
-                return;
-            }
-            try {
-                errFn.invoke(x);
-            } catch (Throwable e) {
-                logError(e, "error in error callback");
-            }
-        }
-
-        @Override
-        public String toString() {
-            return String.format("#[On [%s] [%s]]", valFn, errFn);
-        }
-    }
-
     private final static class Bind extends AListener {
 
         private final KDeferred dest;
@@ -141,32 +98,24 @@ public class KDeferred
 
         @Override
         public void success(Object x) {
-            if (x instanceof IDeferred) {
-                wrapDeferred((IDeferred) x).listen(new Bind(dest, valFn, errFn));
-                return;
-            }
             Object t;
             try {
                 t = valFn.invoke(x);
             } catch (Throwable e) {
-                dest.fireError(e);
+                dest.fireError(e, null);
                 return;
             }
             if (t instanceof IDeferred) {
-                dest.chain(t);
+                dest.chain((IDeferred) t, null);
             } else {
-                dest.fireValue(t);
+                dest.fireValue(t, null);
             }
         }
 
         @Override
         public void error(Object e) {
-            if (e instanceof IDeferred) {
-                wrapDeferred((IDeferred) e).listen(new Bind(dest, errFn, errFn));
-                return;
-            }
             if (errFn == null) {
-                dest.fireError(e);
+                dest.fireError(e, null);
             } else {
                 Object t;
                 try {
@@ -177,9 +126,9 @@ public class KDeferred
                     return;
                 }
                 if (t instanceof IDeferred) {
-                    dest.chain(t);
+                    dest.chain((IDeferred) t, null);
                 } else {
-                    dest.fireValue(t);
+                    dest.fireValue(t, null);
                 }
             }
         }
@@ -206,47 +155,40 @@ public class KDeferred
 
         @Override
         public void success(Object x) {
-            if (x instanceof IDeferred) {
-                KDeferred.wrapDeferred((IDeferred) x).listen(new BindEx(dest, valFn, errFn, executor));
-                return;
-            }
             this.executor.execute(() -> {
                 Object t;
                 try {
                     t = valFn.invoke(x);
                 } catch (Throwable e) {
-                    dest.error(e);
+                    dest.fireError(e, null);
                     return;
                 }
                 if (t instanceof IDeferred) {
-                    dest.chain(t);
+                    dest.chain(t, null);
                 } else {
-                    dest.success(t);
+                    dest.fireValue(t, null);
                 }
             });
         }
 
         @Override
         public void error(Object e) {
-            if (e instanceof IDeferred) {
-                KDeferred.wrapDeferred((IDeferred) e).listen(new BindEx(dest, errFn, errFn, executor));
-                return;
-            }
             this.executor.execute(() -> {
                 if (errFn == null) {
-                    dest.error(e);
+                    dest.fireError(e, null);
                 } else {
                     Object t;
                     try {
                         t = errFn.invoke(e);
                     } catch (Throwable e1) {
-                        dest.error(e1);
+                        e1.addSuppressed(coerceError(e));
+                        dest.fireError(e1, null);
                         return;
                     }
                     if (t instanceof IDeferred) {
-                        dest.chain(t);
+                        dest.chain(t, null);
                     } else {
-                        dest.success(t);
+                        dest.fireValue(t, null);
                     }
                 }
             });
@@ -283,21 +225,12 @@ public class KDeferred
 
         @Override
         public void success(Object x) {
-            if (x instanceof IDeferred) {
-                kd.chain(x, token);
-            } else {
-                kd.success(x, token);
-            }
+            kd.fireValue(x, token);
         }
 
         @Override
         public void error(Object x) {
-            if (x instanceof IDeferred) {
-                ChainError ce = new ChainError(kd, this.token);
-                ((IDeferred) x).onRealized(ce, ce);
-            } else {
-                kd.error(x, token);
-            }
+            kd.fireError(x, token);
         }
 
         @Override
@@ -306,23 +239,19 @@ public class KDeferred
         }
     }
 
-    private final static class ChainSuccess extends AFn {
+    private final static class ChainValue extends AFn {
 
         private final KDeferred kd;
         private final Object token;
 
-        public ChainSuccess(KDeferred kd, Object token) {
+        public ChainValue(KDeferred kd, Object token) {
             this.kd = kd;
             this.token = token;
         }
 
         @Override
         public Object invoke(Object x) {
-            if (x instanceof IDeferred) {
-                this.kd.chain(x, this.token);
-            } else {
-                this.kd.success(x, this.token);
-            }
+            kd.fireValue(x, token);
             return null;
         }
     }
@@ -339,11 +268,7 @@ public class KDeferred
 
         @Override
         public Object invoke(Object x) {
-            if (x instanceof IDeferred) {
-                ((IDeferred) x).onRealized(this, this);
-            } else {
-                this.kd.error(x, this.token);
-            }
+            kd.fireError(x, token);
             return null;
         }
     }
@@ -388,6 +313,20 @@ public class KDeferred
         @Override
         public void error(Object e) {
             throw new IllegalStateException("incorrect usage of getRaw");
+        }
+    }
+
+    final class FnAdapter extends AFn {
+
+        private final Function fn;
+
+        public FnAdapter(Function fn) {
+            this.fn = fn;
+        }
+
+        @Override
+        public Object invoke(Object t) {
+            return fn.apply(t);
         }
     }
 
@@ -531,7 +470,6 @@ public class KDeferred
         return (AListener) LHEAD.getAndSetAcquire(this, TOMB);
     }
 
-    @Override
     public void fireValue(Object x) {
         if (TOKEN.getOpaque(this) != null) {
             throw new IllegalStateException("invalid claim token");
@@ -542,9 +480,28 @@ public class KDeferred
         }
     }
 
-    @Override
+    public void fireValue(Object x, Object token) {
+        if (TOKEN.getOpaque(this) != token) {
+            throw new IllegalStateException("invalid claim token");
+        }
+        if (VALUE.compareAndExchange(this, TOMB, x) == TOMB) {
+            this.succeeded = 1;
+            fireSuccessListeners(x);
+        }
+    }
+
     public void fireError(Object x) {
         if (TOKEN.getOpaque(this) != null) {
+            throw new IllegalStateException("invalid claim token");
+        }
+        ErrBox eb = new ErrBox(x);
+        if (VALUE.compareAndExchange(this, TOMB, eb) == TOMB) {
+            fireErrorListeners(eb);
+        }
+    }
+
+    public void fireError(Object x, Object token) {
+        if (TOKEN.getOpaque(this) != token) {
             throw new IllegalStateException("invalid claim token");
         }
         ErrBox eb = new ErrBox(x);
@@ -579,6 +536,32 @@ public class KDeferred
         return false;
     }
 
+    @Override
+    public Object error(Object x) {
+        if (TOKEN.getOpaque(this) != null) {
+            return invalidToken();
+        }
+        ErrBox eb = new ErrBox(x);
+        if (VALUE.compareAndExchangeRelease(this, TOMB, eb) == TOMB) {
+            fireErrorListeners(eb);
+            return true;
+        }
+        return false;
+    }
+
+    @Override
+    public Object error(Object x, Object token) {
+        if (TOKEN.getOpaque(this) != token) {
+            return invalidToken();
+        }
+        ErrBox eb = new ErrBox(x);
+        if (VALUE.compareAndExchangeRelease(this, TOMB, eb) == TOMB) {
+            fireErrorListeners(eb);
+            return true;
+        }
+        return false;
+    }
+
     private void fireSuccessListeners(Object x) {
         AListener node = tombListeners();
         for (; node != null; node = node.next) {
@@ -605,32 +588,6 @@ public class KDeferred
                 }
             }
         }
-    }
-
-    @Override
-    public Object error(Object x) {
-        if (TOKEN.getOpaque(this) != null) {
-            return invalidToken();
-        }
-        ErrBox eb = new ErrBox(x);
-        if (VALUE.compareAndExchangeRelease(this, TOMB, eb) == TOMB) {
-            fireErrorListeners(eb);
-            return true;
-        }
-        return false;
-    }
-
-    @Override
-    public Object error(Object x, Object token) {
-        if (TOKEN.getOpaque(this) != token) {
-            return invalidToken();
-        }
-        ErrBox eb = new ErrBox(x);
-        if (VALUE.compareAndExchangeRelease(this, TOMB, eb) == TOMB) {
-            fireErrorListeners(eb);
-            return true;
-        }
-        return false;
     }
 
     public boolean listen0(IFn onSuc, IFn onErr) {
@@ -737,35 +694,6 @@ public class KDeferred
             onSuc.invoke(v);
         }
         return false;
-    }
-
-    public void onRealizedUnwrapped(Object onSucc, Object onErrr) {
-        IFn onSuc = (IFn) onSucc;
-        IFn onErr = (IFn) onErrr;
-        KDeferred self = this;
-
-        while (true) {
-            Object v = VALUE.getVolatile(self);
-            if (v == TOMB) {
-                this.listen(new OnUnwrapped(onSuc, onErr));
-            } else if (self.succeeded == 0 && v instanceof ErrBox) {
-                this.consumeError();
-                onErr.invoke(((ErrBox) v).err);
-            } else if (v instanceof IDeferred) {
-                v = ((IDeferred) v).successValue(v);
-                if (v instanceof KDeferred) {
-                    self = (KDeferred) v;
-                    continue;
-                } else if (v instanceof IDeferred) {
-                    wrapDeferred((IDeferred) v).onRealizedUnwrapped(onSuc, onErr);
-                } else {
-                    onSuc.invoke(v);
-                }
-            } else {
-                onSuc.invoke(v);
-            }
-            return;
-        }
     }
 
     private boolean isCancelledListener(AListener als) {
@@ -908,6 +836,16 @@ public class KDeferred
     }
 
     @Override
+    public Object invoke() {
+        return this.get();
+    }
+
+    @Override
+    public Object invoke(Object x) {
+        return ((Boolean) this.success(x)) ? this : null;
+    }
+
+    @Override
     public Object deref(long ms, Object timeoutValue) {
         if (this.realized()) {
             return get();
@@ -939,64 +877,50 @@ public class KDeferred
         return this.get();
     }
 
+    public void chain(Object x) {
+        this.chain(x, null);
+    }
+
     public void chain(Object x, Object token) {
         if (x instanceof IDeferred) {
-            Object xx = ((IDeferred) x).successValue(x);
-            if (x == xx) {
-                this.chain0((IDeferred) x, token);
+            Object xx = ((IDeferred) x).successValue(TOMB);
+            if (xx == TOMB) {
+                if (x instanceof KDeferred) {
+                    ((KDeferred) x).listen(new Chain(this, token));
+                } else {
+                    ((IDeferred) x).onRealized(new ChainValue(this, token), new ChainError(this, token));
+                }
                 return;
             } else {
                 x = xx;
             }
         }
-        this.success(x, token);
-    }
-
-    public void chain(Object x) {
-        if (x instanceof IDeferred) {
-            Object xx = unwrap(x); // ((IDeferred) x).successValue(x);
-            if (x == xx) {
-                this.chain0((IDeferred) x, null);
-                return;
-            } else {
-                x = xx;
-            }
-        }
-        this.fireValue(x);
-    }
-
-    private void chain0(IDeferred x, Object token) {
-        if (x instanceof KDeferred) {
-            KDeferred xx = (KDeferred) x;
-            xx.listen(new Chain(this, token));
-        } else {
-            Objects.requireNonNull(x);
-            x.onRealized(new ChainSuccess(this, token), new ChainError(this, token));
-        }
+        this.fireValue(x, token);
     }
 
     public KDeferred bind(IFn valFn, IFn errFn, Executor executor) {
+        if (executor == null) {
+            return this.bind(valFn, errFn);
+        }
         KDeferred dest = new KDeferred();
         this.listen(new BindEx(dest, valFn, errFn, executor));
         return dest;
     }
 
+    public KDeferred bindf(Function valFn, Function errFn, Executor executor) {
+        return this.bind(new FnAdapter(valFn), new FnAdapter(errFn), executor);
+    }
+
     public KDeferred bind(IFn valFn) {
         Object v = VALUE.getAcquire(this);
-
         if (v == TOMB) {
             KDeferred dest = new KDeferred();
             this.listen(new Bind(dest, valFn, null));
             return dest;
         }
-
         if (v instanceof ErrBox) {
             return this;
         }
-        if (v instanceof IDeferred) {
-            return wrapDeferred((IDeferred) v).bind(valFn);
-        }
-
         try {
             return wrap(valFn.invoke(v));
         } catch (Throwable e) {
@@ -1006,13 +930,11 @@ public class KDeferred
 
     public KDeferred bind(IFn valFn, IFn errFn) {
         Object v = VALUE.getAcquire(this);
-
         if (v == TOMB) {
             KDeferred dest = new KDeferred();
             this.listen(new Bind(dest, valFn, errFn));
             return dest;
         }
-
         if (v instanceof ErrBox) {
             if (errFn == null) {
                 return this;
@@ -1022,11 +944,6 @@ public class KDeferred
                 v = ((ErrBox) v).err;
             }
         }
-
-        if (v instanceof IDeferred) {
-            return wrapDeferred((IDeferred) v).bind(valFn, errFn);
-        }
-
         try {
             KDeferred r = wrap(valFn.invoke(v));
             return r;
@@ -1065,9 +982,15 @@ public class KDeferred
         if (x instanceof KDeferred) {
             return (KDeferred) x;
         } else {
-            KDeferred d = create(x);
-            d.chain(x, x);
-            return d;
+            //Objects.requireNonNull(x);
+            Object xx = x.successValue(TOMB);
+            if (xx == TOMB) {
+                KDeferred d = create();
+                d.chain(x, null);
+                return d;
+            } else {
+                return wrapVal(xx);
+            }
         }
     }
 
@@ -1075,9 +998,9 @@ public class KDeferred
         KDeferred d = new KDeferred();
         s.handle((x, e) -> {
             if (e == null) {
-                d.fireValue(x);
+                d.fireValue(x, null);
             } else {
-                d.fireError(e);
+                d.fireError(e, null);
             }
             return null;
         });
@@ -1101,7 +1024,7 @@ public class KDeferred
         } else {
             KDeferred kd = new KDeferred();
             kd.listen0(new Revoke(dd, canceller, errCallback));
-            kd.chain(dd);
+            kd.chain(dd, null);
             return kd;
         }
     }
@@ -1129,10 +1052,10 @@ public class KDeferred
         if (!(from instanceof IDeferred)) {
             to.success(from);
         } else if (to instanceof KDeferred) {
-            ((KDeferred) to).chain(from);
+            ((KDeferred) to).chain(from, null);
         } else {
             KDeferred t = create();
-            t.chain(from);
+            t.chain(from, null);
             if (!t.listen0(new AListener() {
                 @Override
                 public void success(Object x) {
