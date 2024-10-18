@@ -126,8 +126,8 @@
                                (reduce unchecked-add ~i [~@xs]))
                              10)))
 
-  (dotimes [i 1000]
-    (println ".. " i " / 1000")
-    (dotimes [_ 1000]
-      (binding [knitty.core/*tracing* (rand-nth [false true])]
-        @(yank {} (nodes-range :node 0 1000) #_(random-sample 0.01 (nodes-range :node 0 500)))))))
+  (dotimes-prn [_ 10000]
+    (binding [knitty.core/*tracing* (rand-nth [false true])]
+      @(yank {} (nodes-range :node 0 1000)
+             #_(random-sample 0.01 (nodes-range :node 0 500))))))
+

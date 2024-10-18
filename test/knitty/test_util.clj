@@ -1,6 +1,5 @@
 (ns knitty.test-util
-  (:require [knitty.core :refer [*registry* defyarn]]
-            [knitty.impl :as impl]
+  (:require [knitty.core :refer [defyarn]]
             [knitty.deferred :as kd]
             [clojure.java.io :as io]
             [clojure.pprint :as pp]
@@ -14,6 +13,23 @@
            [java.time.format DateTimeFormatter]))
 
 
+(defmethod t/report :begin-test-var [m]
+  (t/with-test-out
+    (println "-"
+             (-> m :var meta :name)
+             (or (some-> t/*testing-contexts* seq vec) ""))))
+
+(defmethod t/report :end-test-var [m]
+  )
+
+(defonce -override-report-error
+  (let [f (get-method t/report :error)]
+    (defmethod t/report :error [m]
+      (f m)
+      (t/with-test-out
+        (println)))))
+
+
 (def bench-results-dir ".bench-results")
 
 (defn mfut [x y]
@@ -22,7 +38,6 @@
 
 (defn compile-yarn-graph*
   [ns prefix ids deps-fn emit-body-fn fork?]
-  (println "compiling yarn-graph" ns)
   (let [n (create-ns ns)]
     (binding [*ns* n]
       (mapv var-get
@@ -251,3 +266,21 @@
   "Equivalent to 'manifold.deferred/future', but use didicated executor"
   [& body]
   `(md/future-with ~'__knitty__test_util__md_executor ~@body))
+
+
+(defmacro dotimes-prn [xn & body]
+  (let [[x n] (cond
+                (and (vector? xn) (== 2 (count xn))) xn
+                (and (vector? xn) (== 1 (count xn))) ['_ (first xn)]
+                :else ['_ xn])]
+    `(let [n# ~n
+           s# (quot n# 100)
+           t# (System/currentTimeMillis)]
+       (dotimes [x# n#]
+         (when (zero? (mod x# s#))
+           (print ".")
+           (flush))
+         (let [~x x#]
+           ~@body))
+       (let [t1# (System/currentTimeMillis)]
+         (println " done in" (- t1# t#) "ms")))))

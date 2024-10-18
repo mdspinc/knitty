@@ -15,7 +15,8 @@
   :aot-include [#"knitty\.javaimpl\..*"]
   :java-source-paths ["src-java"]
   :javac-options ["--release" "17"]
-  :jvm-opts ["-server"]
+  :jvm-opts ["-server" "-XX:-OmitStackTraceInFastThrow" "-Xmx4g" "-Xss8m"]
+
   :source-paths ["src"]
   :global-vars {*warn-on-reflection* true}
 
@@ -24,6 +25,7 @@
                                   [prismatic/plumbing "0.6.0"]
                                   [funcool/promesa "11.0.678"]
                                   [clj-kondo/clj-kondo "2024.09.27"]]
+                   :injections [(require 'knitty.test-util)]
                    :jvm-opts ["-Djdk.attach.allowAttachSelf" "-XX:+UnlockDiagnosticVMOptions" "-XX:+DebugNonSafepoints"]}}
 
   :prep-tasks [["javac"]

@@ -397,12 +397,15 @@
   (d/error-deferred (Throwable.))
   (System/gc)
 
-  (dotimes [_ 2e3]
+#_<<< ;;  (dotimes [_ 2e3]
+#_>>>  (dotimes-prn [_ 2e5]
     (d/error! (d/deferred) (Throwable.)))
   (System/gc))
 
+
 (deftest ^:stress test-deferred-chain
-  (dotimes [_ 1e4]
+#_<<< ;;   (dotimes [_ 1e4]
+#_>>> (dotimes-prn [_ 1000]
     (let [d      (d/deferred)
           result (d/future
                    (last

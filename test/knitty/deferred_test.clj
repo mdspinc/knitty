@@ -3,7 +3,8 @@
   (:require [clojure.test :as t :refer [are deftest is testing]]
             [clojure.tools.logging :as log]
             [knitty.deferred :as kd]
-            [knitty.test-util :refer [eval-template]]))
+            [knitty.test-util :refer [dotimes-prn]]
+            [manifold.deferred :as md]))
 
 
 (defmacro future' [& body]
@@ -45,16 +46,18 @@
 
 
 (deftest test-catch
+
   (is (thrown? ArithmeticException
-               @(-> 0
-                    (kd/bind #(/ 1 %))
-                    (kd/bind-err IllegalStateException (constantly :foo)))))
+                 @(-> 0
+                      (kd/bind #(/ 1 %))
+                      (kd/bind-err IllegalStateException (constantly :foo)))))
 
   (is (thrown? ArithmeticException
                @(-> 0
-                    kd/future
-                    (kd/bind #(/ 1 %))
-                    (kd/bind-err IllegalStateException (constantly :foo)))))
+                    (kd/future)
+                    (kd/bind #(do (/ 1 %)))
+                    (kd/bind-err IllegalStateException (constantly :foo))
+                    )))
 
   (is (= :foo
          @(-> 0
@@ -377,23 +380,37 @@
 
 
 (deftest ^:stress test-error-leak-detection
-  (System/gc)
-  (let [logs (atom [])]
-    (with-redefs [log/log* (fn [& lm] (swap! logs conj lm))]
-      (dotimes [_ 100]
-        (kd/error! (kd/create) (Throwable.)))
+  (dotimes-prn 100
+    (do
       (System/gc)
-      (Thread/sleep 1000)
-      (is (== 100 (count @logs)))
-      )))
+
+      (let [n 100
+            logs (atom [])]
+        (with-redefs [log/log* (fn [& lm] (swap! logs conj lm))]
+
+          (dotimes [_ n]
+            (doto (kd/create)
+              (kd/error! (Throwable.))
+              (md/on-realized identity identity))
+            (doto (kd/create)
+              (kd/error! (Throwable.))))
+
+          (System/gc)
+
+          (let [tries (atom 0)]
+            (while (and (< (swap! tries inc) 1000)
+                        (not= n (count @logs)))
+              (Thread/sleep 1)))
+
+          (is (== n (count @logs))))))))
 
 
 (deftest ^:stress test-deferred-chain
-  (dotimes [_ 1000]
+  (dotimes-prn 1000
     (let [d      (kd/create)
           result (kd/future
                    (last
-                    (take 1000
+                    (take 10000
                           (iterate
                            #(let [d' (kd/create)]
                               (kd/connect % d')
