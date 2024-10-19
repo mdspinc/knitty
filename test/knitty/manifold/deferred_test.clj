@@ -325,6 +325,7 @@
 
 ;;;
 
+#_>>> #_
 (deftest ^:benchmark benchmark-chain
   (bench "invoke comp x1"
          ((comp inc) 0))
@@ -345,6 +346,7 @@
   (bench "chain' x5"
          @(d/chain' 0 inc inc inc inc inc)))
 
+#_>>> #_
 (deftest ^:benchmark benchmark-deferred
   (bench "create deferred"
          (d/deferred))
