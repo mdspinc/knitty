@@ -77,17 +77,9 @@
 
 (def ^:dynamic macroses-mode :knitty)
 
-(defn- kd-future-call [f]
-  (let [t (kd/create)]
-    (kd/on
-     (kd/future (kd/success! t (f)))
-     (fn [_])
-     (fn [e] (kd/error! t e)))
-    t))
-
 (defmacro future [& body]
   `(case macroses-mode
-     :knitty   (#'kd-future-call (fn [] ~@body))
+     :knitty   (kd/future (kd/wrap-val (do ~@body)))
      :manifold (md/future ~@body)))
 
 (defmacro loop [& rs]
