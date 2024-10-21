@@ -75,6 +75,7 @@ public interface CompletionStageMixin extends CompletionStage {
         }
     }
 
+    @Override
     default CompletionStage handle(BiFunction bf) {
         return Utils.fmap(
             this,
@@ -83,10 +84,12 @@ public interface CompletionStageMixin extends CompletionStage {
             null);
     }
 
+    @Override
     default CompletionStage handleAsync(BiFunction bf) {
         return handleAsync(bf, defaultExecutor());
     }
 
+    @Override
     default CompletionStage handleAsync(BiFunction bf, Executor ex) {
         return Utils.fmap(
             this,
@@ -95,34 +98,42 @@ public interface CompletionStageMixin extends CompletionStage {
             ex);
     }
 
+    @Override
     default CompletionStage acceptEither(CompletionStage that, Consumer c) {
         return Utils.either(this, that).thenAccept(c);
     }
 
+    @Override
     default CompletionStage acceptEitherAsync(CompletionStage that, Consumer c) {
         return acceptEitherAsync(that, c, defaultExecutor());
     }
 
+    @Override
     default CompletionStage acceptEitherAsync(CompletionStage that, Consumer c, Executor ex) {
         return Utils.either(this, that).thenAcceptAsync(c, ex);
     }
 
+    @Override
     default CompletionStage applyToEither(CompletionStage that, Function f) {
         return Utils.either(this, that).thenApply(f);
     }
 
+    @Override
     default CompletionStage applyToEitherAsync(CompletionStage that, Function f) {
         return applyToEitherAsync(that, f, defaultExecutor());
     }
 
+    @Override
     default CompletionStage applyToEitherAsync(CompletionStage that, Function f, Executor ex) {
         return Utils.either(this, that).thenApplyAsync(f, ex);
     }
 
+    @Override
     default CompletionStage exceptionally(Function f) {
         return Utils.fmap(this, Function.identity(), f, null);
     }
 
+    @Override
     default CompletionStage runAfterBoth(CompletionStage that, Runnable run) {
         CompletionStageMixin d = dup();
         this.consume(
@@ -132,10 +143,12 @@ public interface CompletionStageMixin extends CompletionStage {
         return d;
     }
 
+    @Override
     default CompletionStage runAfterBothAsync(CompletionStage that, Runnable run) {
         return runAfterBothAsync(that, run, defaultExecutor());
     }
 
+    @Override
     default CompletionStage runAfterBothAsync(CompletionStage that, Runnable run, Executor ex) {
         CompletionStageMixin d = dup();
         this.consume(
@@ -145,18 +158,22 @@ public interface CompletionStageMixin extends CompletionStage {
         return d;
     }
 
+    @Override
     default CompletionStage runAfterEither(CompletionStage that, Runnable run) {
         return Utils.either(this, that).thenRun(run);
     }
 
+    @Override
     default CompletionStage runAfterEitherAsync(CompletionStage that, Runnable run) {
         return runAfterEitherAsync(that, run, defaultExecutor());
     }
 
+    @Override
     default CompletionStage runAfterEitherAsync(CompletionStage that, Runnable run, Executor ex) {
         return Utils.either(this, that).thenRunAsync(run, ex);
     }
 
+    @Override
     default CompletionStage thenAccept(Consumer c) {
         return Utils.fmap(
             this,
@@ -165,16 +182,19 @@ public interface CompletionStageMixin extends CompletionStage {
             null);
     }
 
+    @Override
     default CompletionStage thenAcceptAsync(Consumer c) {
         return thenAcceptAsync(c, defaultExecutor());
     }
 
+    @Override
     default CompletionStage thenAcceptAsync(Consumer c, Executor ex) {
         return Utils.fmap(
             this,
             x -> { c.accept(x); return null; }, null, ex);
     }
 
+    @Override
     default CompletionStage thenAcceptBoth(CompletionStage that, BiConsumer c) {
         CompletionStageMixin d = dup();
         this.consume(
@@ -184,10 +204,12 @@ public interface CompletionStageMixin extends CompletionStage {
         return d;
     }
 
+    @Override
     default CompletionStage thenAcceptBothAsync(CompletionStage that, BiConsumer c) {
         return thenAcceptBothAsync(that, c, defaultExecutor());
     }
 
+    @Override
     default CompletionStage thenAcceptBothAsync(CompletionStage that, BiConsumer c, Executor ex) {
         CompletionStageMixin d = dup();
         this.consume(
@@ -197,18 +219,22 @@ public interface CompletionStageMixin extends CompletionStage {
         return d;
     }
 
+    @Override
     default CompletionStage thenApply(Function f) {
         return Utils.fmap(this, f::apply, null, null);
     }
 
+    @Override
     default CompletionStage thenApplyAsync(Function f) {
         return thenApplyAsync(f, defaultExecutor());
     }
 
+    @Override
     default CompletionStage thenApplyAsync(Function f, Executor ex) {
         return Utils.fmap(this, f::apply, null, ex);
     }
 
+    @Override
     default CompletionStage thenCombine(CompletionStage that, BiFunction bf) {
         CompletionStageMixin d = dup();
         this.consume(
@@ -218,10 +244,12 @@ public interface CompletionStageMixin extends CompletionStage {
         return d;
     }
 
+    @Override
     default CompletionStage thenCombineAsync(CompletionStage that, BiFunction bf) {
         return thenCombineAsync(that, bf, defaultExecutor());
     }
 
+    @Override
     default CompletionStage thenCombineAsync(CompletionStage that, BiFunction bf, Executor ex) {
         CompletionStageMixin d = dup();
         this.consume(
@@ -231,6 +259,7 @@ public interface CompletionStageMixin extends CompletionStage {
         return d;
     }
 
+    @Override
     default CompletionStage thenCompose(Function f) {
         CompletionStageMixin d = dup();
         this.consume(
@@ -240,10 +269,12 @@ public interface CompletionStageMixin extends CompletionStage {
         return d;
     }
 
+    @Override
     default CompletionStage thenComposeAsync(Function f) {
         return thenComposeAsync(f, defaultExecutor());
     }
 
+    @Override
     default CompletionStage thenComposeAsync(Function f, Executor ex) {
         CompletionStageMixin d = dup();
         this.consume(
@@ -253,6 +284,7 @@ public interface CompletionStageMixin extends CompletionStage {
         return d;
     }
 
+    @Override
     default CompletionStage thenRun(Runnable run) {
         return Utils.fmap(
             this,
@@ -261,10 +293,12 @@ public interface CompletionStageMixin extends CompletionStage {
             null);
     }
 
+    @Override
     default CompletionStage thenRunAsync(Runnable run) {
         return thenRunAsync(run, defaultExecutor());
     }
 
+    @Override
     default CompletionStage thenRunAsync(Runnable run, Executor ex) {
         return Utils.fmap(
             this,
@@ -273,12 +307,14 @@ public interface CompletionStageMixin extends CompletionStage {
             ex);
     }
 
+    @Override
     default CompletableFuture toCompletableFuture() {
         CompletableFuture cf = new CompletableFuture<>();
         this.consume(cf::complete, e -> cf.completeExceptionally(Utils.coerceError(e)), null);
         return cf;
     }
 
+    @Override
     default CompletionStage whenComplete(BiConsumer c) {
         CompletionStageMixin d = dup();
         this.consume(
@@ -303,10 +339,12 @@ public interface CompletionStageMixin extends CompletionStage {
         return d;
     }
 
+    @Override
     default CompletionStage whenCompleteAsync(BiConsumer c) {
         return whenCompleteAsync(c, defaultExecutor());
     }
 
+    @Override
     default CompletionStage whenCompleteAsync(BiConsumer c, Executor ex) {
         CompletionStageMixin d = dup();
         this.consume(

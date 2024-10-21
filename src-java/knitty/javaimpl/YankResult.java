@@ -3,6 +3,7 @@ package knitty.javaimpl;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.Iterator;
+import java.util.Objects;
 
 import clojure.lang.AFn;
 import clojure.lang.ASeq;
@@ -25,7 +26,7 @@ import clojure.lang.Reduced;
 import clojure.lang.Seqable;
 import knitty.javaimpl.YankCtx.KVCons;
 
-public final class YankResult extends YankInputs implements Iterable<Object>, Seqable, IObj, IDeref {
+public final class YankResult extends YankInputs implements IObj, IDeref {
 
     private static final int ASHIFT = YankCtx.ASHIFT;
     private static final int AMASK = YankCtx.AMASK;
@@ -77,6 +78,7 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
             result = t.persistent();
         } else {
             Associative t = ins;
+            Objects.requireNonNull(t);
             for (KVCons a = added0; a.d != null; a = a.next) {
                 t = t.assoc(a.k, a.d.unwrap());
             }
@@ -88,6 +90,7 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
         return result;
     }
 
+    @Override
     public Associative toAssociative() {
         return (Associative) mapDelay.deref();
     }
@@ -104,10 +107,12 @@ public final class YankResult extends YankInputs implements Iterable<Object>, Se
             final Iterator<?> insIter = (Iterator<?>) RT.iter(inputs);
             volatile YankCtx.KVCons kvcons = added;
 
+            @Override
             public boolean hasNext() {
                 return kvcons.next != KVCons.NIL || insIter.hasNext();
             }
 
+            @Override
             public Object next() {
                 if (kvcons.next != KVCons.NIL) {
                     IMapEntry e = MapEntry.create(kvcons.k, kvcons.d.unwrap());

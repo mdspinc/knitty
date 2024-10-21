@@ -42,7 +42,9 @@ public final class YankCtx {
         }
     }
 
+    @SuppressWarnings("unused")
     private volatile KVCons _added = KVCons.NIL;
+
     private final KDeferred[][] a0;
 
     private final YankInputs inputs;

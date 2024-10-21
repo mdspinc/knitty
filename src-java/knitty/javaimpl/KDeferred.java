@@ -3,6 +3,7 @@ package knitty.javaimpl;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.lang.ref.Cleaner;
+import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CancellationException;
@@ -42,6 +43,7 @@ public class KDeferred
     public static final BlockingQueue<Object> ELD_LEAKED_ERRORS =
         new ArrayBlockingQueue<>(128);
 
+    @SuppressWarnings("CallToPrintStackTrace")
     public static final Thread ELD_LOGGER = new Thread(() -> {
         while (!Thread.interrupted()) {
             Object e;
@@ -428,20 +430,24 @@ public class KDeferred
         return (byte) OWNED.getOpaque(this) == 1;
     }
 
+    @Override
     public synchronized IPersistentMap meta() {
         return meta;
     }
 
+    @Override
     public synchronized IPersistentMap alterMeta(IFn alter, ISeq args) {
         this.meta = (IPersistentMap) alter.applyTo(RT.listStar(meta, args));
         return this.meta;
     }
 
+    @Override
     public synchronized IPersistentMap resetMeta(IPersistentMap m) {
         this.meta = m;
         return m;
     }
 
+    @SuppressWarnings("CallToPrintStackTrace")
     static void logWarn(Object err, String msg) {
         try {
             LOG_EXCEPTION.invoke(false, err, msg);
@@ -450,6 +456,7 @@ public class KDeferred
         }
     }
 
+    @SuppressWarnings("CallToPrintStackTrace")
     static void logError(Object err, String msg) {
         try {
             LOG_EXCEPTION.invoke(true, err, msg);
@@ -470,6 +477,7 @@ public class KDeferred
         return (AListener) LHEAD.getAndSetAcquire(this, TOMB);
     }
 
+    @Override
     public void fireValue(Object x) {
         if (TOKEN.getOpaque(this) != null) {
             throw new IllegalStateException("invalid claim token");
@@ -490,6 +498,7 @@ public class KDeferred
         }
     }
 
+    @Override
     public void fireError(Object x) {
         if (TOKEN.getOpaque(this) != null) {
             throw new IllegalStateException("invalid claim token");
@@ -882,6 +891,7 @@ public class KDeferred
             KDeferred kd = (KDeferred) x;
             kd.listen(new Chain(this, token));
         } else {
+            Objects.requireNonNull(x);
             ((IDeferred) x).onRealized(new ChainValue(this, token), new ChainError(this, token));
         }
     }
@@ -1116,6 +1126,7 @@ public class KDeferred
             return (KDeferred) s;
         }
         KDeferred d = new KDeferred();
+        Objects.requireNonNull(s);
         s.handle((x, e) -> {
             if (e == null) {
                 d.fireValue(x, null);
