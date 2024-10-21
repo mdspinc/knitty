@@ -17,12 +17,14 @@ public final class KAwaiter {
             this.ka = ka;
         }
 
+        @Override
         public void success(Object x) {
             if ((int) CNT.getAndAddAcquire(this.ka, (int) -1) == 1) {
                 this.ka.ls.invoke();
             }
         }
 
+        @Override
         public void error(Object e) {
             if ((int) CNT.getAndSetAcquire(this.ka, (int) -1) > 0) {
                 this.ka.ls.invoke(e);
@@ -65,16 +67,19 @@ public final class KAwaiter {
     }
 
     private static final class L0 extends AListener {
-        final AFn ls;
+
+        private final AFn ls;
 
         L0(AFn ls) {
             this.ls = ls;
         }
 
+        @Override
         public void error(Object e) {
             ls.invoke(e);
         }
 
+        @Override
         public void success(Object x) {
             ls.invoke();
         }
@@ -82,13 +87,16 @@ public final class KAwaiter {
 
     private final AFn ls;
     private int acnt = Integer.MAX_VALUE;
-    private int _cnt = Integer.MAX_VALUE;
 
+    @SuppressWarnings("FieldMayBeFinal")
+    private int ncnt = Integer.MAX_VALUE;
+
+    private static final Object TOMB = new Object();
     private static final VarHandle CNT;
     static {
         try {
             MethodHandles.Lookup l = MethodHandles.lookup();
-            CNT = l.findVarHandle(KAwaiter.class, "_cnt", int.class);
+            CNT = l.findVarHandle(KAwaiter.class, "ncnt", int.class);
         } catch (ReflectiveOperationException e) {
             throw new ExceptionInInitializerError(e);
         }
@@ -99,11 +107,11 @@ public final class KAwaiter {
     }
 
     public boolean await() {
-        return (acnt == Integer.MAX_VALUE) || ((int) CNT.getAndAddRelease(KAwaiter.this, -acnt) == acnt);
+        return (acnt == Integer.MAX_VALUE) || ((int) CNT.getAndAddRelease(this, -acnt) == acnt);
     }
 
-    private static boolean failed(KAwaiter ka) {
-        return ka != null && ((int) CNT.getOpaque(ka)) <= 0;
+    private static boolean notFailed(KAwaiter ka) {
+        return ka == null || ka.ncnt > 0;
     }
 
     public static KAwaiter start(AFn ls) {
@@ -120,29 +128,20 @@ public final class KAwaiter {
         }
     }
 
-    private void with0(KDeferred d1) {
-        this.acnt -= 1;
-        d1.listen(new Ls(this));
-    }
-
     private AFn lsv;
     private AFn lse;
 
-    private void with0(IDeferred d1) {
-        this.acnt -= 1;
-        if (lsv == null) {
-            lsv = new Lsv(this);
-            lse = new Lse(this);
-        }
-        d1.onRealized(lsv, lse);
-    }
-
     private static KAwaiter with(KAwaiter ka, AFn ls, IDeferred x1) {
-        if (x1.successValue(x1) != x1) {
+        if (x1.successValue(TOMB) != TOMB) {
             return ka;
         } else {
             ka = start(ka, ls);
-            ka.with0(x1);
+            ka.acnt -= 1;
+            if (ka.lsv == null) {
+                ka.lsv = new Lsv(ka);
+                ka.lse = new Lse(ka);
+            }
+            x1.onRealized(ka.lsv, ka.lse);
             return ka;
         }
     }
@@ -153,7 +152,7 @@ public final class KAwaiter {
             return ka;
         } else {
             ka = start(ka, ls);
-            ka.with0(x1);
+            { ka.acnt -= 1; x1.listen(new Ls(ka)); }
             return ka;
         }
     }
@@ -163,8 +162,8 @@ public final class KAwaiter {
         byte s2 = x2.succeeded;
         if ((s1 & s2) == 0) {
             ka = start(ka, ls);
-            if (s1 == 0) ka.with0(x1);
-            if (s2 == 0) ka.with0(x2);
+            if (s1 == 0) { ka.acnt -= 1; x1.listen(new Ls(ka)); }
+            if (s2 == 0) { ka.acnt -= 1; x2.listen(new Ls(ka)); }
         }
         return ka;
     }
@@ -175,9 +174,9 @@ public final class KAwaiter {
         byte s3 = x3.succeeded;
         if ((s1 & s2 & s3) == 0) {
             ka = start(ka, ls);
-            if (s1 == 0) ka.with0(x1);
-            if (s2 == 0) ka.with0(x2);
-            if (s3 == 0) ka.with0(x3);
+            if (s1 == 0) { ka.acnt -= 1; x1.listen(new Ls(ka)); }
+            if (s2 == 0) { ka.acnt -= 1; x2.listen(new Ls(ka)); }
+            if (s3 == 0) { ka.acnt -= 1; x3.listen(new Ls(ka)); }
         }
         return ka;
     }
@@ -189,10 +188,10 @@ public final class KAwaiter {
         byte s4 = x4.succeeded;
         if ((s1 & s2 & s3 & s4) == 0) {
             ka = start(ka, ls);
-            if (s1 == 0) ka.with0(x1);
-            if (s2 == 0) ka.with0(x2);
-            if (s3 == 0) ka.with0(x3);
-            if (s4 == 0) ka.with0(x4);
+            if (s1 == 0) { ka.acnt -= 1; x1.listen(new Ls(ka)); }
+            if (s2 == 0) { ka.acnt -= 1; x2.listen(new Ls(ka)); }
+            if (s3 == 0) { ka.acnt -= 1; x3.listen(new Ls(ka)); }
+            if (s4 == 0) { ka.acnt -= 1; x4.listen(new Ls(ka)); }
         }
         return ka;
     }
@@ -212,7 +211,7 @@ public final class KAwaiter {
 
     public static boolean awaitArr(AFn ls, Object... ds) {
         KAwaiter ka = null;
-        for (int i = 0; i < ds.length; ++i) {
+        for (int i = 0; i < ds.length && notFailed(ka); ++i) {
             Object d = ds[i];
             if (d instanceof IDeferred) {
                 if (d instanceof KDeferred) {
@@ -242,7 +241,7 @@ public final class KAwaiter {
 
     public static boolean awaitIter(AFn ls, Iterator<?> ds) {
         KAwaiter ka = null;
-        while (ds.hasNext()) {
+        while (ds.hasNext() && notFailed(ka)) {
             Object d = ds.next();
             if (d instanceof IDeferred) {
                 if (d instanceof KDeferred) {
