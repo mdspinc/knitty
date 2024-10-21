@@ -1,4 +1,4 @@
-(defproject knitty "0.5.0"
+(defproject knitty "0.6.0-SNAPSHOT"
   :description "Knitty is a library for a DAG-based processing of asynchronous data"
   :url "https://github.com/anjensan/knitty"
   :license {:name "MIT License" :url "http://opensource.org/licenses/MIT"}
@@ -21,7 +21,7 @@
   :global-vars {*warn-on-reflection* true}
 
   :profiles {:dev {:dependencies [[criterium/criterium "0.4.6"]
-                                  [com.clojure-goes-fast/clj-async-profiler "1.3.2"]
+                                  [com.clojure-goes-fast/clj-async-profiler "1.3.3"]
                                   [prismatic/plumbing "0.6.0"]
                                   [funcool/promesa "11.0.678"]
                                   [clj-kondo/clj-kondo "2024.09.27"]]
