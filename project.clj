@@ -20,8 +20,13 @@
   :source-paths ["src"]
   :global-vars {*warn-on-reflection* true}
 
-  :aliases
-  {"bump-version" ["change" "version" "leiningen.release/bump-version"]}
+  :aliases {"bump-version" ["change" "version" "leiningen.release/bump-version"]}
+
+  :release-tasks [["vcs" "assert-committed"]
+                  ["change" "version" "leiningen.release/bump-version" "release"]
+                  ["vcs" "commit"]
+                  ["vcs" "tag" "v" "--no-sign"]
+                  ["deploy"]]
 
   :profiles {:dev {:dependencies [[criterium/criterium "0.4.6"]
                                   [com.clojure-goes-fast/clj-async-profiler "1.3.3"]
