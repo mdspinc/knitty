@@ -45,19 +45,9 @@
 (defn wrap*
   "Corece `x` into an instance of Knitty deferred.  Converts non-deferred futures with `manifold.deferred/->deferred`."
   ^KDeferred [x]
-  (let [y (manifold.deferred/->deferred x nil)]
-    (cond
-      (nil? y)
-      (wrap-val x)
-
-      (realized? y)
-      (let [v (md/success-value y y)]
-        (if (identical? v y)
-          (wrap-err (md/error-value y y))
-          (wrap-val v)))
-
-      :else
-      (.bind (KDeferred/wrap y) wrap* wrap*))))
+  (if-some [y (manifold.deferred/->deferred x nil)]
+    (wrap y)
+    (wrap-val x)))
 
 (defmacro do-wrap
   "Run `body` and returns value as deferred, catch and wrap any exceptions."
@@ -143,20 +133,17 @@
   ([x on-ok on-err]
    (.listen (wrap x) on-ok on-err)))
 
-
-(defmacro ^:private bind-inline
-  ([d val-fn] `(KDeferred/bind ~d ~val-fn))
-  ([d val-fn err-fn] `(KDeferred/bind ~d ~val-fn ~err-fn)))
-
 (defn bind
   "Bind 1-arg callbacks fn to deferred. Returns new deferred with amended value.
    Fn `val-fn` takes single arugment with unwrapped value and may return a new value,
    another deferred or throw an exception. Optional `err-fn` accepts single argument with error.
    "
-  {:inline (fn [d & args] (apply #'bind-inline nil nil d args))
+  {:inline (fn
+             ([d val-fn] `(KDeferred/bind ~d ~val-fn))
+             ([d val-fn err-fn] `(KDeferred/bind ~d ~val-fn ~err-fn)))
    :inline-arities #{2 3}}
-  (^KDeferred [d val-fn] (bind-inline d val-fn))
-  (^KDeferred [d val-fn err-fn] (bind-inline d val-fn err-fn)))
+  (^KDeferred [d val-fn] (KDeferred/bind d val-fn))
+  (^KDeferred [d val-fn err-fn] (KDeferred/bind d val-fn err-fn)))
 
 (defn bind-ex
   "Similar to `bind`, but run all callbacks on specified `executor`."
@@ -227,7 +214,6 @@
               #(if (seq? %) `(fn [x#] (-> x# ~%)) %))
         forms)))
 
-
 (defn revoke
   "Returns new deferred connected to the provided.
    When resulted deferred is realized but original is not - calls cancellation callback.
@@ -287,7 +273,6 @@
   [d-from d-dest]
   `(KDeferred/connect ~d-from ~d-dest))
 
-
 (definline join1
   "Coerce 'deferred with deferred value' to deferred with plain value.
 
@@ -303,7 +288,6 @@
    "
   ^KDeferred [d]
   (bind d (fn [x] (if (deferred? x) (join x) x))))
-
 
 (defmacro letm
   "Monadic let. Unwraps deferreds during binding, returning result as deferred.
@@ -513,7 +497,6 @@
         ef#)
        d#)))
 
-
 (defn iterate-while
   "Iteratively run 1-arg function `f` with initial value `x`.
    After each call check result of calling `p` and stop loop when result if falsy.
@@ -522,7 +505,6 @@
    This is low-level routine, prefer `reduce` `while` or `loop`."
   ^KDeferred [f p x]
   (impl-iterate-while* (fn [x] (f x)) (fn [x] (p x)) x false))
-
 
 (deftype DRecur [args])
 
