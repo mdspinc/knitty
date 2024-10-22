@@ -20,6 +20,9 @@
   :source-paths ["src"]
   :global-vars {*warn-on-reflection* true}
 
+  :aliases
+  {"bump-version" ["change" "version" "leiningen.release/bump-version"]}
+
   :profiles {:dev {:dependencies [[criterium/criterium "0.4.6"]
                                   [com.clojure-goes-fast/clj-async-profiler "1.3.3"]
                                   [prismatic/plumbing "0.6.0"]
