@@ -28,6 +28,11 @@
                   ["vcs" "tag" "v" "--no-sign"]
                   ["deploy"]]
 
+  :repositories [["releases" {:url "https://clojars.org/repo"
+                              :username :env
+                              :sign-releases false
+                              :password :env}]]
+
   :profiles {:dev {:dependencies [[criterium/criterium "0.4.6"]
                                   [com.clojure-goes-fast/clj-async-profiler "1.3.3"]
                                   [prismatic/plumbing "0.6.0"]
