@@ -1,12 +1,15 @@
 (ns knitty.manifold.fake-md
   (:refer-clojure :exclude [future future-call loop])
-  (:require [clojure.test :refer [testing]]
-            [clojure.tools.logging :as log]
-            [clojure.tools.logging.test :as log-test]
-            [knitty.deferred :as kd]
-            [manifold.deferred :as md])
-  (:import [clojure.lang IDeref]
-           [java.util.concurrent CompletionStage]))
+  (:require
+   [clojure.test :refer [testing]]
+   [clojure.tools.logging :as log]
+   [clojure.tools.logging.test :as log-test]
+   [knitty.deferred :as kd]
+   [manifold.deferred :as md])
+  (:import
+   [clojure.lang IDeref]
+   [java.util.concurrent CompletionStage]
+   [knitty.javaimpl KDeferred]))
 
 (defn chain [x & fs]
   (kd/chain* x fs))
@@ -92,18 +95,6 @@
      :knitty (kd/recur ~@rs)
      :manifold (md/recur ~@rs)))
 
-
-;; == knitty slow
-
-(defn- slow-kd-wrap-val [x]
-  (doto (kd/create)
-    (as-> d (future (Thread/sleep 20) (success! d x)))))
-
-(defn- slow-kd-wrap-err [x]
-  (doto (kd/create)
-   (as-> d (future (Thread/sleep 20) (error! d x)))))
-
-
 ;; == modes
 
 (def mode-rebinds (atom {:knitty {}}))
@@ -148,11 +139,6 @@
  #'deferred         #'md/deferred)
 
 (reg-mode
- :knitty-slow
- #'success-deferred #'slow-kd-wrap-val
- #'error-deferred   #'slow-kd-wrap-err)
-
-(reg-mode
  :manifold
  manifold-redefs)
 
@@ -188,5 +174,5 @@
                     log/*logger-factory*    log/*logger-factory*]
         (t)
         (System/gc)
-        (Thread/sleep 50)
-        ))))
+        (Thread/sleep 30)
+        (.clear KDeferred/ELD_LEAKED_ERRORS)))))
