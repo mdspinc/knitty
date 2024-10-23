@@ -380,6 +380,104 @@
         (is (<= (f -) times (f +)))))))
 
 
+(deftest test-zip
+
+  (is (= [] @(kd/zip)))
+  (is (= [1] @(kd/zip 1)))
+
+  (testing "zip sync"
+    (dotimes [n 30]
+      (let [v (vec (range n))]
+        (is (= v @(apply kd/zip v))))))
+
+  (testing "zip realized"
+    (dotimes [n 30]
+      (let [v (vec (range n))]
+        (is (= v @(apply kd/zip (map kd/wrap-val v)))))))
+
+  (testing "zip futures"
+    (dotimes [n 00]
+      (let [v (vec (range n))]
+        (is (= v @(apply kd/zip (map #(kd/future %) v)))))))
+
+  (testing "zip syncs with failure"
+    (dotimes [n 30]
+      (dotimes [i n]
+        (let [e (Exception. "boo")
+              v (vec (range n))
+              v (assoc v i (kd/wrap-err e))]
+          (is (= e @(capture-error (apply kd/zip v))))))))
+
+  (testing "zip futures with failure"
+    (dotimes [n 30]
+      (dotimes [i n]
+        (let [e (Exception. "boo")
+              v (vec (range n))
+              v (assoc v i (kd/wrap-err e))]
+          (is (= e @(capture-error (apply kd/zip (map #(kd/future %) v)))))))))
+  )
+
+
+(deftest test-zip*
+
+  (is (= nil @(kd/zip* nil)))
+  (is (= nil @(kd/zip* ())))
+  (is (= [1] @(kd/zip* [1])))
+
+  (testing "zip sync"
+    (dotimes [n 30]
+      (let [v (vec (range n))]
+        (is (= (seq v) @(kd/zip* v))))))
+
+  (testing "zip realized"
+    (dotimes [n 30]
+      (let [v (vec (range n))]
+        (is (= (seq v) @(kd/zip* (map kd/wrap-val v)))))))
+
+  (testing "zip futures"
+    (dotimes [n 30]
+      (let [v (vec (range n))]
+        (is (= (seq v) @(kd/zip* (map #(kd/future %) v)))))))
+
+  (testing "zip syncs with failure"
+    (dotimes [n 30]
+      (dotimes [i n]
+        (let [e (Exception. "boo")
+              v (vec (range n))
+              v (assoc v i (kd/wrap-err e))]
+          (is (= e @(capture-error (kd/zip* v)))))))))
+
+  (testing "zip futures with failure"
+    (dotimes [n 30]
+      (dotimes [i n]
+        (let [e (Exception. "boo")
+              v (vec (range n))
+              v (assoc v i (kd/wrap-err e))]
+          (is (= e @(capture-error (kd/zip* (map #(kd/future %) v))))))))
+  )
+
+(defn- random-wrap [x]
+  (case (int (rand-int 3))
+    0 x
+    1 (kd/wrap-val x)
+    2 (kd/future x)))
+
+(deftest ^:stress test-zip-stress
+  (testing "zip randomized"
+    (dotimes-prn 200000
+                 (let [n (rand-int 30)
+                       v (vec (range n))
+                       v' (map random-wrap v)]
+                   (is (= v @(apply kd/zip v')))))))
+
+(deftest ^:stress test-zip*-stress
+  (testing "zip* randomized"
+    (dotimes-prn 10000
+                 (let [n (rand-int 3000)
+                       v (range n)
+                       v' (map random-wrap v)]
+                   (is (= (seq v) @(kd/zip* v')))))))
+
 (deftest ^:stress test-error-leak-detection
   (dotimes-prn 100
     (do
