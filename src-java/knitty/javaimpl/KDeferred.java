@@ -68,21 +68,30 @@ public class KDeferred
     private static final Cleaner ELD_CLEANER =
         Cleaner.create(r -> new Thread(r, "knitty-error-leak-detector"));
 
-    private static class ErrorLeakDetector implements Runnable {
+    private final static class ErrBox implements Runnable {
 
-        volatile Object err;
+        final Object err;
+        volatile boolean consumed;
 
-        public ErrorLeakDetector(Object err) {
+        ErrBox(java.lang.Object err) {
             this.err = err;
         }
 
         @Override
         public void run() {
             Object e = this.err;
-            if (e != null) {
-                this.err = null;
+            if (!isConsumed()) {
+                this.consume();
                 ELD_LEAKED_ERRORS.offer(e);
             }
+        }
+
+        void consume() {
+            this.consumed = true;
+        }
+
+        boolean isConsumed() {
+            return consumed;
         }
     }
 
@@ -376,13 +385,6 @@ public class KDeferred
         GET_EXECUTOR = f;
     }
 
-    final static class ErrBox {
-        public final Object err;
-        public ErrBox(java.lang.Object err) {
-            this.err = err;
-        }
-    }
-
     private final static AListener TOMB = new Tomb();
 
     private volatile byte _owned;
@@ -392,21 +394,11 @@ public class KDeferred
     private volatile AListener _lhead;
 
     private IPersistentMap meta;
-    private ErrorLeakDetector eld;
 
-    private void detectLeakedError(Object err) {
-        if (!(err instanceof CancellationException)) {
-            ErrorLeakDetector x = new ErrorLeakDetector(err);
-            this.eld = x;
-            ELD_CLEANER.register(this, x);
-        }
-    }
-
-    public final void consumeError() {
-        ErrorLeakDetector x = this.eld;
-        if (x != null) {
-            x.err = null;
-            this.eld = null;
+    private void detectLeakedError(ErrBox eb) {
+        Object err = eb.err;
+        if (!eb.isConsumed() && !(err instanceof CancellationException)) {
+            ELD_CLEANER.register(this, eb);
         }
     }
 
@@ -585,9 +577,9 @@ public class KDeferred
     private void fireErrorListeners(ErrBox eb) {
         AListener node = tombListeners();
         if (node == null) {
-            detectLeakedError(eb.err);
+            detectLeakedError(eb);
         } else {
-            this.consumeError();
+            eb.consume();
             Object x = eb.err;
             for (; node != null; node = node.next) {
                 try {
@@ -634,8 +626,9 @@ public class KDeferred
         }
         Object v = VALUE.getAcquire(this);
         if (v instanceof ErrBox) {
-            this.consumeError();
-            onErr.invoke(((ErrBox) v).err);
+            ErrBox eb = (ErrBox) v;
+            eb.consume();
+            onErr.invoke(eb.err);
         } else {
             onSuc.invoke(v);
         }
@@ -647,8 +640,9 @@ public class KDeferred
         }
         Object v = VALUE.getAcquire(this);
         if (v instanceof ErrBox) {
-            this.consumeError();
-            ls.onError(((ErrBox) v).err);
+            ErrBox eb = (ErrBox) v;
+            eb.consume();
+            ls.onError(eb.err);
         } else {
             ls.onSuccess(v);
         }
@@ -660,8 +654,9 @@ public class KDeferred
         }
         Object v = VALUE.getAcquire(this);
         if (v instanceof ErrBox) {
-            this.consumeError();
-            ls.error(((ErrBox) v).err);
+            ErrBox eb = (ErrBox) v;
+            eb.consume();
+            ls.error(eb.err);
         } else {
             ls.success(v);
         }
@@ -676,8 +671,9 @@ public class KDeferred
 
         Object v = VALUE.getVolatile(this);
         if (v instanceof ErrBox) {
-            this.consumeError();
-            ls.onError(((ErrBox) v).err);
+            ErrBox eb = (ErrBox) v;
+            eb.consume();
+            ls.onError(eb.err);
         } else {
             ls.onSuccess(v);
         }
@@ -697,8 +693,9 @@ public class KDeferred
             v = VALUE.getVolatile(this);
         }
         if (this.succeeded == 0 && v instanceof ErrBox) {
-            this.consumeError();
-            onErr.invoke(((ErrBox) v).err);
+            ErrBox eb = (ErrBox) v;
+            eb.consume();
+            onErr.invoke(eb.err);
         } else {
             onSuc.invoke(v);
         }
@@ -817,7 +814,7 @@ public class KDeferred
 
     @SuppressWarnings("unchecked")
     private <T extends Throwable> Object throwErr(ErrBox eb) throws T {
-        this.consumeError();
+        eb.consume();
         throw ((T) coerceError(eb.err));
     }
 
@@ -961,9 +958,10 @@ public class KDeferred
             if (errFn == null) {
                 return this;
             } else {
-                this.consumeError();
+                ErrBox eb = (ErrBox) v;
+                eb.consume();
                 valFn = errFn;
-                v = ((ErrBox) v).err;
+                v = eb.err;
             }
         }
         try {
@@ -1031,10 +1029,11 @@ public class KDeferred
     }
 
     public static KDeferred wrapErr(Object e) {
+        ErrBox eb = new ErrBox(e);
         KDeferred d = new KDeferred();
         LHEAD.setOpaque(d, TOMB);
-        VALUE.setVolatile(d, new ErrBox(e));
-        d.detectLeakedError(e);
+        VALUE.setVolatile(d, eb);
+        d.detectLeakedError(eb);
         return d;
     }
 

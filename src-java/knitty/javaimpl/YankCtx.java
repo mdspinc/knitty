@@ -296,7 +296,6 @@ public final class YankCtx {
         }
 
         d.error(RevokeException.YANK_FINISHED, token);
-        d.consumeError();
         return false;
     }
 
@@ -384,7 +383,6 @@ public final class YankCtx {
         }
         for (KVCons a = this.freeze(); a.d != null; a = a.next) {
             a.d.error(ex, token);
-            a.d.consumeError();
         }
     }
 }
