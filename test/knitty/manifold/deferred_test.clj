@@ -394,13 +394,13 @@
            (deliver d 1)
            @d)))
 
+#_>>> #_
 (deftest ^:stress test-error-leak-detection
 
   (d/error-deferred (Throwable.))
   (System/gc)
 
-#_<<< ;;  (dotimes [_ 2e3]
-#_>>>  (dotimes-prn [_ 2e5]
+  (dotimes [_ 2e3]
     (d/error! (d/deferred) (Throwable.)))
   (System/gc))
 
