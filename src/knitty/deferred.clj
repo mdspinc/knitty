@@ -365,7 +365,9 @@
      d#))
 
 (defn- seq-to-arr ^objects [s]
-  (clojure.lang.RT/seqToArray s))
+  (if (instance? java.util.Collection s)
+    (.toArray ^java.util.Collection s)
+    (clojure.lang.RT/seqToArray (seq s))))
 
 (defn zip*
   "Similar to `(apply zip vs)`, returns a seq instead of vector."
