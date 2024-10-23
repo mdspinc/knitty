@@ -474,8 +474,7 @@ public class KDeferred
         if (TOKEN.getOpaque(this) != null) {
             throw new IllegalStateException("invalid claim token");
         }
-        if (VALUE.compareAndExchange(this, TOMB, x) == TOMB) {
-            this.succeeded = 1;
+        if (VALUE.compareAndExchangeRelease(this, TOMB, x) == TOMB) {
             fireSuccessListeners(x);
         }
     }
@@ -484,8 +483,7 @@ public class KDeferred
         if (TOKEN.getOpaque(this) != token) {
             throw new IllegalStateException("invalid claim token");
         }
-        if (VALUE.compareAndExchange(this, TOMB, x) == TOMB) {
-            this.succeeded = 1;
+        if (VALUE.compareAndExchangeRelease(this, TOMB, x) == TOMB) {
             fireSuccessListeners(x);
         }
     }
@@ -496,7 +494,7 @@ public class KDeferred
             throw new IllegalStateException("invalid claim token");
         }
         ErrBox eb = new ErrBox(x);
-        if (VALUE.compareAndExchange(this, TOMB, eb) == TOMB) {
+        if (VALUE.compareAndExchangeRelease(this, TOMB, eb) == TOMB) {
             fireErrorListeners(eb);
         }
     }
@@ -506,7 +504,7 @@ public class KDeferred
             throw new IllegalStateException("invalid claim token");
         }
         ErrBox eb = new ErrBox(x);
-        if (VALUE.compareAndExchange(this, TOMB, eb) == TOMB) {
+        if (VALUE.compareAndExchangeRelease(this, TOMB, eb) == TOMB) {
             fireErrorListeners(eb);
         }
     }
@@ -516,8 +514,7 @@ public class KDeferred
         if (TOKEN.getOpaque(this) != null) {
             return invalidToken();
         }
-        if (VALUE.compareAndExchange(this, TOMB, x) == TOMB) {
-            this.succeeded = 1;
+        if (VALUE.compareAndExchangeRelease(this, TOMB, x) == TOMB) {
             fireSuccessListeners(x);
             return true;
         }
@@ -529,8 +526,7 @@ public class KDeferred
         if (TOKEN.getOpaque(this) != token) {
             return invalidToken();
         }
-        if (VALUE.compareAndExchange(this, TOMB, x) == TOMB) {
-            this.succeeded = 1;
+        if (VALUE.compareAndExchangeRelease(this, TOMB, x) == TOMB) {
             fireSuccessListeners(x);
             return true;
         }
@@ -565,6 +561,7 @@ public class KDeferred
 
     private void fireSuccessListeners(Object x) {
         AListener node = tombListeners();
+        this.succeeded = 1;
         for (; node != null; node = node.next) {
             try {
                 node.success(x);
@@ -669,7 +666,7 @@ public class KDeferred
             return true;
         }
 
-        Object v = VALUE.getVolatile(this);
+        Object v = VALUE.getAcquire(this);
         if (v instanceof ErrBox) {
             ErrBox eb = (ErrBox) v;
             eb.consume();
@@ -685,12 +682,12 @@ public class KDeferred
     public Object onRealized(Object onSucc, Object onErrr) {
         IFn onSuc = (IFn) onSucc;
         IFn onErr = (IFn) onErrr;
-        Object v = VALUE.getVolatile(this);
+        Object v = VALUE.getAcquire(this);
         if (v == TOMB) {
             if (this.listen0(new AListener.Fn(onSuc, onErr))) {
                 return true;
             }
-            v = VALUE.getVolatile(this);
+            v = VALUE.getAcquire(this);
         }
         if (this.succeeded == 0 && v instanceof ErrBox) {
             ErrBox eb = (ErrBox) v;
