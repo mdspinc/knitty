@@ -1,5 +1,5 @@
-;; copy of https://github.com/clj-commons/manifold/blob/master/test/manifold/deferred_stage_test.clj
-;; this test ensures that Knitty provides similar behaviour as manifold.deferred's implementation of CompletionStage
+#_>>> ;; copy of https://github.com/clj-commons/manifold/blob/master/test/manifold/deferred_stage_test.clj
+#_>>> ;; this test ensures that Knitty provides similar behaviour as manifold.deferred's implementation of CompletionStage
 
 ;;<<< (ns manifold.deferred-stage-test
 #_>>> (ns knitty.manifold.deferred-stage-test
@@ -14,8 +14,8 @@
             CompletableFuture
             Executors]))
 
-#_>>> ;; run all tests against md/deferred and kd/deferred
-#_>>> (clojure.test/use-fixtures :once (d/with-modes-fixture))
+#_>>> (set! *warn-on-reflection* false)
+#_>>> (clojure.test/use-fixtures :once (clojure.test/join-fixtures [(d/with-modes-fixture) (d/fixup-count-logged-errors)]))
 
 
 (defn fn1->Runnable [f]

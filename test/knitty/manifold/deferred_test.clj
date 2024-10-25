@@ -1,3 +1,6 @@
+#_>>> ;; copy of https://github.com/clj-commons/manifold/blob/master/test/manifold/deferred_test.clj
+#_>>> ;; this test ensures that Knitty provides similar behaviour as manifold.deferred's implementation of CompletionStage
+
 #_>>>(ns knitty.manifold.deferred-test
 #_>>>   {:clj-kondo/ignore true}
 ;;<<<(ns manifold.deferred-test
@@ -16,10 +19,8 @@
    (manifold.deferred IDeferred)))
 
 #_>>> (set! *warn-on-reflection* false)
-#_>>> (clojure.test/use-fixtures :each (clojure.test/join-fixtures
-#_>>>                                    [(d/fixup-promesa-print-method-test)
-#_>>>                                     (d/fixup-count-loggeg-errors)]))
-#_>>> (clojure.test/use-fixtures :once (d/with-modes-fixture))
+#_>>> (clojure.test/use-fixtures :each (clojure.test/join-fixtures [(d/fixup-promesa-print-method-test)]))
+#_>>> (clojure.test/use-fixtures :once (clojure.test/join-fixtures [(d/with-modes-fixture) (d/fixup-count-logged-errors)]))
 
 (defmacro future' [& body]
   `(d/future

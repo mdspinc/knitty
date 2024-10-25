@@ -167,12 +167,9 @@
           (when m (.addMethod mm CompletionStage m)))))))
 
 
-(defn fixup-count-loggeg-errors []
+(defn fixup-count-logged-errors []
   (fn [t]
     (log-test/with-log
       (with-redefs [log-test/*stateful-log* log-test/*stateful-log*
                     log/*logger-factory*    log/*logger-factory*]
-        (t)
-        (System/gc)
-        (Thread/sleep 30)
-        (.clear KDeferred/ELD_LEAKED_ERRORS)))))
+        (t)))))
