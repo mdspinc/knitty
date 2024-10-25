@@ -70,10 +70,21 @@ public class KDeferred
 
     private final static class ErrBox implements Runnable {
 
-        final Object err;
-        volatile boolean consumed;
+        private static final VarHandle CONSUMED;
 
-        ErrBox(java.lang.Object err) {
+        static {
+            try {
+                MethodHandles.Lookup l = MethodHandles.lookup();
+                CONSUMED = l.findVarHandle(ErrBox.class, "_consumed", Byte.TYPE);
+            } catch (ReflectiveOperationException e) {
+                throw new ExceptionInInitializerError(e);
+            }
+        }
+
+        final Object err;
+        private volatile boolean _consumed;
+
+        ErrBox(Object err) {
             this.err = err;
         }
 
@@ -86,12 +97,13 @@ public class KDeferred
             }
         }
 
-        void consume() {
-            this.consumed = true;
+        public Object consume() {
+            CONSUMED.setOpaque(this, true);
+            return this.err;
         }
 
-        boolean isConsumed() {
-            return consumed;
+        public boolean isConsumed() {
+            return (boolean) CONSUMED.getOpaque(this);
         }
     }
 
@@ -576,8 +588,7 @@ public class KDeferred
         if (node == null) {
             detectLeakedError(eb);
         } else {
-            eb.consume();
-            Object x = eb.err;
+            Object x = eb.consume();
             for (; node != null; node = node.next) {
                 try {
                     node.error(x);
@@ -624,8 +635,7 @@ public class KDeferred
         Object v = VALUE.getAcquire(this);
         if (v instanceof ErrBox) {
             ErrBox eb = (ErrBox) v;
-            eb.consume();
-            onErr.invoke(eb.err);
+            onErr.invoke(eb.consume());
         } else {
             onSuc.invoke(v);
         }
@@ -638,8 +648,7 @@ public class KDeferred
         Object v = VALUE.getAcquire(this);
         if (v instanceof ErrBox) {
             ErrBox eb = (ErrBox) v;
-            eb.consume();
-            ls.onError(eb.err);
+            ls.onError(eb.consume());
         } else {
             ls.onSuccess(v);
         }
@@ -652,8 +661,7 @@ public class KDeferred
         Object v = VALUE.getAcquire(this);
         if (v instanceof ErrBox) {
             ErrBox eb = (ErrBox) v;
-            eb.consume();
-            ls.error(eb.err);
+            ls.error(eb.consume());
         } else {
             ls.success(v);
         }
@@ -669,8 +677,7 @@ public class KDeferred
         Object v = VALUE.getAcquire(this);
         if (v instanceof ErrBox) {
             ErrBox eb = (ErrBox) v;
-            eb.consume();
-            ls.onError(eb.err);
+            ls.onError(eb.consume());
         } else {
             ls.onSuccess(v);
         }
@@ -691,8 +698,7 @@ public class KDeferred
         }
         if (this.succeeded == 0 && v instanceof ErrBox) {
             ErrBox eb = (ErrBox) v;
-            eb.consume();
-            onErr.invoke(eb.err);
+            onErr.invoke(eb.consume());
         } else {
             onSuc.invoke(v);
         }
@@ -795,7 +801,7 @@ public class KDeferred
             return fallback;
         }
         Object v = VALUE.getAcquire(this);
-        return v instanceof ErrBox ? ((ErrBox) v).err : fallback;
+        return v instanceof ErrBox ? ((ErrBox) v).consume() : fallback;
     }
 
     static Throwable coerceError(Object err) {
@@ -811,8 +817,7 @@ public class KDeferred
 
     @SuppressWarnings("unchecked")
     private <T extends Throwable> Object throwErr(ErrBox eb) throws T {
-        eb.consume();
-        throw ((T) coerceError(eb.err));
+        throw ((T) coerceError(eb.consume()));
     }
 
     public Object unwrap() {
@@ -955,10 +960,9 @@ public class KDeferred
             if (errFn == null) {
                 return this;
             } else {
-                ErrBox eb = (ErrBox) v;
-                eb.consume();
                 valFn = errFn;
-                v = eb.err;
+                ErrBox eb = (ErrBox) v;
+                v = eb.consume();
             }
         }
         try {
