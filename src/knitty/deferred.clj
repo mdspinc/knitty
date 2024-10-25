@@ -125,9 +125,9 @@
    When only one callback is provided it shold be 0-arg fn.
    When both callbacks provided - they must accept 1 argument (value or error)."
   {:inline (fn
-             ([x on-any] `(let [f# (fn ~'on-any' [_] (~on-any))] (.listen (wrap ~x) f#)))
+             ([x on-any] `(let [f# (fn ~'on-any' [_#] (~on-any))] (.listen (wrap ~x) f# f#)))
              ([x on-ok on-err] `(.listen (wrap ~x) ~on-ok ~on-err)))
-   :inline-arities #{3}}
+   :inline-arities #{2 3}}
   ([x on-any]
    (let [f (fn on-any' [_] (on-any))] (.listen (wrap x) f f)))
   ([x on-ok on-err]
