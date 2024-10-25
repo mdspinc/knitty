@@ -134,7 +134,7 @@
   (cons x xs))
 
 
-(defn defyarn [{:keys [node] :as x}]
+(defn defyarn [{:keys [node]}]
 
   (let [node-child (rest (:children node))
         [name bmap & body] (if (-> node-child second api/string-node?)
@@ -230,12 +230,14 @@
         (api/list-node (list* (api/token-node `array-map) opts-raw))
         assoc :clj-kondo/ignore [:unused-value])
 
-       (api/list-node
-        (list
-         (api/token-node 'knitty.core/defyarn)
-         name
-         (api/map-node [(api/token-node '_) route-key])
-         (api/token-node nil)))))}))
+       (:node
+        (defyarn {:node
+                  (api/list-node
+                   (list
+                    (api/token-node 'knitty.core/defyarn)
+                    name
+                    (api/map-node [(api/token-node '_) route-key])
+                    (api/token-node nil)))}))))}))
 
 
 (defn defyarn-method [{:keys [node]}]
