@@ -467,37 +467,29 @@
 ;; ==
 
 (defmacro impl-iterate-while*
-  [[_ [fx] & f]
-   [_ [px] & p]
-   x
-   ret-nil?]
-  (let [xx (gensym)]
-    `(let [d# (create)
-           ef# (fn ~'on-err [e#] (error! d# e#))]
-       (on
-        ~x
-        (fn loop-step# [~xx]
-          (when-not (.realized d#)
-            (cond
-
-              (deferred? ~xx)
-              (let [y# (wrap ~xx)]
-                (when-not (.listen0 y# loop-step# ef#)
-                  (recur (try (.get y#) (catch Throwable t# (ef# t#))))))
-
-              (let [~px ~xx] ~@p)
-              (let [y# (unwrap1 (try (let [~fx ~xx] ~@f)
-                                     (catch Throwable t# (wrap-err t#))))]
-                (if (deferred? y#)
-                  (let [y# (wrap y#)]
-                    (when-not (.listen0 y# loop-step# ef#)
-                      (recur (try (.get y#) (catch Throwable t# (ef# t#))))))
-                  (recur y#)))
-
-              :else
-              (.fireValue d# ~(when-not ret-nil? xx)))))
-        ef#)
-       d#)))
+  ([init f p]
+   `(impl-iterate-while* ~init ~f ~p (fn [x#] x#)))
+  ([init
+    [_ [stepf-x] & stepf-body]
+    [_ [somef-x] & somef-body]
+    [_ [retrn-x] & retrn-body]]
+   `(let [d# (create)
+          ef# (fn ~'on-err [e#] (error! d# e#))]
+      (on
+       ~init
+       (fn loop-step# [xx#]
+         (when-not (.realized d#)
+           (if (let [~somef-x xx#] ~@somef-body)
+             (let [y# (try (let [~stepf-x xx#] ~@stepf-body)
+                           (catch Throwable t# (ef# t#) nil))]
+               (if (deferred? y#)
+                 (let [y# (wrap y#)]
+                   (when-not (.listen0 y# loop-step# ef#)
+                     (recur (.get y# ef#))))
+                 (recur y#)))
+             (.fireValue d# (let [~retrn-x xx#] ~@retrn-body)))))
+       ef#)
+      d#)))
 
 (defn iterate-while
   "Iteratively run 1-arg function `f` with initial value `x`.
@@ -505,8 +497,10 @@
    Function `f` may return deferreds, initial value `x` also may be deferred.
    Predicate `p` should always return synchonous values howerver.
    This is low-level routine, prefer `reduce` `while` or `loop`."
-  ^KDeferred [f p x]
-  (impl-iterate-while* (fn [x] (f x)) (fn [x] (p x)) x false))
+  ^KDeferred [stepf somef init]
+  (impl-iterate-while* init
+                       (fn [x] (stepf x))
+                       (fn [x] (somef x))))
 
 (deftype DRecur [args])
 
@@ -531,10 +525,9 @@
         syms (map first bs)
         init (map second bs)]
     `(impl-iterate-while*
-      (fn [r#] (let [[~@syms] (.-args ^DRecur r#)] ~@body))
-      (fn [r#] (instance? DRecur r#))
       (knitty.deferred/recur ~@init)
-      false)))
+      (fn [r#] (let [[~@syms] (.-args ^DRecur r#)] ~@body))
+      (fn [r#] (instance? DRecur r#)))))
 
 (defmacro while
   "Deferred-aware version of `clojure.core/while`.
@@ -542,43 +535,40 @@
    Returns deferred realized to `nil`."
   ([body]
    `(impl-iterate-while*
+     true
      (fn [x#] (when x# ~body))
      (fn [x#] x#)
-     true
-     true))
+     (fn [_#] nil)))
   ([pred & body]
    `(impl-iterate-while*
+     true
      (fn [x#]
        (when x#
          (bind ~pred
                (fn ~'while-body [c#] (when c# (bind (do ~@body)
                                                     (constantly true)))))))
      (fn [x#] x#)
-     true
-     true)))
+     (fn [_#] nil))))
 
 (defn chain*
   "Composes functions over the value `x`, returning a deferred containing the result."
   ^KDeferred [x fs]
   (let [it (iterator fs)]
     (impl-iterate-while*
-     (fn [a] (bind a (.next it)))
-     (fn [_] (.hasNext it))
      x
-     false)))
+     (fn [a] (bind a (.next it)))
+     (fn [_] (.hasNext it)))))
 
 (defn reduce
   "Deferred-aware version of `clojure.core/reduce`.
    Step function `f` may return deferred values, `xs` may be sequence of deferreds."
   ^KDeferred [f initd xs]
-  (bind
-   (let [it (iterator xs)]
-     (impl-iterate-while*
-      (fn [a] (bind (.next it) #(f a %)))
-      (fn [a] (and (not (reduced? a)) (.hasNext it)))
-      initd
-      false))
-   unreduced))
+  (let [it (iterator xs)]
+    (impl-iterate-while*
+     initd
+     (fn [a] (bind (.next it) #(f a %)))
+     (fn [a] (and (not (reduced? a)) (.hasNext it)))
+     (fn [a] (unreduced a)))))
 
 (defn run!
   "Sequentially apply `f` to sequence of deferreds `xs` for side effects.
@@ -586,10 +576,10 @@
   ^KDeferred [f xs]
   (let [it (iterator xs)]
     (impl-iterate-while*
+     nil
      (fn [_] (bind (.next it) f))
      (fn [_] (.hasNext it))
-     nil
-     true)))
+     (fn [_] nil))))
 
 ;; ==
 
