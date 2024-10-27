@@ -12,7 +12,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
-import java.util.function.Function;
 
 import clojure.lang.AFn;
 import clojure.lang.ExceptionInfo;
@@ -27,7 +26,7 @@ import manifold.deferred.IDeferred;
 import manifold.deferred.IDeferredListener;
 import manifold.deferred.IMutableDeferred;
 
-@SuppressWarnings("unused")
+@SuppressWarnings({"unused", "unchecked", "rawtypes"})
 public class KDeferred
         extends AFn
         implements
@@ -40,34 +39,6 @@ public class KDeferred
         IMutableDeferred,
         CompletionStageMixin
     {
-
-    public static final BlockingQueue<Object> ELD_LEAKED_ERRORS =
-        new ArrayBlockingQueue<>(128);
-
-    @SuppressWarnings("CallToPrintStackTrace")
-    public static final Thread ELD_LOGGER = new Thread(() -> {
-        while (!Thread.interrupted()) {
-            Object e;
-            try {
-                e = ELD_LEAKED_ERRORS.take();
-            } catch (InterruptedException ex) {
-                return;
-            }
-            try {
-                logWarn(e, "unconsumed deferred in error state");
-            } catch (Exception e1) {
-                e1.printStackTrace();
-            }
-        }
-    }, "knitty-error-leak-logger");
-
-    static {
-        ELD_LOGGER.setDaemon(true);
-        ELD_LOGGER.start();
-    }
-
-    private static final Cleaner ELD_CLEANER =
-        Cleaner.create(r -> new Thread(r, "knitty-error-leak-detector"));
 
     private final static class ErrBox implements Runnable {
 
@@ -105,6 +76,117 @@ public class KDeferred
 
         public boolean isConsumed() {
             return (boolean) CONSUMED.getOpaque(this);
+        }
+    }
+
+    abstract static class AListener {
+
+        private final static VarHandle NEXT;
+        static {
+            try {
+                MethodHandles.Lookup l = MethodHandles.lookup();
+                NEXT = l.findVarHandle(AListener.class, "next", AListener.class);
+            } catch (ReflectiveOperationException e) {
+                throw new ExceptionInInitializerError(e);
+            }
+        }
+
+        public AListener next;
+
+        public abstract void success(Object x);
+        public abstract void error(Object e);
+
+        public final boolean casNext(AListener curNext, AListener newNext) {
+            return NEXT.compareAndSet(this, curNext, newNext);
+        }
+
+        protected AListener() {}
+    }
+
+    static final class Dl extends AListener {
+
+        static final byte ACTIVE = 0;
+        static final byte PENDING_CANCEL = 1;
+        static final byte CANCELLED = 2;
+
+        static final VarHandle CANCEL;
+        static {
+            try {
+                MethodHandles.Lookup l = MethodHandles.lookup();
+                CANCEL = l.findVarHandle(Dl.class, "cancel", Byte.TYPE);
+            } catch (ReflectiveOperationException var1) {
+                throw new ExceptionInInitializerError(var1);
+            }
+        }
+
+        IDeferredListener ls;
+        byte cancel;
+
+        public Dl(IDeferredListener ls) {
+            this.ls = ls;
+        }
+
+        @Override
+        public void success(Object x) {
+            if (((byte) CANCEL.getOpaque(this)) == PENDING_CANCEL) {
+                CANCEL.setOpaque(this, CANCELLED);
+                this.ls = null;
+            } else {
+                this.ls.onSuccess(x);
+            }
+        }
+
+        @Override
+        public void error(Object e) {
+            if (((byte) CANCEL.getOpaque(this)) == PENDING_CANCEL) {
+                CANCEL.setOpaque(this, CANCELLED);
+                this.ls = null;
+            } else {
+                this.ls.onError(e);
+            }
+        }
+
+        public boolean cancelled() {
+            return ((byte) CANCEL.getOpaque(this)) == CANCELLED;
+        }
+
+        public boolean acquireForCancel() {
+            return CANCEL.compareAndSet(this, ACTIVE, PENDING_CANCEL);
+        }
+
+        @Override
+        public String toString() {
+            return super.toString() + "[ls=" + Objects.toString(ls) + "]";
+        }
+    }
+
+    static final class Fn extends AListener {
+
+        private final IFn onSucc;
+        private final IFn onErr;
+
+        public Fn(IFn onSucc, IFn onErr) {
+            this.onSucc = onSucc;
+            this.onErr = onErr;
+        }
+
+        @Override
+        public void success(Object x) {
+            if (onSucc != null) {
+                this.onSucc.invoke(x);
+            }
+        }
+
+        @Override
+        public void error(Object e) {
+            if (onErr != null) {
+                this.onErr.invoke(e);
+            }
+        }
+
+        @Override
+        public String toString() {
+            return super.toString() + "[onSucc=" + Objects.toString(onSucc) + ", onErr=" + Objects.toString(onErr) + "]";
         }
     }
 
@@ -340,19 +422,33 @@ public class KDeferred
         }
     }
 
-    final class FnAdapter extends AFn {
+    public static final BlockingQueue<Object> ELD_LEAKED_ERRORS =
+        new ArrayBlockingQueue<>(128);
 
-        private final Function fn;
-
-        public FnAdapter(Function fn) {
-            this.fn = fn;
+    @SuppressWarnings("CallToPrintStackTrace")
+    public static final Thread ELD_LOGGER = new Thread(() -> {
+        while (!Thread.interrupted()) {
+            Object e;
+            try {
+                e = ELD_LEAKED_ERRORS.take();
+            } catch (InterruptedException ex) {
+                return;
+            }
+            try {
+                logWarn(e, "unconsumed deferred in error state");
+            } catch (Exception e1) {
+                e1.printStackTrace();
+            }
         }
+    }, "knitty-error-leak-logger");
 
-        @Override
-        public Object invoke(Object t) {
-            return fn.apply(t);
-        }
+    static {
+        ELD_LOGGER.setDaemon(true);
+        ELD_LOGGER.start();
     }
+
+    private static final Cleaner ELD_CLEANER =
+        Cleaner.create(r -> new Thread(r, "knitty-error-leak-detector"));
 
     private static final VarHandle TOKEN;
     private static final VarHandle VALUE;
@@ -606,12 +702,12 @@ public class KDeferred
 
     public boolean listen0(IFn onSuc, IFn onErr) {
         AListener head = (AListener) LHEAD.getAcquire(this);
-        return head != LS_TOMB && listen0(head, new AListener.Fn(onSuc, onErr));
+        return head != LS_TOMB && listen0(head, new Fn(onSuc, onErr));
     }
 
     public boolean listen0(IDeferredListener ls) {
         AListener head = (AListener) LHEAD.getAcquire(this);
-        return head != LS_TOMB && listen0(head, new AListener.Dl(ls));
+        return head != LS_TOMB && listen0(head, new Dl(ls));
     }
 
     boolean listen0(AListener ls) {
@@ -696,7 +792,7 @@ public class KDeferred
         IFn onErr = (IFn) onErrr;
         Object v = VALUE.getAcquire(this);
         if (v == MISS_VALUE) {
-            if (this.listen0(new AListener.Fn(onSuc, onErr))) {
+            if (this.listen0(new Fn(onSuc, onErr))) {
                 return true;
             }
             v = VALUE.getAcquire(this);
@@ -711,13 +807,13 @@ public class KDeferred
     }
 
     private boolean isCancelledListener(AListener als) {
-        return !((als instanceof AListener.Dl) && ((AListener.Dl) als).ls == null);
+        return !((als instanceof Dl) && ((Dl) als).ls == null);
     }
 
-    private AListener.Dl findAndCancelListener(AListener head, Object ls) {
+    private Dl findAndCancelListener(AListener head, Object ls) {
         while (head != null) {
-            if (head instanceof AListener.Dl) {
-                AListener.Dl ahead = (AListener.Dl) head;
+            if (head instanceof Dl) {
+                Dl ahead = (Dl) head;
                 if (ahead.ls == ls && ahead.acquireForCancel()) {
                     return ahead;
                 }
@@ -750,7 +846,7 @@ public class KDeferred
         if (ahead == LS_TOMB) {
             return false;
         }
-        AListener.Dl als = findAndCancelListener(ahead, listener);
+        Dl als = findAndCancelListener(ahead, listener);
         if (als == null) {
             return false;
         }
@@ -820,7 +916,6 @@ public class KDeferred
         }
     }
 
-    @SuppressWarnings("unchecked")
     private <T extends Throwable> Object throwErr(ErrBox eb) throws T {
         throw ((T) coerceError(eb.consume()));
     }
@@ -942,10 +1037,6 @@ public class KDeferred
         KDeferred dest = create();
         this.listen(new BindEx(dest, valFn, errFn, executor));
         return dest;
-    }
-
-    public KDeferred bindf(Function valFn, Function errFn, Executor executor) {
-        return this.bind(new FnAdapter(valFn), new FnAdapter(errFn), executor);
     }
 
     public KDeferred bind(IFn valFn) {

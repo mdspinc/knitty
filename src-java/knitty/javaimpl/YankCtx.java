@@ -352,8 +352,8 @@ public final class YankCtx {
         return new YankResult(inputs, a0, added0, kwMapper);
     }
 
-    AListener canceller() {
-        return new AListener() {
+    KDeferred.AListener canceller() {
+        return new KDeferred.AListener() {
 
             @Override
             public void success(Object _v) {

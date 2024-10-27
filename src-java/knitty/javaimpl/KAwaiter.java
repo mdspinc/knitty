@@ -9,7 +9,7 @@ import manifold.deferred.IDeferred;
 
 public final class KAwaiter {
 
-    private static final class Ls extends AListener {
+    private static final class Ls extends KDeferred.AListener {
 
         private final KAwaiter ka;
 
@@ -66,7 +66,7 @@ public final class KAwaiter {
         }
     }
 
-    private static final class L0 extends AListener {
+    private static final class L0 extends KDeferred.AListener {
 
         private final AFn ls;
 
