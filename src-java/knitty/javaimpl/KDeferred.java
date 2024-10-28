@@ -103,7 +103,7 @@ public class KDeferred
         protected AListener() {}
     }
 
-    static final class Dl extends AListener {
+    private static final class Dl extends AListener {
 
         static final byte ACTIVE = 0;
         static final byte PENDING_CANCEL = 1;
@@ -160,7 +160,7 @@ public class KDeferred
         }
     }
 
-    static final class Fn extends AListener {
+    private static final class Fn extends AListener {
 
         private final IFn onSucc;
         private final IFn onErr;
@@ -450,6 +450,8 @@ public class KDeferred
     private static final Cleaner ELD_CLEANER =
         Cleaner.create(r -> new Thread(r, "knitty-error-leak-detector"));
 
+    private static final Keyword ERROR_KW = Keyword.intern(null, "error");
+
     private static final VarHandle TOKEN;
     private static final VarHandle VALUE;
     private static final VarHandle OWNED;
@@ -579,7 +581,11 @@ public class KDeferred
     }
 
     private AListener tombListeners() {
-        return (AListener) LHEAD.getAndSetAcquire(this, LS_TOMB);
+        return (AListener) LHEAD.getAndSet(this, LS_TOMB);
+    }
+
+    private boolean complete(Object x) {
+        return VALUE.compareAndExchangeRelease(this, MISS_VALUE, x) == MISS_VALUE;
     }
 
     @Override
@@ -587,7 +593,7 @@ public class KDeferred
         if (TOKEN.getOpaque(this) != null) {
             throw new IllegalStateException("invalid claim token");
         }
-        if (VALUE.compareAndExchangeRelease(this, MISS_VALUE, x) == MISS_VALUE) {
+        if (complete(x)) {
             fireSuccessListeners(x);
         }
     }
@@ -596,7 +602,7 @@ public class KDeferred
         if (TOKEN.getOpaque(this) != token) {
             throw new IllegalStateException("invalid claim token");
         }
-        if (VALUE.compareAndExchangeRelease(this, MISS_VALUE, x) == MISS_VALUE) {
+        if (complete(x)) {
             fireSuccessListeners(x);
         }
     }
@@ -607,7 +613,7 @@ public class KDeferred
             throw new IllegalStateException("invalid claim token");
         }
         ErrBox eb = new ErrBox(x);
-        if (VALUE.compareAndExchangeRelease(this, MISS_VALUE, eb) == MISS_VALUE) {
+        if (complete(eb)) {
             fireErrorListeners(eb);
         }
     }
@@ -617,7 +623,7 @@ public class KDeferred
             throw new IllegalStateException("invalid claim token");
         }
         ErrBox eb = new ErrBox(x);
-        if (VALUE.compareAndExchangeRelease(this, MISS_VALUE, eb) == MISS_VALUE) {
+        if (complete(eb)) {
             fireErrorListeners(eb);
         }
     }
@@ -627,7 +633,7 @@ public class KDeferred
         if (TOKEN.getOpaque(this) != null) {
             return invalidToken();
         }
-        if (VALUE.compareAndExchangeRelease(this, MISS_VALUE, x) == MISS_VALUE) {
+        if (complete(x)) {
             fireSuccessListeners(x);
             return true;
         }
@@ -639,7 +645,7 @@ public class KDeferred
         if (TOKEN.getOpaque(this) != token) {
             return invalidToken();
         }
-        if (VALUE.compareAndExchangeRelease(this, MISS_VALUE, x) == MISS_VALUE) {
+        if (complete(x)) {
             fireSuccessListeners(x);
             return true;
         }
@@ -652,7 +658,7 @@ public class KDeferred
             return invalidToken();
         }
         ErrBox eb = new ErrBox(x);
-        if (VALUE.compareAndExchangeRelease(this, MISS_VALUE, eb) == MISS_VALUE) {
+        if (complete(eb)) {
             fireErrorListeners(eb);
             return true;
         }
@@ -665,7 +671,7 @@ public class KDeferred
             return invalidToken();
         }
         ErrBox eb = new ErrBox(x);
-        if (VALUE.compareAndExchangeRelease(this, MISS_VALUE, eb) == MISS_VALUE) {
+        if (complete(eb)) {
             fireErrorListeners(eb);
             return true;
         }
@@ -701,17 +707,17 @@ public class KDeferred
     }
 
     public boolean listen0(IFn onSuc, IFn onErr) {
-        AListener head = (AListener) LHEAD.getAcquire(this);
+        AListener head = (AListener) LHEAD.getOpaque(this);
         return head != LS_TOMB && listen0(head, new Fn(onSuc, onErr));
     }
 
     public boolean listen0(IDeferredListener ls) {
-        AListener head = (AListener) LHEAD.getAcquire(this);
+        AListener head = (AListener) LHEAD.getOpaque(this);
         return head != LS_TOMB && listen0(head, new Dl(ls));
     }
 
     boolean listen0(AListener ls) {
-        AListener head = (AListener) LHEAD.getAcquire(this);
+        AListener head = (AListener) LHEAD.getOpaque(this);
         return head != LS_TOMB && listen0(head, ls);
     }
 
@@ -733,8 +739,8 @@ public class KDeferred
         if (this.listen0(onSuc, onErr)) {
             return;
         }
-        Object v = VALUE.getAcquire(this);
-        if (this.succeeded == 0 && v instanceof ErrBox) {
+        Object v = this.getRaw();
+        if (v instanceof ErrBox) {
             ErrBox eb = (ErrBox) v;
             onErr.invoke(eb.consume());
         } else {
@@ -746,8 +752,8 @@ public class KDeferred
         if (this.listen0(ls)) {
             return;
         }
-        Object v = VALUE.getAcquire(this);
-        if (this.succeeded == 0 && v instanceof ErrBox) {
+        Object v = this.getRaw();
+        if (v instanceof ErrBox) {
             ErrBox eb = (ErrBox) v;
             ls.onError(eb.consume());
         } else {
@@ -759,8 +765,8 @@ public class KDeferred
         if (this.listen0(ls)) {
             return;
         }
-        Object v = VALUE.getAcquire(this);
-        if (this.succeeded == 0 && v instanceof ErrBox) {
+        Object v = this.getRaw();
+        if (v instanceof ErrBox) {
             ErrBox eb = (ErrBox) v;
             ls.error(eb.consume());
         } else {
@@ -775,8 +781,8 @@ public class KDeferred
             return true;
         }
 
-        Object v = VALUE.getAcquire(this);
-        if (this.succeeded == 0 && v instanceof ErrBox) {
+        Object v = this.getRaw();
+        if (v instanceof ErrBox) {
             ErrBox eb = (ErrBox) v;
             ls.onError(eb.consume());
         } else {
@@ -790,14 +796,14 @@ public class KDeferred
     public Object onRealized(Object onSucc, Object onErrr) {
         IFn onSuc = (IFn) onSucc;
         IFn onErr = (IFn) onErrr;
-        Object v = VALUE.getAcquire(this);
+        Object v = this.getRaw();
         if (v == MISS_VALUE) {
             if (this.listen0(new Fn(onSuc, onErr))) {
                 return true;
             }
-            v = VALUE.getAcquire(this);
+            v = this.getRaw();
         }
-        if (this.succeeded == 0 && v instanceof ErrBox) {
+        if (v instanceof ErrBox) {
             ErrBox eb = (ErrBox) v;
             onErr.invoke(eb.consume());
         } else {
@@ -892,17 +898,14 @@ public class KDeferred
 
     @Override
     public Object successValue(Object fallback) {
-        Object v = VALUE.getAcquire(this);
-        return (v == MISS_VALUE || (this.succeeded == 0 && v instanceof ErrBox)) ? fallback : v;
+        Object v = this.getRaw();
+        return (v == MISS_VALUE || (v instanceof ErrBox)) ? fallback : v;
     }
 
     @Override
     public Object errorValue(Object fallback) {
-        if (this.succeeded == 1) {
-            return fallback;
-        }
-        Object v = VALUE.getAcquire(this);
-        return (v != MISS_VALUE && v instanceof ErrBox) ? ((ErrBox) v).consume() : fallback;
+        Object v = this.getRaw();
+        return (v != MISS_VALUE && (v instanceof ErrBox)) ? ((ErrBox) v).consume() : fallback;
     }
 
     static Throwable coerceError(Object err) {
@@ -911,7 +914,7 @@ public class KDeferred
         } else {
             return new ExceptionInfo(
                 "invalid error object",
-                    PersistentArrayMap.EMPTY.assoc(Keyword.find("error"), err)
+                    PersistentArrayMap.EMPTY.assoc(ERROR_KW, err)
             );
         }
     }
@@ -921,8 +924,8 @@ public class KDeferred
     }
 
     public Object unwrap() {
-        Object v = VALUE.getAcquire(this);
-        return (v == MISS_VALUE || (this.succeeded == 0 && v instanceof ErrBox)) ? this : v;
+        Object v = this.getRaw();
+        return (v == MISS_VALUE || (v instanceof ErrBox)) ? this : v;
     }
 
     public final Object getRaw() {
@@ -930,13 +933,13 @@ public class KDeferred
     }
 
     public final Object get() {
-        Object v = VALUE.getAcquire(this);
-        return (this.succeeded == 0 && v instanceof ErrBox) ? throwErr((ErrBox) v) : v;
+        Object v = this.getRaw();
+        return (v instanceof ErrBox) ? throwErr((ErrBox) v) : v;
     }
 
     public final Object get(IFn onErr) {
-        Object v = VALUE.getAcquire(this);
-        if (this.succeeded == 0 && v instanceof ErrBox) {
+        Object v = this.getRaw();
+        if (v instanceof ErrBox) {
             return onErr.invoke(((ErrBox) v).consume());
         }
         return v;
@@ -960,9 +963,6 @@ public class KDeferred
 
     @Override
     public Object deref(long ms, Object timeoutValue) {
-        if (this.succeeded == 1) {
-            return this.getRaw();
-        }
         if (this.realized()) {
             return get();
         }
@@ -982,9 +982,6 @@ public class KDeferred
 
     @Override
     public Object deref() {
-        if (this.succeeded == 1) {
-            return this.getRaw();
-        }
         if (this.realized()) {
             return get();
         }
@@ -1027,7 +1024,7 @@ public class KDeferred
                 return;
             }
         }
-        this.fireValue(x, null);
+        this.fireValue(x);
     }
 
     public KDeferred bind(IFn valFn, IFn errFn, Executor executor) {
@@ -1040,11 +1037,13 @@ public class KDeferred
     }
 
     public KDeferred bind(IFn valFn) {
-        Object v = VALUE.getAcquire(this);
+        Object v = this.getRaw();
         if (v == MISS_VALUE) {
             KDeferred dest = create();
-            this.listen(new Bind(dest, valFn, null));
-            return dest;
+            if (this.listen0(new Bind(dest, valFn, null))) {
+                return dest;
+            }
+            v = this.getRaw();
         }
         if (v instanceof ErrBox) {
             return this;
@@ -1057,11 +1056,13 @@ public class KDeferred
     }
 
     public KDeferred bind(IFn valFn, IFn errFn) {
-        Object v = VALUE.getAcquire(this);
+        Object v = this.getRaw();
         if (v == MISS_VALUE) {
             KDeferred dest = create();
-            this.listen(new Bind(dest, valFn, errFn));
-            return dest;
+            if (this.listen0(new Bind(dest, valFn, errFn))) {
+                return dest;
+            }
+            v = this.getRaw();
         }
         if (v instanceof ErrBox) {
             if (errFn == null) {
@@ -1080,10 +1081,6 @@ public class KDeferred
         }
     }
 
-    public static boolean isDeferrable(Object x) {
-        return (x instanceof IDeferred) || (x instanceof CompletionStage);
-    }
-
     public static KDeferred bind(Object x, IFn valFn) {
         if (x instanceof KDeferred) {
             KDeferred kd = (KDeferred) x;
@@ -1092,12 +1089,11 @@ public class KDeferred
             } else {
                 return kd.bind(valFn);
             }
-        } else if (isDeferrable(x)) {
-            return wrap(x).bind(valFn);
+        } else if (x instanceof IDeferred) {
+            return wrapDeferred((IDeferred) x).bind(valFn);
         }
         try {
-            KDeferred r = wrap(valFn.invoke(x));
-            return r;
+            return wrap(valFn.invoke(x));
         } catch (Throwable e) {
             return wrapErr(e);
         }
@@ -1111,12 +1107,11 @@ public class KDeferred
             } else {
                 return kd.bind(valFn, errFn);
             }
-        } else if (isDeferrable(x)) {
+        } else if (x instanceof IDeferred) {
             return wrap(x).bind(valFn, errFn);
         }
         try {
-            KDeferred r = wrap(valFn.invoke(x));
-            return r;
+            return wrap(valFn.invoke(x));
         } catch (Throwable e) {
             return wrapErr(e);
         }
