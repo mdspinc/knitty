@@ -1,6 +1,7 @@
 (ns knitty.bench1
   (:require [clojure.test :as t :refer [deftest testing]]
             [knitty.core :refer [yank yank1]]
+            [knitty.deferred :as kd]
             [knitty.test-util :refer :all]
             [manifold.deferred :as md]))
 
@@ -84,7 +85,7 @@
 
 (deftest ^:benchmark g100-by-deptype
   (doseq [[nf f] [[:syn `do]
-                  [:fut `md/future]]]
+                  [:fut `kd/future]]]
     (testing nf
       (doseq [tt [:sync :defer :lazy]]
         (build-yarns-graph
@@ -94,12 +95,12 @@
          :emit-body (fn [i & xs]
                       `(~f
                         (reduce
-                         (fn [a# ~'x]
+                         (fn [a# x#]
                            (kd/bind
-                            a#
+                            (do a#)
                             (fn [aa#]
                               (kd/bind
-                               ~(if (= :lazy tt) `(deref ~'x) 'x)
+                               (-> x# ~@(when (= :lazy tt) `[deref]))
                                (fn [xx#] (unchecked-add aa# xx#))))))
                          ~i
                          [~@xs]))))
