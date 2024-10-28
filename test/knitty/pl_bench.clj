@@ -1,6 +1,5 @@
 (ns knitty.pl-bench
-  (:require [clj-async-profiler.core :as prof]
-            [clojure.test :as t :refer [deftest]]
+  (:require [clojure.test :as t :refer [deftest]]
             [knitty.core :as kt :refer [defyarn yank yank1 yarn]]
             [knitty.test-util :as tu :refer [bench]]
             [plumbing.core :as pc]

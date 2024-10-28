@@ -15,7 +15,7 @@
   :aot-include [#"knitty\.javaimpl\..*"]
   :java-source-paths ["src-java"]
   :javac-options ["--release" "17"]
-  :jvm-opts ["-server" "-XX:-OmitStackTraceInFastThrow" "-Xmx4g" "-Xss8m"]
+  :jvm-opts ["-server" "-XX:-OmitStackTraceInFastThrow" "-Xmx4g" "-Xss16m"]
 
   :source-paths ["src"]
   :global-vars {*warn-on-reflection* true}
@@ -34,12 +34,12 @@
                               :password :env}]]
 
   :profiles {:dev {:dependencies [[criterium/criterium "0.4.6"]
-                                  [com.clojure-goes-fast/clj-async-profiler "1.3.3"]
                                   [prismatic/plumbing "0.6.0"]
                                   [funcool/promesa "11.0.678"]
                                   [clj-kondo/clj-kondo "2024.09.27"]]
-                   :injections [(require 'knitty.test-util)]
-                   :jvm-opts ["-Djdk.attach.allowAttachSelf" "-XX:+UnlockDiagnosticVMOptions" "-XX:+DebugNonSafepoints"]}}
+                   :injections [(require 'knitty.test-util)]}
+             :prof {:jvm-opts ["-Djdk.attach.allowAttachSelf" "-XX:+UnlockDiagnosticVMOptions" "-XX:+DebugNonSafepoints"]
+                    :dependencies [[com.clojure-goes-fast/clj-async-profiler "1.3.3"]]}}
 
   :prep-tasks [["javac"]
                ["compile"]
