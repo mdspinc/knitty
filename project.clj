@@ -1,4 +1,4 @@
-(defproject com.github.anjensan/knitty "0.6.0-alpha3"
+(defproject com.github.anjensan/knitty "0.6.0-beta1-SNAPSHOT"
   :description "Knitty is a library for a DAG-based processing of asynchronous data"
   :url "https://github.com/anjensan/knitty"
   :license {:name "MIT License" :url "http://opensource.org/licenses/MIT"}
