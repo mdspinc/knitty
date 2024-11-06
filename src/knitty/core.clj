@@ -138,7 +138,7 @@
   [env k]
   (let [v (resolve env k)]
     (when-not v
-      (throw (ex-info "unable to resolve yarn binding variable" {::binding-var v})))
+      (throw (ex-info "unable to resolve yarn binding variable" {::binding-var k})))
     (let [k @v]
       (when-not (qualified-keyword? k)
         (throw (ex-info "yarn binding must be a qualified keyword" {::binding k})))
