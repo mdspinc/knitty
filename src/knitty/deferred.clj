@@ -340,6 +340,10 @@
           (~lss))))))
 
 (defmacro await! [ls & ds]
+  "Internal macros - prefer not to use it.
+   Schedlue 0/1-arg function `ls` to execute after all deferreds are realized
+   with values or at least one deferred is realized with an error.
+   "
   `(kd-await! ~ls ~@(map #(do `(wrap ~%)) ds)))
 
 (definline await!*
@@ -470,9 +474,10 @@
   ([init f p]
    `(impl-iterate-while* ~init ~f ~p (fn [x#] x#)))
   ([init
-    [_ [stepf-x] & stepf-body]
-    [_ [somef-x] & somef-body]
-    [_ [retrn-x] & retrn-body]]
+    [fn1 [stepf-x] & stepf-body]
+    [fn2 [somef-x] & somef-body]
+    [fn3 [retrn-x] & retrn-body]]
+   {:pre [(every? #{`fn 'fn} [fn1 fn2 fn3])]}
    `(let [d# (create)
           ef# (fn ~'on-err [e#] (error! d# e#))]
       (on
