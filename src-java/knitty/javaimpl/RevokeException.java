@@ -2,7 +2,7 @@ package knitty.javaimpl;
 
 import java.util.concurrent.CancellationException;
 
-public class RevokeException extends CancellationException {
+public class RevokeException extends CancellationException implements UnleakableException {
 
     public static final RevokeException DEFERRED_REVOKED = new RevokeException("deferred is revoked");
     public static final RevokeException YANK_FINISHED = new RevokeException("yank is already finished");

@@ -172,4 +172,6 @@
     (log-test/with-log
       (with-redefs [log-test/*stateful-log* log-test/*stateful-log*
                     log/*logger-factory*    log/*logger-factory*]
-        (t)))))
+        (t)
+        (System/gc)
+        (Thread/sleep 50)))))

@@ -6,7 +6,6 @@ import java.lang.ref.Cleaner;
 import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
@@ -40,23 +39,108 @@ public class KDeferred
         CompletionStageMixin
     {
 
-    private final static class ErrBox implements Runnable {
+    private static abstract class ErrBox {
+        public abstract Object getError();
+        public abstract void detectLeakedError(KDeferred d);
+
+        public Object raise() {
+            return ErrBox.sneakyThrow(coerceError(this.getError()));
+        }
+
+        static private <T extends Throwable> Object sneakyThrow(Throwable t) throws T {
+	        throw (T) t;
+        }
+
+        static ErrBox wrap(Object x) {
+            if ((x instanceof UnleakableException) || !(x instanceof Throwable)) {
+                return new ErrBoxUnleakable(x);
+            } else {
+                return new ErrBoxLeakable(x);
+            }
+        }
+    }
+
+    private final static class MissValue extends ErrBox {
+
+        @Override
+        public Object getError() {
+            return new DeferredIsUnrealizedException();
+        }
+
+        @Override
+        public Object raise() {
+            throw new DeferredIsUnrealizedException();
+        }
+
+        @Override
+        public void detectLeakedError(KDeferred d) {
+            // pass
+        }
+    }
+
+    private final static class ErrBoxUnleakable extends ErrBox {
+
+        private final Object err;
+
+        ErrBoxUnleakable(Object err) {
+            this.err = err;
+        }
+
+        @Override
+        public Object getError() {
+            return this.err;
+        }
+
+        @Override
+        public void detectLeakedError(KDeferred d) {
+            // pass
+        }
+    }
+
+    private final static class ErrBoxLeakable extends ErrBox implements Runnable {
+
+        private static final BlockingQueue<Object> ELD_LEAKED_ERRORS = new ArrayBlockingQueue<>(256);
+
+        @SuppressWarnings("CallToPrintStackTrace")
+        public static final Thread ELD_LOGGER = new Thread(() -> {
+        while (!Thread.interrupted()) {
+            Object e;
+            try {
+                e = ELD_LEAKED_ERRORS.take();
+            } catch (InterruptedException ex) {
+                return;
+            }
+            try {
+                logWarn(e, "unconsumed deferred in error state");
+            } catch (Exception e1) {
+                e1.printStackTrace();
+            }
+        }
+        }, "knitty-error-leak-logger");
+
+        static {
+            ELD_LOGGER.setDaemon(true);
+            ELD_LOGGER.start();
+        }
+
+        private static final Cleaner ELD_CLEANER =
+            Cleaner.create(r -> new Thread(r, "knitty-error-leak-detector"));
 
         private static final VarHandle CONSUMED;
 
         static {
             try {
                 MethodHandles.Lookup l = MethodHandles.lookup();
-                CONSUMED = l.findVarHandle(ErrBox.class, "_consumed", Boolean.TYPE);
+                CONSUMED = l.findVarHandle(ErrBoxLeakable.class, "_consumed", Boolean.TYPE);
             } catch (ReflectiveOperationException e) {
                 throw new ExceptionInInitializerError(e);
             }
         }
 
-        final Object err;
+        private final Object err;
         private volatile boolean _consumed;
 
-        ErrBox(Object err) {
+        ErrBoxLeakable(Object err) {
             this.err = err;
         }
 
@@ -64,18 +148,31 @@ public class KDeferred
         public void run() {
             Object e = this.err;
             if (!isConsumed()) {
-                this.consume();
+                this.getError();
                 ELD_LEAKED_ERRORS.offer(e);
             }
         }
 
-        public Object consume() {
+        @Override
+        public Object getError() {
             CONSUMED.setOpaque(this, true);
             return this.err;
         }
 
         public boolean isConsumed() {
             return (boolean) CONSUMED.getOpaque(this);
+        }
+
+        @Override
+        public Object raise() {
+            return ErrBox.sneakyThrow(coerceError(this.getError()));
+        }
+
+        @Override
+        public void detectLeakedError(KDeferred d) {
+            if (!this.isConsumed()) {
+                ELD_CLEANER.register(d, this);
+            }
         }
     }
 
@@ -409,7 +506,7 @@ public class KDeferred
         }
     }
 
-    private final static class Tomb extends AListener {
+    private final static class LsTomb extends AListener {
 
         @Override
         public void success(Object x) {
@@ -421,34 +518,6 @@ public class KDeferred
             throw new IllegalStateException("incorrect usage of getRaw");
         }
     }
-
-    public static final BlockingQueue<Object> ELD_LEAKED_ERRORS =
-        new ArrayBlockingQueue<>(128);
-
-    @SuppressWarnings("CallToPrintStackTrace")
-    public static final Thread ELD_LOGGER = new Thread(() -> {
-        while (!Thread.interrupted()) {
-            Object e;
-            try {
-                e = ELD_LEAKED_ERRORS.take();
-            } catch (InterruptedException ex) {
-                return;
-            }
-            try {
-                logWarn(e, "unconsumed deferred in error state");
-            } catch (Exception e1) {
-                e1.printStackTrace();
-            }
-        }
-    }, "knitty-error-leak-logger");
-
-    static {
-        ELD_LOGGER.setDaemon(true);
-        ELD_LOGGER.start();
-    }
-
-    private static final Cleaner ELD_CLEANER =
-        Cleaner.create(r -> new Thread(r, "knitty-error-leak-detector"));
 
     private static final Keyword ERROR_KW = Keyword.intern(null, "error");
 
@@ -496,12 +565,8 @@ public class KDeferred
         GET_EXECUTOR = f;
     }
 
-    private final static Object MISS_VALUE = new ErrBox(new IllegalStateException("nooo"));
-    static {
-        Throwable t = (Throwable) ((ErrBox) MISS_VALUE).consume();
-        t.setStackTrace(new StackTraceElement[0]);
-    }
-    private final static AListener LS_TOMB = new Tomb();
+    private final static Object MISS_VALUE = new MissValue();
+    private final static AListener LS_TOMB = new LsTomb();
 
     private byte _owned;
     byte succeeded;
@@ -509,13 +574,6 @@ public class KDeferred
     private Object _token;
     private AListener _lhead;
     private IPersistentMap meta;
-
-    private void detectLeakedError(ErrBox eb) {
-        Object err = eb.err;
-        if (!eb.isConsumed() && !(err instanceof CancellationException)) {
-            ELD_CLEANER.register(this, eb);
-        }
-    }
 
     private KDeferred() {
     }
@@ -612,7 +670,7 @@ public class KDeferred
         if (TOKEN.getOpaque(this) != null) {
             throw new IllegalStateException("invalid claim token");
         }
-        ErrBox eb = new ErrBox(x);
+        ErrBox eb = ErrBox.wrap(x);
         if (complete(eb)) {
             fireErrorListeners(eb);
         }
@@ -622,7 +680,7 @@ public class KDeferred
         if (TOKEN.getOpaque(this) != token) {
             throw new IllegalStateException("invalid claim token");
         }
-        ErrBox eb = new ErrBox(x);
+        ErrBox eb = ErrBox.wrap(x);
         if (complete(eb)) {
             fireErrorListeners(eb);
         }
@@ -657,7 +715,7 @@ public class KDeferred
         if (TOKEN.getOpaque(this) != null) {
             return invalidToken();
         }
-        ErrBox eb = new ErrBox(x);
+        ErrBox eb = ErrBox.wrap(x);
         if (complete(eb)) {
             fireErrorListeners(eb);
             return true;
@@ -670,7 +728,7 @@ public class KDeferred
         if (TOKEN.getOpaque(this) != token) {
             return invalidToken();
         }
-        ErrBox eb = new ErrBox(x);
+        ErrBox eb = ErrBox.wrap(x);
         if (complete(eb)) {
             fireErrorListeners(eb);
             return true;
@@ -693,9 +751,9 @@ public class KDeferred
     private void fireErrorListeners(ErrBox eb) {
         AListener node = tombListeners();
         if (node == null) {
-            detectLeakedError(eb);
+            eb.detectLeakedError(this);
         } else {
-            Object x = eb.consume();
+            Object x = eb.getError();
             for (; node != null; node = node.next) {
                 try {
                     node.error(x);
@@ -742,7 +800,7 @@ public class KDeferred
         Object v = this.getRaw();
         if (v instanceof ErrBox) {
             ErrBox eb = (ErrBox) v;
-            onErr.invoke(eb.consume());
+            onErr.invoke(eb.getError());
         } else {
             onSuc.invoke(v);
         }
@@ -755,7 +813,7 @@ public class KDeferred
         Object v = this.getRaw();
         if (v instanceof ErrBox) {
             ErrBox eb = (ErrBox) v;
-            ls.onError(eb.consume());
+            ls.onError(eb.getError());
         } else {
             ls.onSuccess(v);
         }
@@ -768,7 +826,7 @@ public class KDeferred
         Object v = this.getRaw();
         if (v instanceof ErrBox) {
             ErrBox eb = (ErrBox) v;
-            ls.error(eb.consume());
+            ls.error(eb.getError());
         } else {
             ls.success(v);
         }
@@ -784,7 +842,7 @@ public class KDeferred
         Object v = this.getRaw();
         if (v instanceof ErrBox) {
             ErrBox eb = (ErrBox) v;
-            ls.onError(eb.consume());
+            ls.onError(eb.getError());
         } else {
             ls.onSuccess(v);
         }
@@ -805,7 +863,7 @@ public class KDeferred
         }
         if (v instanceof ErrBox) {
             ErrBox eb = (ErrBox) v;
-            onErr.invoke(eb.consume());
+            onErr.invoke(eb.getError());
         } else {
             onSuc.invoke(v);
         }
@@ -905,7 +963,7 @@ public class KDeferred
     @Override
     public Object errorValue(Object fallback) {
         Object v = this.getRaw();
-        return (v != MISS_VALUE && (v instanceof ErrBox)) ? ((ErrBox) v).consume() : fallback;
+        return (v != MISS_VALUE && (v instanceof ErrBox)) ? ((ErrBox) v).getError() : fallback;
     }
 
     static Throwable coerceError(Object err) {
@@ -919,10 +977,6 @@ public class KDeferred
         }
     }
 
-    private <T extends Throwable> Object throwErr(ErrBox eb) throws T {
-        throw ((T) coerceError(eb.consume()));
-    }
-
     public Object unwrap() {
         Object v = this.getRaw();
         return (v == MISS_VALUE || (v instanceof ErrBox)) ? this : v;
@@ -934,13 +988,13 @@ public class KDeferred
 
     public final Object get() {
         Object v = this.getRaw();
-        return (v instanceof ErrBox) ? throwErr((ErrBox) v) : v;
+        return (v instanceof ErrBox) ? ((ErrBox) v).raise() : v;
     }
 
     public final Object get(IFn onErr) {
         Object v = this.getRaw();
         if (v instanceof ErrBox) {
-            return onErr.invoke(((ErrBox) v).consume());
+            return onErr.invoke(((ErrBox) v).getError());
         }
         return v;
     }
@@ -1070,7 +1124,7 @@ public class KDeferred
             } else {
                 valFn = errFn;
                 ErrBox eb = (ErrBox) v;
-                v = eb.consume();
+                v = eb.getError();
             }
         }
         try {
@@ -1135,11 +1189,11 @@ public class KDeferred
     }
 
     public static KDeferred wrapErr(Object e) {
-        ErrBox eb = new ErrBox(e);
+        ErrBox eb = new ErrBoxLeakable(e);
         KDeferred d = new KDeferred();
         LHEAD.setOpaque(d, LS_TOMB);
         VALUE.setVolatile(d, eb);
-        d.detectLeakedError(eb);
+        eb.detectLeakedError(d);
         return d;
     }
 

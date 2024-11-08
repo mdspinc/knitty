@@ -377,7 +377,7 @@ public final class YankCtx {
     }
 
     public void cancel(Throwable cause) {
-        CancellationException ex = new CancellationException("yankctx is cancelled");
+        CancellationException ex = new RevokeException("yankctx is cancelled");
         if (cause != null) {
             ex.addSuppressed(cause);
         }
