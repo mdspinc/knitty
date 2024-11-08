@@ -1,4 +1,4 @@
-(ns knitty.bench1
+(ns knitty.bench.yank
   (:require [clojure.test :as t :refer [deftest testing]]
             [knitty.core :refer [yank yank1]]
             [knitty.deferred :as kd]
@@ -127,8 +127,7 @@
                                (reduce unchecked-add ~i [~@xs]))
                              10)))
 
-  (dotimes-prn [_ 10000]
+  (dotimes-prn 10000
     (binding [knitty.core/*tracing* (rand-nth [false true])]
-      @(yank {} (nodes-range :node 0 1000)
-             #_(random-sample 0.01 (nodes-range :node 0 500))))))
+      @(yank {} (random-sample 0.01 (nodes-range :node 0 500))))))
 
