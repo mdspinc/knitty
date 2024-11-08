@@ -1,10 +1,10 @@
 (ns knitty.bench.deferred
-  (:require [clojure.test :as t :refer [deftest testing]]
-            [knitty.test-util :as tu :refer :all]
-            [knitty.deferred :as kd]
-            [manifold.debug :as debug]
-            [manifold.deferred :as md]
-            [promesa.core :as pc]))
+  (:require
+   [clojure.test :as t :refer [deftest testing]]
+   [knitty.deferred :as kd]
+   [knitty.test-util :as tu :refer [bench ninl-inc with-defer defer!]]
+   [manifold.deferred :as md]
+   [promesa.core :as pc]))
 
 
 (set! *warn-on-reflection* true)
@@ -13,9 +13,9 @@
 
 (t/use-fixtures :once
   (t/join-fixtures
-   [(tracing-enabled-fixture false)
-    (report-benchmark-fixture)
-    (disable-manifold-leak-detection-fixture)]))
+   [(tu/tracing-enabled-fixture false)
+    (tu/report-benchmark-fixture)
+    (tu/disable-manifold-leak-detection-fixture)]))
 
 
 (defmacro d0 []

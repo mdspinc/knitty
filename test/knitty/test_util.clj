@@ -208,7 +208,6 @@
              (.bindRoot #'md-debug/*dropped-error-logging-enabled?* e))))))
 
 
-
 (def defer-callbacks (java.util.concurrent.atomic.AtomicReference.))
 (def defer-random (java.util.Random.))
 
@@ -268,19 +267,21 @@
   `(md/future-with ~'__knitty__test_util__md_executor ~@body))
 
 
+(defn dotimes-prn* [n body-fn]
+  (let [s (quot n 100)
+        t (System/currentTimeMillis)]
+    (dotimes [x n]
+      (when (zero? (mod x s))
+        (print ".")
+        (flush))
+      (body-fn n))
+    (let [t1 (System/currentTimeMillis)]
+      (println " done in" (- t1 t) "ms"))))
+
+
 (defmacro dotimes-prn [xn & body]
   (let [[x n] (cond
                 (and (vector? xn) (== 2 (count xn))) xn
                 (and (vector? xn) (== 1 (count xn))) ['_ (first xn)]
                 :else ['_ xn])]
-    `(let [n# ~n
-           s# (quot n# 100)
-           t# (System/currentTimeMillis)]
-       (dotimes [x# n#]
-         (when (zero? (mod x# s#))
-           (print ".")
-           (flush))
-         (let [~x x#]
-           ~@body))
-       (let [t1# (System/currentTimeMillis)]
-         (println " done in" (- t1# t#) "ms")))))
+    `(dotimes-prn* ~n (fn [~x] ~@body))))

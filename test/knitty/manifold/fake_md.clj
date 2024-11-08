@@ -8,8 +8,7 @@
    [manifold.deferred :as md])
   (:import
    [clojure.lang IDeref]
-   [java.util.concurrent CompletionStage]
-   [knitty.javaimpl KDeferred]))
+   [java.util.concurrent CompletionStage]))
 
 (defn chain [x & fs]
   (kd/chain* x fs))
