@@ -1,13 +1,9 @@
-(ns knitty.pl-bench
+(ns knitty.bench.vs-bench
   (:require [clojure.test :as t :refer [deftest]]
             [knitty.core :as kt :refer [defyarn yank yank1 yarn]]
             [knitty.test-util :as tu :refer [bench]]
             [plumbing.core :as pc]
             [plumbing.graph :as pg]))
-
-
-(set! *warn-on-reflection* true)
-(set! *unchecked-math* true)
 
 
 (t/use-fixtures :once
@@ -137,11 +133,11 @@
         (stats-kt1 x))))
 
   (do
-     (dotimes [_ 10000000]
-       (stats-kt1 [3]))
+    (dotimes [_ 10000000]
+      (stats-kt [3]))
 
     (prof/profile
-     (dotimes [_ 10000000]
-       (stats-kt1 [3]))))
+     (dotimes [_ 30000000]
+       (stats-kt [3]))))
 
   )
