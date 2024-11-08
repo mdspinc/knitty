@@ -39,7 +39,7 @@
                                   [clj-kondo/clj-kondo "2024.09.27"]]
                    :injections [(require 'knitty.test-util)]}
              :prof {:jvm-opts ["-Djdk.attach.allowAttachSelf" "-XX:+UnlockDiagnosticVMOptions" "-XX:+DebugNonSafepoints"]
-                    :dependencies [[com.clojure-goes-fast/clj-async-profiler "1.3.3"]]}}
+                    :dependencies [[com.clojure-goes-fast/clj-async-profiler "1.4.0"]]}}
 
   :prep-tasks [["javac"]
                ["compile"]
