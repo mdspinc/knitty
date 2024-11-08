@@ -83,16 +83,6 @@
   ([^IMutableDeferred d] (.claim d))
   ([^KDeferred d token] (.claim d token)))
 
-(definline kd-get
-  "Unwrap realized Knitty deferred by returning value or throwing wrapped exception."
-  [kd]
-  `(let [^KDeferred x# ~kd] (.get x#)))
-
-(definline kd-chain-from
-  "Conveys value (or error) from deferred `d` to Knitty deferred `kd`."
-  [kd d]
-  `(let [^KDeferred x# ~kd] (.chain x# ~d)))
-
 (defmacro success!
   "Puts a deferred into a realized state with provided value `x`."
   ([d x] `(let* [^IMutableDeferred d# ~d] (.success d# ~x)))

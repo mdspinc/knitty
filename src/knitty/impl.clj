@@ -370,11 +370,11 @@
           (connect-error yctx# ~ykey e# d#))))))
 
 
-(defn make-multiyarn-route-key-fn [ykey k]
+(defmacro make-multiyarn-route-key-fn [k]
   (let [i (long (KwMapper/registerKeyword k))]
-    (fn yank-route-key [^YankCtx yctx ^KDeferred _]
-      (tracer-> yctx .traceRouteBy ykey k)
-      (kd/kd-get (.fetch yctx i k)))))
+    `(fn ~'yank-route-key [^YankCtx yctx# ^KDeferred _#]
+       ;; 'k' should be already yanked by yarn-multi
+       (.getRaw (.pull yctx# ~i)))))
 
 
 (defn yarn-multi-deps [multifn route-key]
@@ -392,13 +392,14 @@
      (let [mopts# ~multi-options
            hierarchy# (get mopts# :hierarchy #'clojure.core/global-hierarchy)
            default# (get mopts# :default :default)
-           dispatch-fn# (make-multiyarn-route-key-fn ~ykey ~route-key)
+           dispatch-fn# (make-multiyarn-route-key-fn ~route-key)
            multifn# (new clojure.lang.MultiFn ~(name ykey) dispatch-fn# default# hierarchy#)]
        (decl-yarn
         ~(symbol (name ykey))
         ~ykey
         (yarn-multi-deps multifn# ~route-key)
         (fn [yctx# d#]
+          (tracer-> yctx# .traceRouteBy ~ykey ~route-key)
           (let [r# (yarn-get-impl ~ykey ~route-key yctx#)]
             (kd/kd-await!
              (fn
