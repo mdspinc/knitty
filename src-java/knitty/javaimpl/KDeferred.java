@@ -44,11 +44,7 @@ public class KDeferred
         public abstract void detectLeakedError(KDeferred d);
 
         public Object raise() {
-            return ErrBox.sneakyThrow(coerceError(this.getError()));
-        }
-
-        static private <T extends Throwable> Object sneakyThrow(Throwable t) throws T {
-	        throw (T) t;
+            return Util.sneakyThrow(coerceError(this.getError()));
         }
 
         static ErrBox wrap(Object x) {
@@ -165,7 +161,7 @@ public class KDeferred
 
         @Override
         public Object raise() {
-            return ErrBox.sneakyThrow(coerceError(this.getError()));
+            return Util.sneakyThrow(coerceError(this.getError()));
         }
 
         @Override
@@ -1017,8 +1013,9 @@ public class KDeferred
 
     @Override
     public Object deref(long ms, Object timeoutValue) {
-        if (this.realized()) {
-            return get();
+        Object v = this.getRaw();
+        if (v != MISS_VALUE) {
+            return (v instanceof ErrBox) ? ((ErrBox) v).raise() : v;
         }
         if (ms <= 0) {
             return timeoutValue;
@@ -1028,23 +1025,26 @@ public class KDeferred
         } catch (InterruptedException e) {
             throw Util.sneakyThrow(e);
         }
-        if (this.realized()) {
-            return get();
+        v = this.getRaw();
+        if (v != MISS_VALUE) {
+            return (v instanceof ErrBox) ? ((ErrBox) v).raise() : v;
         }
         return timeoutValue;
     }
 
     @Override
     public Object deref() {
-        if (this.realized()) {
-            return get();
+        Object v = this.getRaw();
+        if (v != MISS_VALUE) {
+            return (v instanceof ErrBox) ? ((ErrBox) v).raise() : v;
         }
         try {
             acquireCountdDownLatch().await();
         } catch (InterruptedException e) {
             throw Util.sneakyThrow(e);
         }
-        return this.get();
+        v = this.getRaw();
+        return (v instanceof ErrBox) ? ((ErrBox) v).raise() : v;
     }
 
     public void chain0(IDeferred x, Object token) {
