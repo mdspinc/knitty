@@ -11,7 +11,6 @@
   :plugins [[lein-aot-filter "0.1.0"]
             [lein-shell "0.5.0"]]
 
-  :aot [knitty.core]
   :aot-include [#"knitty\.javaimpl\..*"]
   :java-source-paths ["src-java"]
   :javac-options ["--release" "17"]
