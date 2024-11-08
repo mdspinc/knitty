@@ -25,13 +25,13 @@
 
 (defn capture-success [result]
   (let [p (promise)]
-    (kd/on result p (fn [_] (throw (Exception. "ERROR"))))
+    (kd/on result p (fn [_] (p ::unexpected-error)))
     p))
 
 
 (defn capture-error [result]
   (let [p (promise)]
-    (kd/on result (fn [_] (throw (Exception. "SUCCESS"))) p)
+    (kd/on result (fn [_] (p ::unexpected-error)) p)
     p))
 
 
@@ -78,9 +78,6 @@
               (kd/bind #(/ 1 %))
               (kd/bind-err ArithmeticException (constantly :foo))))))
 
-
-
-(def ^:dynamic *test-dynamic-var*)
 
 (deftest test-letm
 
@@ -219,17 +216,15 @@
     (is (thrown? Exception (deref d 1000 ::timeout)))
     (is (= (repeat n ex) (map deref callback-values))))
 
-  (comment
   ;; cancel listeners
-    (let [l (kd/listener (constantly :foo) nil)
-          d (kd/create)]
-      (is (= false (kd/cancel-listener! d l)))
-      (is (= true (kd/add-listener! d l)))
-      (is (= true (kd/cancel-listener! d l)))
-      (is (= true (kd/success! d :foo)))
-      (is (= :foo @(capture-success d)))
-      (is (= false (kd/cancel-listener! d l))))
-    )
+  (let [l (md/listener (constantly :foo) nil)
+        d (kd/create)]
+    (is (= false (md/cancel-listener! d l)))
+    (is (= true (md/add-listener! d l)))
+    (is (= true (md/cancel-listener! d l)))
+    (is (= true (md/success! d :foo)))
+    (is (= :foo @(capture-success d)))
+    (is (= false (md/cancel-listener! d l))))
 
   ;; deref
   (let [d (kd/create)]
@@ -239,6 +234,7 @@
     (is (= 1 (deref d 10 :foo)))))
 
 
+#_{:clj-kondo/ignore [:loop-without-recur]}
 (deftest test-loop
   ;; body produces a non-deferred value
   (is @(capture-success
@@ -354,7 +350,6 @@
     (is (= ::delivered (deref target-d 0 ::not-delivered)))))
 
 
-
 (deftest test-alt
   (is (#{1 2 3} @(kd/alt 1 2 3)))
   (is (= 2 @(kd/alt (kd/future (Thread/sleep 10) 1) 2)))
@@ -376,8 +371,35 @@
       (dotimes [_ n]
         @(kd/bind (apply kd/alt (range r))
                   #(swap! results update % (fnil inc 0))))
-      (doseq [[i times] @results]
+      (doseq [[_ times] @results]
         (is (<= (f -) times (f +)))))))
+
+
+(deftest test-join
+
+  (is (kd/deferred? (kd/join 1)))
+  (is (kd/deferred? (kd/join (kd/wrap-val (kd/wrap-val 1)))))
+  (is (kd/deferred? (kd/join1 1)))
+  (is (kd/deferred? (kd/join1 (kd/wrap-val (kd/wrap-val 1)))))
+
+  (is (= 1 @(kd/join 1)))
+  (is (= 1 @(kd/join (kd/wrap-val 1))))
+  (is (= 1 @(kd/join (kd/wrap-val (kd/wrap-val 1)))))
+  (is (= 1 @(kd/join (kd/wrap-val (kd/wrap-val (kd/wrap-val 1))))))
+
+  (is (= 1 @(kd/join1 1)))
+  (is (= 1 @(kd/join1 (kd/wrap-val 1))))
+  (is (= 1 @(kd/join1 (kd/wrap-val (kd/wrap-val 1)))))
+  (is (= 1 @@(kd/join1 (kd/wrap-val (kd/wrap-val (kd/wrap-val 1))))))
+
+  (is (= 1 @(kd/join (nth (iterate #(kd/future (kd/wrap-val %)) 1) 10))))
+  (is (not= 1 @(kd/join1 (nth (iterate #(kd/future (kd/wrap-val %)) 1) 10))))
+
+  (let [e (Exception. "boo")]
+    (is (= e @(capture-error @(capture-success (kd/join1 (kd/future (kd/wrap-val (kd/future (kd/wrap-val (kd/future (throw e)))))))))))
+    (is (= e @(capture-error (kd/join (kd/future (kd/wrap-val (kd/future (kd/wrap-val (kd/future (throw e)))))))))))
+
+  )
 
 
 (deftest test-zip
