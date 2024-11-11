@@ -219,10 +219,11 @@
                                                 :knytty/yankfn-known-args ~(set (keys keys-map))}))))))
 
 (defmacro force-lazy-result [v]
-  `(let [v# ~v]
-     (if (instance? Lazy v#)
-       (.deref ^Lazy v#)
-       v#)))
+  `(kd/unwrap1
+    (let [v# ~v]
+      (if (instance? Lazy v#)
+        (.deref ^Lazy v#)
+        v#))))
 
 
 (defmacro do-pool-fork [ctx & body]
@@ -241,24 +242,23 @@
 
 
 (defmacro connect-result [yctx ykey result dest]
-  `(if (instance? manifold.deferred.IDeferred ~result)
-     (do
-       (kd/on ~result
-              (fn ~'on-val [x#]
-                (tracer-> ~yctx .traceFinish ~ykey x# nil true)
-                (pool-run ~yctx (.success ~dest x# (.-token ~yctx))))
-              (fn ~'on-err [e#]
-                (tracer-> ~yctx .traceFinish ~ykey nil e# true)
-                (pool-run ~yctx (.error ~dest e# (.-token ~yctx))))))
+  `(if (kd/deferred? ~result)
+     (kd/on ~result
+            (fn ~'on-val [x#]
+              (tracer-> ~yctx .traceFinish ~ykey x# nil true)
+              (pool-run ~yctx (.fireValue ~dest x# (.-token ~yctx))))
+            (fn ~'on-err [e#]
+              (tracer-> ~yctx .traceFinish ~ykey nil e# true)
+              (pool-run ~yctx (.fireError ~dest e# (.-token ~yctx)))))
      (do
        (tracer-> ~yctx .traceFinish ~ykey ~result nil false)
-       (.success ~dest ~result (.-token ~yctx)))))
+       (.fireValue ~dest ~result (.-token ~yctx)))))
 
 
 (defmacro connect-error [yctx ykey error dest]
   `(do
      (tracer-> ~yctx .traceFinish ~ykey nil ~error false)
-     (.error ~dest ~error (.-token ~yctx))))
+     (.fireError ~dest ~error (.-token ~yctx))))
 
 
 (defn emit-yarn-impl
@@ -289,7 +289,7 @@
 
         coerce-deferred (if (param-types :lazy)
                           `force-lazy-result
-                          `do)
+                          `kd/unwrap1)
 
         deref-syncs
         (mapcat identity
@@ -318,19 +318,24 @@
         (~@do-maybe-fork
          (try
            (let [~@yank-deps]
-             (kd/kd-await!
-              (fn
-                ([]
-                 (try
-                   (let [~@deref-syncs]
-                     (tracer-> ~yctx .traceCall ~ykey)
-                     (let [z# (~coerce-deferred ~the-fn-body)]
-                       (connect-result ~yctx ~ykey z# d#)))
-                   (catch Throwable e#
-                     (connect-error ~yctx ~ykey e# d#))))
-                ([e#]
-                 (connect-error ~yctx ~ykey e# d#)))
-              ~@sync-deps))
+             (if (kd/kd-succeeded? ~@sync-deps)
+               (let [~@deref-syncs]
+                 (tracer-> ~yctx .traceCall ~ykey)
+                 (let [z# (~coerce-deferred ~the-fn-body)]
+                   (connect-result ~yctx ~ykey z# d#)))
+               (kd/kd-await!
+                (fn
+                  ([]
+                   (try
+                     (let [~@deref-syncs]
+                       (tracer-> ~yctx .traceCall ~ykey)
+                       (let [z# (~coerce-deferred ~the-fn-body)]
+                         (connect-result ~yctx ~ykey z# d#)))
+                     (catch Throwable e#
+                       (connect-error ~yctx ~ykey e# d#))))
+                  ([e#]
+                   (connect-error ~yctx ~ykey e# d#)))
+                ~@sync-deps)))
            (catch Throwable e#
              (connect-error ~yctx ~ykey e# d#))))))))
 
@@ -406,8 +411,8 @@
                ([] (try
                      (multifn# yctx# d#)
                      (catch Throwable e#
-                       (.error d# e# (.-token yctx#)))))
-               ([e#] (.error d# e# (.-token yctx#))))
+                       (.fireError d# e# (.-token yctx#)))))
+               ([e#] (.fireError d# e# (.-token yctx#))))
              r#)))
         multifn#))))
 
@@ -428,7 +433,7 @@
    fail-always-yarn
    ykey
    #{}
-   (fn [yctx d] (.error d (java.lang.UnsupportedOperationException. (str msg)) (.-token yctx)))))
+   (fn [yctx d] (.fireError d (java.lang.UnsupportedOperationException. (str msg)) (.-token yctx)))))
 
 
 (defn gen-yarn-input [ykey]

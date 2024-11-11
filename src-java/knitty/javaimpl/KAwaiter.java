@@ -84,6 +84,7 @@ public final class KAwaiter {
         return new KAwaiter(ls);
     }
 
+
     public void add(KDeferred x1) {
         if (x1.succeeded == 0) {
             if (this.acnt <= 0) {
@@ -146,5 +147,30 @@ public final class KAwaiter {
             }
         }
         return ka.await();
+    }
+
+    public static final boolean isSucceeded(KDeferred x1) {
+        return x1.succeeded == 1;
+    }
+    public static final boolean isSucceeded(KDeferred x1, KDeferred x2) {
+        return (x1.succeeded & x2.succeeded) == 1;
+    }
+    public static final boolean isSucceeded(KDeferred x1, KDeferred x2, KDeferred x3) {
+        return (x1.succeeded & x2.succeeded & x3.succeeded) == 1;
+    }
+    public static final boolean isSucceeded(KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4) {
+        return (x1.succeeded & x2.succeeded & x3.succeeded & x4.succeeded) == 1;
+    }
+    public static final boolean isSucceeded(KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5) {
+        return (x1.succeeded & x2.succeeded & x3.succeeded & x4.succeeded & x5.succeeded) == 1;
+    }
+    public static final boolean isSucceeded(KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6) {
+        return (x1.succeeded & x2.succeeded & x3.succeeded & x4.succeeded & x5.succeeded & x6.succeeded) == 1;
+    }
+    public static final boolean isSucceeded(KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7) {
+        return (x1.succeeded & x2.succeeded & x3.succeeded & x4.succeeded & x5.succeeded & x6.succeeded & x7.succeeded) == 1;
+    }
+    public static final boolean isSucceeded(KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4, KDeferred x5, KDeferred x6, KDeferred x7, KDeferred x8) {
+        return (x1.succeeded & x2.succeeded & x3.succeeded & x4.succeeded & x5.succeeded & x6.succeeded & x7.succeeded & x8.succeeded) == 1;
     }
 }

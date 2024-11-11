@@ -309,6 +309,18 @@
   (let [^java.lang.Iterable c (if (instance? java.lang.Iterable xs) xs (seq xs))]
     (.iterator c)))
 
+(defmacro kd-succeeded?
+  "Internal macros used by yarns - prefer not to use it.
+   Returns `true` when all instances of KDeferred are realized with values.
+   "
+  ([]
+   true)
+  ([x1 & xs]
+   (let [xs (list* x1 xs)
+         xsp (partition-all 8 xs)]
+     `(and
+       ~@(map (fn [x] `(KAwaiter/isSucceeded ~@x)) xsp)))))
+
 (defmacro kd-await!
   "Internal macros used by yarns - prefer not to use it.
    Schedlue 0/1-arg function `ls` to execute after all deferreds are realized
