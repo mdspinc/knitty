@@ -1199,7 +1199,7 @@ public class KDeferred
         return d;
     }
 
-    private static KDeferred wrapDeferred(IDeferred x) {
+    static KDeferred wrapDeferred(IDeferred x) {
         Object xx = x.successValue(MISS_VALUE);
         if (xx == MISS_VALUE) {
             KDeferred d = create();

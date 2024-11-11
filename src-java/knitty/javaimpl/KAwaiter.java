@@ -32,40 +32,6 @@ public final class KAwaiter {
         }
     }
 
-    private static final class Lsv extends AFn {
-
-        private final KAwaiter ka;
-
-        Lsv(KAwaiter ka) {
-            this.ka = ka;
-        }
-
-        @Override
-        public Object invoke(Object x) {
-            if ((int) CNT.getAndAddAcquire(this.ka, (int) -1) == 1) {
-                this.ka.ls.invoke();
-            }
-            return null;
-        }
-    }
-
-    private static final class Lse extends AFn {
-
-        private final KAwaiter ka;
-
-        Lse(KAwaiter ka) {
-            this.ka = ka;
-        }
-
-        @Override
-        public Object invoke(Object x) {
-            if ((int) CNT.getAndAddAcquire(this.ka, (int) -1) == 1) {
-                this.ka.ls.invoke();
-            }
-            return null;
-        }
-    }
-
     private static final class L0 extends KDeferred.AListener {
 
         private final AFn ls;
@@ -118,86 +84,14 @@ public final class KAwaiter {
         return new KAwaiter(ls);
     }
 
-    private static KAwaiter start(KAwaiter ka, AFn ls) {
-        if (ka == null) {
-            return new KAwaiter(ls);
-        } else if (ka.acnt <= 4) {
-            throw new IllegalStateException("too much deferreds are awaited");
-        } else {
-            return ka;
-        }
-    }
-
-    private AFn lsv;
-    private AFn lse;
-
-    private static KAwaiter with(KAwaiter ka, AFn ls, IDeferred x1) {
-        if (x1.successValue(TOMB) != TOMB) {
-            return ka;
-        } else {
-            ka = start(ka, ls);
-            ka.acnt -= 1;
-            if (ka.lsv == null) {
-                ka.lsv = new Lsv(ka);
-                ka.lse = new Lse(ka);
+    public void add(KDeferred x1) {
+        if (x1.succeeded == 0) {
+            if (this.acnt <= 0) {
+                throw new IllegalStateException("too much deferreds are awaited");
             }
-            x1.onRealized(ka.lsv, ka.lse);
-            return ka;
+            this.acnt -= 1;
+            x1.listen(new Ls(this));
         }
-    }
-
-    public static KAwaiter with(KAwaiter ka, AFn ls, KDeferred x1) {
-        int s1 = x1.succeeded;
-        if (s1 == 1) {
-            return ka;
-        } else {
-            ka = start(ka, ls);
-            { ka.acnt -= 1; x1.listen(new Ls(ka)); }
-            return ka;
-        }
-    }
-
-    public static KAwaiter with(KAwaiter ka, AFn ls, KDeferred x1, KDeferred x2) {
-        byte s1 = x1.succeeded;
-        byte s2 = x2.succeeded;
-        if ((s1 & s2) == 0) {
-            ka = start(ka, ls);
-            if (s1 == 0) { ka.acnt -= 1; x1.listen(new Ls(ka)); }
-            if (s2 == 0) { ka.acnt -= 1; x2.listen(new Ls(ka)); }
-        }
-        return ka;
-    }
-
-    public static KAwaiter with(KAwaiter ka, AFn ls, KDeferred x1, KDeferred x2, KDeferred x3) {
-        byte s1 = x1.succeeded;
-        byte s2 = x2.succeeded;
-        byte s3 = x3.succeeded;
-        if ((s1 & s2 & s3) == 0) {
-            ka = start(ka, ls);
-            if (s1 == 0) { ka.acnt -= 1; x1.listen(new Ls(ka)); }
-            if (s2 == 0) { ka.acnt -= 1; x2.listen(new Ls(ka)); }
-            if (s3 == 0) { ka.acnt -= 1; x3.listen(new Ls(ka)); }
-        }
-        return ka;
-    }
-
-    public static KAwaiter with(KAwaiter ka, AFn ls, KDeferred x1, KDeferred x2, KDeferred x3, KDeferred x4) {
-        byte s1 = x1.succeeded;
-        byte s2 = x2.succeeded;
-        byte s3 = x3.succeeded;
-        byte s4 = x4.succeeded;
-        if ((s1 & s2 & s3 & s4) == 0) {
-            ka = start(ka, ls);
-            if (s1 == 0) { ka.acnt -= 1; x1.listen(new Ls(ka)); }
-            if (s2 == 0) { ka.acnt -= 1; x2.listen(new Ls(ka)); }
-            if (s3 == 0) { ka.acnt -= 1; x3.listen(new Ls(ka)); }
-            if (s4 == 0) { ka.acnt -= 1; x4.listen(new Ls(ka)); }
-        }
-        return ka;
-    }
-
-    public static boolean await(KAwaiter ka) {
-        return ka == null || ka.await();
     }
 
     public static boolean await1(AFn ls, KDeferred x1) {
@@ -210,18 +104,18 @@ public final class KAwaiter {
     }
 
     public static boolean awaitArr(AFn ls, Object... ds) {
-        KAwaiter ka = null;
+        KAwaiter ka = start(ls);
         for (int i = 0; i < ds.length && notFailed(ka); ++i) {
             Object d = ds[i];
             if (d instanceof IDeferred) {
                 if (d instanceof KDeferred) {
-                    ka = with(ka, ls, (KDeferred) d);
+                    ka.add((KDeferred) d);
                 } else {
-                    ka = with(ka, ls, (IDeferred) d);
+                    ka.add(KDeferred.wrapDeferred((IDeferred) d));
                 }
             }
         }
-        return await(ka);
+        return ka.await();
     }
 
     public static void doUnwrapArr(Object[] ds) {
@@ -240,17 +134,17 @@ public final class KAwaiter {
     }
 
     public static boolean awaitIter(AFn ls, Iterator<?> ds) {
-        KAwaiter ka = null;
+        KAwaiter ka = start(ls);
         while (ds.hasNext() && notFailed(ka)) {
             Object d = ds.next();
             if (d instanceof IDeferred) {
                 if (d instanceof KDeferred) {
-                    ka = with(ka, ls, (KDeferred) d);
+                    ka.add((KDeferred) d);
                 } else {
-                    ka = with(ka, ls, (IDeferred) d);
+                    ka.add(KDeferred.wrapDeferred((IDeferred) d));
                 }
             }
         }
-        return await(ka);
+        return ka.await();
     }
 }

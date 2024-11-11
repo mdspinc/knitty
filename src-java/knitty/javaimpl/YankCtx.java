@@ -202,8 +202,8 @@ public final class YankCtx {
 
     void doYank(Iterable<?> yarns, KDeferred res) {
 
-        KAwaiter ka = null;
         AFn ls = new YankDoneLs(res, yarns);
+        KAwaiter ka = KAwaiter.start(ls);
 
         for (Object x : yarns) {
             Objects.requireNonNull(x, "yarn must be non-null");
@@ -224,10 +224,10 @@ public final class YankCtx {
                 }
                 r = this.fetch(i0, k, y);
             }
-            ka = KAwaiter.with(ka, ls, r);
+            ka.add(r);
         }
 
-        if (KAwaiter.await(ka)) {
+        if (ka.await()) {
             res.success(finish(), null);
         }
     }

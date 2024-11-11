@@ -321,12 +321,10 @@
    `(let [ls# ~ls] (when (KAwaiter/await1 ls# ~x1) (ls#))))
   ([ls x1 & xs]
    (let [xs (list* x1 xs)
-         xsp (partition-all 4 xs)
          lss (gensym)]
      `(let [~lss ~ls]
-        (when (-> nil
-                  ~@(map (fn [x] `(KAwaiter/with ~lss ~@x)) xsp)
-                  (KAwaiter/await))
+        (when (.await (doto (KAwaiter/start ~lss)
+                        ~@(map (fn [x] `(.add ~x)) xs)))
           (~lss))))))
 
 (defmacro await! [ls & ds]
