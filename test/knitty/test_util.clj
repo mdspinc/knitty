@@ -1,16 +1,19 @@
 (ns knitty.test-util
-  (:require [knitty.core :refer [defyarn]]
-            [knitty.deferred :as kd]
-            [clojure.java.io :as io]
-            [clojure.pprint :as pp]
-            [clojure.string :as str]
-            [clojure.test :as t]
-            [criterium.core :as cc]
-            [manifold.deferred :as md]
-            [manifold.debug :as md-debug]
-            [manifold.executor :as ex])
-  (:import [java.time LocalDateTime]
-           [java.time.format DateTimeFormatter]))
+  (:require
+   [clojure.java.io :as io]
+   [clojure.math :as math]
+   [clojure.pprint :as pp]
+   [clojure.string :as str]
+   [clojure.test :as t]
+   [criterium.core :as cc]
+   [knitty.core :refer [defyarn]]
+   [knitty.deferred :as kd]
+   [manifold.debug :as md-debug]
+   [manifold.deferred :as md]
+   [manifold.executor :as ex])
+  (:import
+   [java.time LocalDateTime]
+   [java.time.format DateTimeFormatter]))
 
 
 (defmethod t/report :begin-test-var [m]
@@ -19,7 +22,7 @@
              (-> m :var meta :name)
              (or (some-> t/*testing-contexts* seq vec) ""))))
 
-(defmethod t/report :end-test-var [m]
+(defmethod t/report :end-test-var [_m]
   )
 
 (defonce -override-report-error
@@ -79,11 +82,20 @@
       (t))))
 
 
+(def smoke-benchmarks-opts
+  (merge
+   cc/*default-quick-bench-opts*
+   {:max-gc-attempts 2
+    :samples 5
+    :target-execution-time (* cc/s-to-ns 0.1)
+    :warmup-jit-period (* cc/s-to-ns 0.05)
+    :bootstrap-size 100}))
+
 (def benchmark-opts
-  (->
-   (if (some? (System/getenv "knitty_qb"))
-     cc/*default-quick-bench-opts*
-     cc/*default-benchmark-opts*)))
+  (cond
+    (some? (System/getenv "knitty_qb_smoke")) smoke-benchmarks-opts
+    (some? (System/getenv "knitty_qb")) cc/*default-quick-bench-opts*
+    :else cc/*default-benchmark-opts*))
 
 
 (def ^:dynamic *bench-results*
@@ -95,12 +107,6 @@
             (concat
              (reverse (map #(:name (meta %)) t/*testing-vars*))
              (reverse t/*testing-contexts*))))
-
-
-(defn track-results [id r]
-  (swap! *bench-results* conj [id r])
-  (cc/report-result r)
-  (println))
 
 
 (defn fmt-time-value
@@ -115,13 +121,24 @@
     (> r 1) (format "+%.2f%%" (* 100 (- r 1)))))
 
 
+(defn track-results [results]
+  (swap! *bench-results* conj [(current-test-id) results])
+  (print "\t ⟶ ")
+  (print "time" (fmt-time-value (first (:mean results))))
+  (let [[v] (:variance results), m (math/sqrt v)]
+    (print " ±" (fmt-time-value m)))
+  (println))
+
+
 (defn tests-run-id []
   (or (System/getenv "knitty_tid")
-      (.format (LocalDateTime/now) (DateTimeFormatter/ofPattern "MMddHHmmss"))))
+      (.format (LocalDateTime/now) (DateTimeFormatter/ofPattern "YYMMdd-HH:mm:ss"))))
 
 
-(defn report-benchmark-results [testid rs]
-  (let [res-file (io/file (str bench-results-dir "/" testid ".edn"))]
+(defn report-benchmark-results []
+  (let [testid (tests-run-id)
+        rs @*bench-results*
+        res-file (io/file (str bench-results-dir "/" testid ".edn"))]
     (io/make-parents res-file)
     (let [oldr (->>
                 (file-seq (io/file bench-results-dir))
@@ -139,6 +156,7 @@
                               :results rs}))
       (let [idlen (reduce max 10 (map (comp count first) rs))
             idf (str "%-" idlen "s")]
+        (println "\nbench results:")
         (pp/print-table
          (for [[k r] rs]
            (let [v (-> r :mean first)]
@@ -147,29 +165,32 @@
                :time (fmt-time-value v)}
               (for [oid oids
                     :let [or (get oldm [oid k])]]
-                [oid (some-> or :mean first (/ v) fmt-ratio-diff)])))))))))
+                [oid (some-> or :mean first (/ v) fmt-ratio-diff)])))))
+        (println)))))
 
+(def report-benchmark-hook-installed (atom false))
+
+(defn- add-report-benchmark-results-hook []
+  (when (compare-and-set! report-benchmark-hook-installed false true)
+    (.. (Runtime/getRuntime) (addShutdownHook (Thread. #'report-benchmark-results)))))
 
 (defn report-benchmark-fixture
   []
   (fn [t]
-    (let [x (tests-run-id)]
-      (binding [*bench-results* (atom [])]
-        (t)
-        (report-benchmark-results x @*bench-results*)))))
-
+    (add-report-benchmark-results-hook)
+    (t)))
 
 (defmacro bench
   ([id expr]
    `(t/testing ~id
-      (println "=== bench" (current-test-id))
-      ;; (println "res>" ~expr)
-      (track-results (current-test-id) (cc/benchmark (do ~expr nil) benchmark-opts))))
+      (print (format "  %-32s" (str/join " " (reverse t/*testing-contexts*))))
+      (flush)
+      (track-results (cc/benchmark (do ~expr nil) benchmark-opts))))
   ([id expr1 & exprs]
    `(t/testing ~id
-      (println "=== bench" (current-test-id))
-      (track-results (current-test-id)
-                     (cc/benchmark-round-robin ~(mapv #(list `do %) (list* expr1 exprs))
+      (print (format "  %-32s" (str/join " " (reverse t/*testing-contexts*))))
+      (flush)
+      (track-results (cc/benchmark-round-robin ~(mapv #(list `do %) (list* expr1 exprs))
                                                benchmark-opts)))))
 
 (defmacro do-defs
