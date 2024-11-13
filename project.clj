@@ -34,7 +34,6 @@
 
   :profiles {:dev {:dependencies [[criterium/criterium "0.4.6"]
                                   [prismatic/plumbing "0.6.0"]
-                                  [funcool/promesa "11.0.678"]
                                   [clj-kondo/clj-kondo "2024.09.27"]]
                    :injections [(require 'knitty.test-util)]}
              :prof {:jvm-opts ["-Djdk.attach.allowAttachSelf" "-XX:+UnlockDiagnosticVMOptions" "-XX:+DebugNonSafepoints"]

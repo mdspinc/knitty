@@ -4,7 +4,7 @@
    [knitty.deferred :as kd]
    [knitty.test-util :as tu :refer [bench ninl-inc with-defer defer!]]
    [manifold.deferred :as md]
-   [promesa.core :as pc]))
+   ))
 
 
 (set! *warn-on-reflection* true)
@@ -21,8 +21,9 @@
 (defmacro d0 []
   `(md/success-deferred 0 nil))
 
-(defmacro d0-pc []
-  `(pc/promise 0))
+(defmacro k0 []
+  `(kd/wrap-val 0))
+
 
 (defmacro ff [x]
   `(let [d# (md/deferred nil)]
@@ -31,11 +32,6 @@
 
 (defmacro ff0 []
   `(ff 0))
-
-(defmacro ff0-pc []
-  `(pc/promise
-    (fn [resolve# _reject#]
-      (defer! (resolve# 0)))))
 
 ;; ===
 
@@ -71,21 +67,8 @@
                @(with-defer (kd/bind-> (create-d) ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc)))
         (bench :bind-x10
                @(with-defer (kd/bind-> (create-d) ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc))))
-
-      (testing :promesa
-
-        (bench :chain-x1
-               @(with-defer (pc/-> (create-d) ninl-inc)))
-        (bench :chain-x2
-               @(with-defer (pc/-> (create-d) ninl-inc ninl-inc)))
-        (bench :chain-x3
-               @(with-defer (pc/-> (create-d) ninl-inc ninl-inc ninl-inc)))
-        (bench :chain-x5
-               @(with-defer (pc/-> (create-d) ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc)))
-        (bench :chain-x10
-               @(with-defer (pc/-> (create-d) ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc ninl-inc)))))
     ;;
-    ))
+    )))
 
 
 (deftest ^:benchmark benchmark-let
@@ -119,22 +102,6 @@
                         x4 (tu/md-future (ninl-inc x3))
                         x5 (ninl-inc x4)]
                        x5))))
-
-  #_{:clj-kondo/ignore [:unresolved-symbol]}
-  (tu/with-md-executor
-    (testing :promesa
-      (bench :let-x3-sync
-             @(pc/let* [x1 (d0)
-                        x2 (ninl-inc x1)
-                        x3 (d0)]
-                       (+ x1 x2 x3)))
-      (bench :let-x5
-             @(pc/let* [x1 (d0)
-                        x2 (tu/md-future (ninl-inc x1))
-                        x3 (tu/md-future (ninl-inc x2))
-                        x4 (tu/md-future (ninl-inc x3))
-                        x5 (ninl-inc x4)]
-                       x5))))
   ;;
   )
 
@@ -157,13 +124,6 @@
     (bench :zip-d20 @(kd/zip (d0) (d0) (d0) (d0) (d0) (d0) (d0) (d0) (d0) (d0)
                              (d0) (d0) (d0) (d0) (d0) (d0) (d0) (d0) (d0) (d0))))
 
-  (testing :promesa
-    (bench :zip-d1 @(pc/all [(d0-pc)]))
-    (bench :zip-d2 @(pc/all [(d0-pc) (d0-pc)]))
-    (bench :zip-d5 @(pc/all [(d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc)]))
-    (bench :zip-d10 @(pc/all [(d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc)]))
-    (bench :zip-d20 @(pc/all [(d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc)
-                              (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc)])))
   ;;
   )
 
@@ -185,14 +145,6 @@
     (bench :zip-v10 @(kd/zip 0 0 0 0 0 0 0 0 0 0))
     (bench :zip-v20 @(kd/zip 0 0 0 0 0 0 0 0 0 0
                              0 0 0 0 0 0 0 0 0 0)))
-
-  (testing :promesa
-    (bench :zip-v1 @(pc/all [0]))
-    (bench :zip-v2 @(pc/all [0 0]))
-    (bench :zip-v5 @(pc/all [0 0 0 0 0]))
-    (bench :zip-v10 @(pc/all [0 0 0 0 0 0 0 0 0 0]))
-    (bench :zip-v20 @(pc/all [0 0 0 0 0 0 0 0 0 0
-                              0 0 0 0 0 0 0 0 0 0])))
   ;;
   )
 
@@ -207,11 +159,6 @@
     (bench :zip-f1 @(with-defer (kd/zip (ff0))))
     (bench :zip-f2 @(with-defer (kd/zip (ff0) (ff0))))
     (bench :zip-f5 @(with-defer (kd/zip (ff0) (ff0) (ff0) (ff0) (ff0)))))
-
-  (testing :promesa
-    (bench :zip-f1 @(with-defer (pc/all [(ff0-pc)])))
-    (bench :zip-f2 @(with-defer (pc/all [(ff0-pc) (ff0-pc)])))
-    (bench :zip-f5 @(with-defer (pc/all [(ff0-pc) (ff0-pc) (ff0-pc) (ff0-pc) (ff0-pc)]))))
   ;;
   )
 
@@ -224,10 +171,6 @@
   (testing :knitty
     (bench :zip-50 (doall @(kd/zip* (repeat 50 (d0)))))
     (bench :zip-200 (doall @(kd/zip* (repeat 200 (d0))))))
-
-  (testing :promesa
-    (bench :zip-50 (doall @(pc/all (repeat 50 (d0-pc)))))
-    (bench :zip-200 (doall @(pc/all (repeat 200 (d0-pc))))))
   ;;
   )
 
@@ -240,10 +183,6 @@
   (testing :knitty
     (bench :zip-50 (doall @(with-defer (kd/zip* (doall (repeatedly 50 #(ff0)))))))
     (bench :zip-200 (doall @(with-defer (kd/zip* (doall (repeatedly 200 #(ff0))))))))
-
-  (testing :promesa
-    (bench :zip-50 (doall @(with-defer (pc/all (doall (repeatedly 50 #(ff0-pc)))))))
-    (bench :zip-200 (doall @(with-defer (pc/all (doall (repeatedly 200 #(ff0-pc))))))))
   ;;
   )
 
@@ -258,11 +197,6 @@
     (bench :alt-2 @(kd/alt (d0) (d0)))
     (bench :alt-3 @(kd/alt (d0) (d0) (d0)))
     (bench :alt-10 @(kd/alt (d0) (d0) (d0) (d0) (d0) (d0) (d0) (d0) (d0) (d0))))
-
-  (testing :promesa
-    (bench :alt-2 @(pc/race [(d0-pc) (d0-pc)]))
-    (bench :alt-3 @(pc/race [(d0-pc) (d0-pc) (d0-pc)]))
-    (bench :alt-10 @(pc/race [(d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc) (d0-pc)])))
   ;;
   )
 
@@ -277,11 +211,6 @@
     (bench :alt-2 @(with-defer (kd/alt (ff0) (ff0))))
     (bench :alt-3 @(with-defer (kd/alt (ff0) (ff0) (ff0))))
     (bench :alt-10 @(with-defer (kd/alt (ff0) (ff0) (ff0) (ff0) (ff0) (ff0) (ff0) (ff0) (ff0) (ff0)))))
-
-  (testing :promesa
-    (bench :alt-2 @(with-defer (pc/race [(ff0-pc) (ff0-pc)])))
-    (bench :alt-3 @(with-defer (pc/race [(ff0-pc) (ff0-pc) (ff0-pc)])))
-    (bench :alt-10 @(with-defer (pc/race [(ff0-pc) (ff0-pc) (ff0-pc) (ff0-pc) (ff0-pc) (ff0-pc) (ff0-pc) (ff0-pc) (ff0-pc) (ff0-pc)]))))
   ;;
   )
 
@@ -358,16 +287,6 @@
                    (fn [x] (tu/md-future (ninl-inc x)))
                    (fn [x] (< x 100))
                    (tu/md-future 0))))))
-
-  #_{:clj-kondo/ignore [:unresolved-symbol]}
-  (tu/with-md-executor
-    (testing :promesa
-      (bench :loop100
-             (pc/loop [x (pc/future 0)]
-               (if (< x 100)
-                 (pc/recur (pc/future (ninl-inc x)))
-                 x)))))
-    ;;
   )
 
 (deftest ^:benchmark bench-deferred
