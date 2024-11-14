@@ -11,27 +11,54 @@
 (set! *unchecked-math* true)
 
 
+(defn manifold-dd [x]
+  (md/success-deferred x nil))
+
+(defn manifold-ff [x]
+  (let [d (md/deferred nil)]
+    (defer! (md/success! d x))
+    d))
+
+(defn knitty-dd [x]
+  (kd/wrap-val x))
+
+(defn knitty-ff [x]
+  (let [d (kd/create)]
+    (defer! (kd/success! d x))
+    d))
+
+
+(declare ff)
+(declare dd)
+
+(defn with-modes-fixture []
+  (fn [t]
+    (testing :kt
+      (with-redefs [ff knitty-ff
+                    dd knitty-dd]
+        (t)))
+    (testing :md
+      (with-redefs [ff manifold-ff
+                    dd manifold-dd]
+        (t)))))
+
 (t/use-fixtures :once
   (t/join-fixtures
    [(tu/tracing-enabled-fixture false)
     (tu/report-benchmark-fixture)
     (tu/disable-manifold-leak-detection-fixture)]))
 
+(t/use-fixtures :each
+  (t/join-fixtures
+   [(with-modes-fixture)]))
+
 
 (defmacro d0 []
-  `(md/success-deferred 0 nil))
+  `(dd 0))
 
-(defmacro k0 []
-  `(kd/wrap-val 0))
-
-
-(defmacro ff [x]
-  `(let [d# (md/deferred nil)]
-     (defer! (md/success! d# ~x))
-     d#))
-
-(defmacro ff0 []
+(defmacro f0 []
   `(ff 0))
+
 
 ;; ===
 
@@ -39,7 +66,7 @@
 
   (doseq [[t create-d] [[:sync #(do 0)]
                         [:realized #(d0)]
-                        [:future #(ff0)]]]
+                        [:future #(f0)]]]
     (testing t
 
       (testing :manifold
@@ -151,14 +178,14 @@
 (deftest ^:benchmark benchmark-zip-async
 
   (testing :manifold
-    (bench :zip-f1 @(with-defer (md/zip' (ff0))))
-    (bench :zip-f2 @(with-defer (md/zip' (ff0) (ff0))))
-    (bench :zip-f5 @(with-defer (md/zip' (ff0) (ff0) (ff0) (ff0) (ff0)))))
+    (bench :zip-f1 @(with-defer (md/zip' (f0))))
+    (bench :zip-f2 @(with-defer (md/zip' (f0) (f0))))
+    (bench :zip-f5 @(with-defer (md/zip' (f0) (f0) (f0) (f0) (f0)))))
 
   (testing :knitty
-    (bench :zip-f1 @(with-defer (kd/zip (ff0))))
-    (bench :zip-f2 @(with-defer (kd/zip (ff0) (ff0))))
-    (bench :zip-f5 @(with-defer (kd/zip (ff0) (ff0) (ff0) (ff0) (ff0)))))
+    (bench :zip-f1 @(with-defer (kd/zip (f0))))
+    (bench :zip-f2 @(with-defer (kd/zip (f0) (f0))))
+    (bench :zip-f5 @(with-defer (kd/zip (f0) (f0) (f0) (f0) (f0)))))
   ;;
   )
 
@@ -177,12 +204,12 @@
 (deftest ^:benchmark benchmark-zip-list-async
 
   (testing :manifold
-    (bench :zip-50 (doall @(with-defer (apply md/zip' (doall (repeatedly 50 #(ff0)))))))
-    (bench :zip-200 (doall @(with-defer (apply md/zip' (doall (repeatedly 200 #(ff0))))))))
+    (bench :zip-50 (doall @(with-defer (apply md/zip' (doall (repeatedly 50 #(f0)))))))
+    (bench :zip-200 (doall @(with-defer (apply md/zip' (doall (repeatedly 200 #(f0))))))))
 
   (testing :knitty
-    (bench :zip-50 (doall @(with-defer (kd/zip* (doall (repeatedly 50 #(ff0)))))))
-    (bench :zip-200 (doall @(with-defer (kd/zip* (doall (repeatedly 200 #(ff0))))))))
+    (bench :zip-50 (doall @(with-defer (kd/zip* (doall (repeatedly 50 #(f0)))))))
+    (bench :zip-200 (doall @(with-defer (kd/zip* (doall (repeatedly 200 #(f0))))))))
   ;;
   )
 
@@ -203,14 +230,14 @@
 (deftest ^:benchmark benchmark-alt-async
 
   (testing :manifold
-    (bench :alt-2 @(with-defer (md/alt' (ff0) (ff0))))
-    (bench :alt-3 @(with-defer (md/alt' (ff0) (ff0) (ff0))))
-    (bench :alt-10 @(with-defer (md/alt' (ff0) (ff0) (ff0) (ff0) (ff0) (ff0) (ff0) (ff0) (ff0) (ff0)))))
+    (bench :alt-2 @(with-defer (md/alt' (f0) (f0))))
+    (bench :alt-3 @(with-defer (md/alt' (f0) (f0) (f0))))
+    (bench :alt-10 @(with-defer (md/alt' (f0) (f0) (f0) (f0) (f0) (f0) (f0) (f0) (f0) (f0)))))
 
   (testing :knitty
-    (bench :alt-2 @(with-defer (kd/alt (ff0) (ff0))))
-    (bench :alt-3 @(with-defer (kd/alt (ff0) (ff0) (ff0))))
-    (bench :alt-10 @(with-defer (kd/alt (ff0) (ff0) (ff0) (ff0) (ff0) (ff0) (ff0) (ff0) (ff0) (ff0)))))
+    (bench :alt-2 @(with-defer (kd/alt (f0) (f0))))
+    (bench :alt-3 @(with-defer (kd/alt (f0) (f0) (f0))))
+    (bench :alt-10 @(with-defer (kd/alt (f0) (f0) (f0) (f0) (f0) (f0) (f0) (f0) (f0) (f0)))))
   ;;
   )
 
