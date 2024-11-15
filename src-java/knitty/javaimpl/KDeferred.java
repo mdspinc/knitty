@@ -903,7 +903,12 @@ public class KDeferred
     }
 
     public boolean reclaim(Object curToken, Object newToken) {
-        return TOKEN.compareAndExchange(this, curToken, newToken) == curToken;
+        while (!TOKEN.weakCompareAndSetPlain(this, curToken, newToken)) {
+            if (TOKEN.getOpaque(this) != curToken) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override
@@ -995,11 +1000,15 @@ public class KDeferred
         return ((Boolean) this.success(x)) ? this : null;
     }
 
+    private static Object unwrapValue(Object v) {
+        return (v instanceof ErrBox) ? ((ErrBox) v).raise() : v;
+    }
+
     @Override
     public Object deref(long ms, Object timeoutValue) {
         Object v = this.getRaw();
         if (v != MISS_VALUE) {
-            return (v instanceof ErrBox) ? ((ErrBox) v).raise() : v;
+            return unwrapValue(v);
         }
         if (ms <= 0) {
             return timeoutValue;
@@ -1011,7 +1020,7 @@ public class KDeferred
         }
         v = this.getRaw();
         if (v != MISS_VALUE) {
-            return (v instanceof ErrBox) ? ((ErrBox) v).raise() : v;
+            return unwrapValue(v);
         }
         return timeoutValue;
     }
@@ -1020,7 +1029,7 @@ public class KDeferred
     public Object deref() {
         Object v = this.getRaw();
         if (v != MISS_VALUE) {
-            return (v instanceof ErrBox) ? ((ErrBox) v).raise() : v;
+            return unwrapValue(v);
         }
         try {
             acquireCountdDownLatch().await();
@@ -1028,7 +1037,7 @@ public class KDeferred
             throw Util.sneakyThrow(e);
         }
         v = this.getRaw();
-        return (v instanceof ErrBox) ? ((ErrBox) v).raise() : v;
+        return unwrapValue(v);
     }
 
     void chain0(IDeferred x, Object token) {
@@ -1073,15 +1082,6 @@ public class KDeferred
         if (this.complete(x)) {
             this.fireSuccessListeners(x);
         }
-    }
-
-    public KDeferred bind(IFn valFn, IFn errFn, Executor executor) {
-        if (executor == null) {
-            return this.bind(valFn, errFn);
-        }
-        KDeferred dest = create();
-        this.listen(new BindEx(dest, valFn, errFn, executor));
-        return dest;
     }
 
     public KDeferred bind(IFn valFn) {
@@ -1129,16 +1129,23 @@ public class KDeferred
         }
     }
 
+    public KDeferred bind(IFn valFn, IFn errFn, Executor executor) {
+        if (executor == null) {
+            return this.bind(valFn, errFn);
+        }
+        KDeferred dest = create();
+        this.listen(new BindEx(dest, valFn, errFn, executor));
+        return dest;
+    }
+
     public static KDeferred bind(Object x, IFn valFn) {
-        if (x instanceof KDeferred) {
-            KDeferred kd = (KDeferred) x;
+        if (x instanceof IDeferred) {
+            KDeferred kd = wrapDeferred((IDeferred) x);
             if (kd.succeeded == 1) {
                 x = kd.getRaw();
             } else {
                 return kd.bind(valFn);
             }
-        } else if (x instanceof IDeferred) {
-            return wrapDeferred((IDeferred) x).bind(valFn);
         }
         try {
             return wrap(valFn.invoke(x));
@@ -1148,15 +1155,13 @@ public class KDeferred
     }
 
     public static KDeferred bind(Object x, IFn valFn, IFn errFn) {
-        if (x instanceof KDeferred) {
-            KDeferred kd = (KDeferred) x;
+        if (x instanceof IDeferred) {
+            KDeferred kd = wrapDeferred((IDeferred) x);
             if (kd.succeeded == 1) {
                 x = kd.getRaw();
             } else {
                 return kd.bind(valFn, errFn);
             }
-        } else if (x instanceof IDeferred) {
-            return wrap(x).bind(valFn, errFn);
         }
         try {
             return wrap(valFn.invoke(x));
@@ -1186,7 +1191,7 @@ public class KDeferred
         ErrBox eb = new ErrBoxLeakable(e);
         KDeferred d = new KDeferred();
         LHEAD.setOpaque(d, LS_TOMB);
-        VALUE.setVolatile(d, eb);
+        VALUE.setRelease(d, eb);
         eb.detectLeakedError(d);
         return d;
     }
@@ -1194,12 +1199,16 @@ public class KDeferred
     public static KDeferred wrapVal(Object x) {
         KDeferred d = new KDeferred();
         LHEAD.setOpaque(d, LS_TOMB);
-        VALUE.setVolatile(d, x);
+        VALUE.setRelease(d, x);
+        VarHandle.storeStoreFence();
         d.succeeded = 1;
         return d;
     }
 
     static KDeferred wrapDeferred(IDeferred x) {
+        if (x instanceof KDeferred) {
+            return (KDeferred) x;
+        }
         Object xx = x.successValue(MISS_VALUE);
         if (xx == MISS_VALUE) {
             KDeferred d = create();
@@ -1211,9 +1220,7 @@ public class KDeferred
     }
 
     public static KDeferred wrap(Object x) {
-        if (x instanceof KDeferred) {
-            return (KDeferred) x;
-        } if (x instanceof IDeferred) {
+        if (x instanceof IDeferred) {
             return wrapDeferred((IDeferred) x);
         } else {
             return wrapVal(x);
