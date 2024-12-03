@@ -52,14 +52,13 @@
              pp/*print-lines* (inc (:lines *options*))
              pp/*print-right-margin* (:width *options*)]
     (->>
-     (with-out-str
-       (pp/pprint s))
+     (with-out-str (pp/pprint s))
      (str/split-lines)
      (limit-lines (:lines *options*))
      (map #(short-string (:width *options*) %))
      (map graphviz-escape)
-     (cons "")
-     (str/join "<br align=\"left\" />"))))
+     (str/join "<BR ALIGN=\"LEFT\"/>")
+     )))
 
 
 (defn- safe-minus [a b]
@@ -174,27 +173,32 @@
 
                  (not (#{:lazy-unused :leaked :knot} type))
                  (conj
+
                   [:tr [:td {:colspan 2, :align "text"}
-                        [:font {:point-size 8
-                                :face "monospace",
-                                :color "blue"}
-                         (cond
-                           (some-> error ex-data ::mdm-frozen)
-                           ""
+                        (if error
+                          [:font {:face "monospace bold"
+                                  :point-size 7
+                                  :color "blue"}
+                           "exception: " (-> error class (.getName))
+                           [:br {:align "left"}]
 
-                           (and error (instance? clojure.lang.IExceptionInfo error))
-                           [:font
-                            (ex-message error)
-                            (some-> error ex-data short-string-multiline)]
+                           (when-let [m (ex-message error)]
+                             [:font "message: " (short-string-multiline m)
+                              [:br {:align "left"}]])
 
-                           error
-                           [:font
-                            "exception " (-> error class (.getName))
-                            (ex-message error)]
+                           (when-let [ed (ex-data error)]
+                             [:font
+                              "ex-data:"
+                              [:br {:align "left"}]
+                              (short-string-multiline (datafy ed))])]
 
-                           :else (short-string-multiline (datafy value)))
+                          [:font {:point-size 8
+                                  :face "monospace",
+                                  :color "blue"}
+                           (short-string-multiline (datafy value))])
 
-                         [:br {:align :left}]]]])
+
+                        [:br {:align :left}]]])
 
                  (#{:lazy-unused} type)
                  (conj [:tr [:td {:colspan 2} "unused"]])
@@ -213,9 +217,9 @@
                    [:td {:align :right}
                     (nice-time (safe-minus start-at (:base-at g)))
                     " ⊕ "
-                    "Δ" (or (nice-time deps-time) "...")
+                    "Δ" (or (nice-time deps-time) "…")
                     " ⊎ "
-                    "Δ" (or (nice-time func-time) "...")
+                    "Δ" (or (nice-time func-time) "…")
                     (when finish-at " ⟹ ")
                     (when finish-at
                       [:font {:color "black"}
