@@ -23,26 +23,27 @@
 
 (defn- simple-stats-tracker
   [& {:keys [precision percentiles]}]
-  (let [h (ConcurrentHistogram. (int precision))
+  (let [r (Recorder. (int precision))
         total-count (atom 0)
         total-sum (atom 0)]
      (fn
        ([]
-        (->Stats
-         @total-count
-         @total-sum
-         (.getTotalCount h)
-         (Math/round (.getMean h))
-         (Math/round (.getStdDeviation h))
-         (.getMinValue h)
-         (.getMaxValue h)
-         (doall
-          (for [p percentiles]
-            [p (.getValueAtPercentile h p)]))))
+        (let [h (.getIntervalHistogram r)]
+          (->Stats
+           @total-count
+           @total-sum
+           (.getTotalCount h)
+           (Math/round (.getMean h))
+           (Math/round (.getStdDeviation h))
+           (.getMinValue h)
+           (.getMaxValue h)
+           (doall
+            (for [p percentiles]
+              [p (.getValueAtPercentile h p)])))))
        ([x]
         (swap! total-count inc)
         (swap! total-sum + x)
-        (.recordValue h (long x))
+        (.recordValue r (long x))
         x))))
 
 
@@ -137,12 +138,12 @@
 
 
 (defn yarn-timings
-  ([poy]
-   (yarn-timings poy (constantly true)))
-  ([poy yarns]
-   (yarn-timings poy yarns (constantly true)))
-  ([poy yarns events]
-   (when-let [ts (trace/find-traces poy)]
+  ([yank-result]
+   (yarn-timings yank-result (constantly true)))
+  ([yank-result yarns]
+   (yarn-timings yank-result yarns (constantly true)))
+  ([yank-result yarns events]
+   (when-let [ts (trace/find-traces yank-result)]
      (let [att (- 0 (long (reduce min (map :base-at ts))))
            h (java.util.HashMap.)]
        (doseq [t ts, log (:tracelog t)]
@@ -204,20 +205,20 @@
            events #{:yank-at :call-at :done-at :deps-time :time}
            percentiles [50 90 95 99]
            precision 3
-           window 60
+           window 60000
            }}]
   (let [yarns (if (some? yarns)
                 (fast-memoize1 yarns)
                 (constantly true))
         tracker (grouped-stats-tracker
-                 (if (some? window)
+                 (if (or (nil? window) (zero? window))
+                   (partial simple-stats-tracker
+                            {:precision precision
+                             :percentiles percentiles})
                    (partial windowed-stats-tracker
                             {:precision precision
                              :window window
-                             :window-chunk (or window-chunk (long (* 0.1 window)))
-                             :percentiles percentiles})
-                   (partial simple-stats-tracker
-                            {:precision precision
+                             :window-chunk (or window-chunk (long (* 0.125 window)))
                              :percentiles percentiles})))]
      (fn
        ([]
@@ -227,10 +228,10 @@
                        (map (fn [[[_ e] s]]
                               (into {:event e, :yarn y} s))
                             row)))))
-       ([poy]
+       ([yank-result]
         (let [f (fn [x]
                   (when-some [s (trace/find-traces x)]
                     (tracker (yarn-timings s yarns events))))]
-          (kd/on poy f f))
-        poy))))
+          (kd/on yank-result f f))
+        yank-result))))
 
