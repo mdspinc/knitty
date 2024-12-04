@@ -13,7 +13,6 @@ import clojure.lang.IDeref;
 import clojure.lang.IEditableCollection;
 import clojure.lang.IFn;
 import clojure.lang.IMapEntry;
-import clojure.lang.IMeta;
 import clojure.lang.IObj;
 import clojure.lang.IPersistentMap;
 import clojure.lang.ISeq;
@@ -52,7 +51,7 @@ public final class YankResult extends YankInputs implements IObj, IDeref {
         this.yrns = yrns;
         this.added = added;
         this.kwmapper = kwmapper;
-        this.meta = (inputs instanceof IMeta) ? ((IMeta) inputs).meta() : null;
+        this.meta = inputs.meta();
     }
 
     private YankResult(YankInputs inputs, KDeferred[][] yrns, YankCtx.KVCons added, KwMapper kwmapper, IPersistentMap meta) {
@@ -85,7 +84,10 @@ public final class YankResult extends YankInputs implements IObj, IDeref {
             result = t;
         }
         if (result instanceof IObj) {
-            result = ((IObj) result).withMeta(meta);
+            IObj r = (IObj) result;
+            if (r.meta() != meta) {
+                result = r.withMeta(meta);
+            }
         }
         return result;
     }

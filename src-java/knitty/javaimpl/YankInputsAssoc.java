@@ -7,6 +7,8 @@ import java.util.Map.Entry;
 import clojure.lang.Associative;
 import clojure.lang.IFn;
 import clojure.lang.IKVReduce;
+import clojure.lang.IMeta;
+import clojure.lang.IPersistentMap;
 import clojure.lang.IReduceInit;
 import clojure.lang.ISeq;
 import clojure.lang.Keyword;
@@ -85,5 +87,10 @@ final class YankInputsAssoc extends YankInputs {
     @Override
     public Object unwrapInputs() {
         return wrapped;
+    }
+
+    @Override
+    public IPersistentMap meta() {
+        return (wrapped instanceof IMeta) ? ((IMeta) wrapped).meta() : null;
     }
 }
