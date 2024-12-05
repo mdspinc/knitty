@@ -310,7 +310,7 @@
            "knitty-"
            (str "." (name (:format options))))]
     (when-not t
-      (throw (ex-info "trace not found" {::poy poy})))
+      (throw (ex-info "trace not found" {::yank-result poy})))
     (io/copy t f)
     (future (open-f (str f)))))
 

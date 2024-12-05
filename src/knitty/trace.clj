@@ -43,7 +43,7 @@
 
 (deftype TraceLogCons [yarn event value next])
 (defrecord TraceLog [yarn event value])
-(defrecord Trace [at base-at done-at poy yarns tracelog])
+(defrecord Trace [at base-at done-at result yarns tracelog])
 
 
 (defmethod print-method Trace
@@ -116,13 +116,13 @@
 
 (def ^:private ^AtomicLong yank-cnt (AtomicLong.))
 
-(defn create-tracer [poy yarns]
+(defn create-tracer [input yarns]
   (if-tracing
     (let [store (AtomicReference.)
           extra {:at (java.util.Date.)
                  :yankid (.getAndIncrement yank-cnt)
                  :base-at (now)
-                 :poy poy
+                 :input input
                  :yarns yarns}]
       (TracerImpl. store extra))))
 
@@ -142,7 +142,7 @@
 
 
 (defn parse-trace [t]
-  (let [{:keys [at base-at done-at poy tracelog yankid yarns]} t
+  (let [{:keys [at base-at done-at input tracelog yankid yarns]} t
 
         yanked? (set yarns)
         ytlog (into
@@ -219,8 +219,8 @@
                       :func-time (safe-minus finish-at call-at)
                       :deferred (or deferred? (nil? finish-at))})])
               (for [pd ex-deps]
-                [pd (if (contains? poy pd)
-                      {:type :input, :value (get poy pd), :yankid yankid}
+                [pd (if (contains? input pd)
+                      {:type :input, :value (get input pd), :yankid yankid}
                       {:type :lazy-unused, :value ::unused, :deferred true, :yankid yankid})])))
      :links (into
              {}
@@ -232,7 +232,7 @@
                     :let [time (get ytdep-time [y dk])]]
                 [[y dk]
                  {:source (cond
-                            (contains? poy dk) :input
+                            (contains? input dk) :input
                             (::trace-deferred (ytlog dk)) :defer
                             :else :sync)
                   :cause (= (ytcause dk) y)
