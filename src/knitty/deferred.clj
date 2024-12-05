@@ -4,6 +4,7 @@
 (ns knitty.deferred
   (:refer-clojure :exclude [future future-call run! while reduce loop])
   (:require [clojure.core :as c]
+            [clojure.pprint :as pp]
             [clojure.tools.logging :as log]
             [manifold.deferred :as md])
   (:import [java.util.concurrent Executor]
@@ -614,3 +615,37 @@
       :else
       (.write w "…")))
   (.write w "]"))
+
+(defmethod print-dup KDeferred [s w]
+  (print-method s w))
+
+
+(set! *unchecked-math* false)
+
+(defn- pprint-kdeferred [o]
+  (let [error (md/error-value o ::none)
+        value (md/success-value o ::none)
+        error? (not (identical? error ::none))
+        value? (not (identical? value ::none))
+        prefix (format "#<%s@%x: "
+                       (.getSimpleName (class o))
+                       (System/identityHashCode o))]
+    (pp/pprint-logical-block
+     :prefix prefix
+     :suffix ">"
+     (pp/pprint-indent :block (-> (count prefix) (- 2) -))
+     (pp/pprint-newline :linear)
+     (when error?
+       (pp/pprint-logical-block :suffix " ", (pp/write-out :err)))
+     (pp/write-out (cond
+                     value? value
+                     error? error
+                     :else :not-delivered)))))
+
+#_{:clj-kondo/ignore [:unresolved-var]}
+(defmethod pp/simple-dispatch knitty.javaimpl.KDeferred [x]
+  (pprint-kdeferred x))
+
+#_{:clj-kondo/ignore [:unresolved-var]}
+(defmethod pp/code-dispatch knitty.javaimpl.KDeferred [x]
+  (pprint-kdeferred x))
