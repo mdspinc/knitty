@@ -433,7 +433,10 @@
    fail-always-yarn
    ykey
    #{}
-   (fn [yctx d] (.fireError d (java.lang.UnsupportedOperationException. (str msg)) (.-token yctx)))))
+   (fn [yctx d]
+     (tracer-> yctx .traceStart ykey :fail [])
+     (let [e (java.lang.UnsupportedOperationException. (str msg))]
+       (connect-error yctx ykey e d)))))
 
 
 (defn gen-yarn-input [ykey]
